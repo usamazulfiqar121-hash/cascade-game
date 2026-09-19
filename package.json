@@ -7,7 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "assets": "npx @capacitor/assets generate --android --iconBackgroundColor \"#0A0F1F\" --iconBackgroundColorDark \"#0A0F1F\" --splashBackgroundColor \"#0A0F1F\" --splashBackgroundColorDark \"#0A0F1F\"",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:debug": "cd android && ./gradlew assembleDebug",
+    "android:release": "cd android && ./gradlew assembleRelease",
+    "deploy": "vercel --prod",
+    "ship": "git add -A && git commit -m \"chore: ship\" && git push origin main && vercel --prod && sync-cascade"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
@@ -21,6 +28,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "@capacitor/assets": "^3.0.5"
   }
 }

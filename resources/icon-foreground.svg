@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="blueBall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5A9BFF"/>
+      <stop offset="100%" stop-color="#2F7BF6"/>
+    </linearGradient>
+    <linearGradient id="redBall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF7A8C"/>
+      <stop offset="100%" stop-color="#FF4D6A"/>
+    </linearGradient>
+    <linearGradient id="tubeGlass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.12)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.04)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Left tube (blue) -->
+  <g transform="translate(200, 260)">
+    <rect x="0" y="0" width="240" height="520" rx="120" ry="120"
+          fill="url(#tubeGlass)"
+          stroke="rgba(140,170,255,0.3)" stroke-width="5"/>
+    <circle cx="120" cy="410" r="54" fill="url(#blueBall)"/>
+    <circle cx="120" cy="305" r="54" fill="url(#blueBall)"/>
+    <circle cx="120" cy="200" r="54" fill="url(#blueBall)"/>
+    <circle cx="120" cy="95" r="54" fill="url(#blueBall)"/>
+  </g>
+
+  <!-- Right tube (red) -->
+  <g transform="translate(584, 260)">
+    <rect x="0" y="0" width="240" height="520" rx="120" ry="120"
+          fill="url(#tubeGlass)"
+          stroke="rgba(255,120,150,0.3)" stroke-width="5"/>
+    <circle cx="120" cy="410" r="54" fill="url(#redBall)"/>
+    <circle cx="120" cy="305" r="54" fill="url(#redBall)"/>
+    <circle cx="120" cy="200" r="54" fill="url(#redBall)"/>
+    <circle cx="120" cy="95" r="54" fill="url(#redBall)"/>
+  </g>
+</svg>

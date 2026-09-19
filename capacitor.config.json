@@ -4,6 +4,23 @@
   "webDir": "dist",
   "backgroundColor": "#0A0F1F",
   "android": {
-    "backgroundColor": "#0A0F1F"
+    "backgroundColor": "#0A0F1F",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 300,
+      "backgroundColor": "#0A0F1F",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "useDialog": false
+    }
   }
 }
