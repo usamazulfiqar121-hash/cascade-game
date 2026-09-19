@@ -361,6 +361,7 @@ export default function Cascade() {
   const [shake, setShake] = useState(0);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
   const [particles, setParticles] = useState([]);
+  const [bonusPops, setBonusPops] = useState([]);
   const [best, setBest] = useState(0);
   const [shareImage, setShareImage] = useState(null);
   const [shared, setShared] = useState(false);
@@ -452,6 +453,12 @@ export default function Cascade() {
       if (bonus > 0) {
         setBonusMoves(newBonus);
         setTimeout(() => Snd.bonus(), 120);
+        /* Fire a floating "+N" so the player can actually see the bonus
+           they just earned — before this the extra moves were invisible
+           and the only signal was the sound. */
+        const id = Date.now() + Math.random();
+        setBonusPops((p) => [...p, { id, text: `+${bonus}` }]);
+        setTimeout(() => setBonusPops((p) => p.filter((q) => q.id !== id)), 900);
       }
 
       const newMovesLeft = level.moveLimit + newBonus - newMovesUsed;
@@ -546,6 +553,19 @@ export default function Cascade() {
     <div style={S.root}>
       <style>{CSS}</style>
       <Particles bursts={particles} />
+      {/* Floating "+N" popups for bonus moves — centered, above the tubes */}
+      <div style={{ position: "fixed", top: "42%", left: 0, right: 0, pointerEvents: "none", zIndex: 60, display: "flex", justifyContent: "center" }}>
+        {bonusPops.map((b) => (
+          <div key={b.id} className="bonusPop" style={{
+            position: "absolute",
+            fontWeight: 900,
+            fontSize: 28,
+            color: T.gold,
+            textShadow: `0 2px 12px ${T.gold}88, 0 0 4px rgba(0,0,0,0.8)`,
+            letterSpacing: "-0.02em",
+          }}>{b.text}</div>
+        ))}
+      </div>
 
       <div style={S.hud}>
         <div>
@@ -742,6 +762,13 @@ button:active:not(:disabled) { transform: scale(0.97); }
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 .tutIn { animation: tutIn 340ms cubic-bezier(.16,1,.3,1); }
+@keyframes bonusPopAnim {
+  0% { opacity: 0; transform: translateY(10px) scale(0.6); }
+  25% { opacity: 1; transform: translateY(-4px) scale(1.15); }
+  50% { transform: translateY(-14px) scale(1); }
+  100% { opacity: 0; transform: translateY(-42px) scale(0.9); }
+}
+.bonusPop { animation: bonusPopAnim 900ms cubic-bezier(.16,1,.3,1); }
 @keyframes cascadeParticle {
   0% { transform: translate(0, 0) scale(1); opacity: 1; }
   100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
