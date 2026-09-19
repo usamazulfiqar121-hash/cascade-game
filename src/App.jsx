@@ -452,6 +452,20 @@ export default function Cascade() {
     return () => clearTimeout(t);
   }, [shake]);
 
+  const unlockAch = useCallback((id) => {
+    setAchievements((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
+      const meta = ACHIEVEMENTS.find((a) => a.id === id);
+      if (meta) {
+        setAchToast(meta);
+        setTimeout(() => setAchToast(null), 2600);
+      }
+      return next;
+    });
+  }, []);
+
   const spawnParticles = useCallback((x, y, color) => {
     const id = Date.now() + Math.random();
     const seed = Math.random() * Math.PI;
@@ -570,20 +584,6 @@ export default function Cascade() {
       }
     }
   }, [hintLeft, phase, tubes]);
-
-  const unlockAch = useCallback((id) => {
-    setAchievements((prev) => {
-      if (prev.includes(id)) return prev;
-      const next = [...prev, id];
-      try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
-      const meta = ACHIEVEMENTS.find((a) => a.id === id);
-      if (meta) {
-        setAchToast(meta);
-        setTimeout(() => setAchToast(null), 2600);
-      }
-      return next;
-    });
-  }, []);
 
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
