@@ -61,6 +61,10 @@ function pickRandomUpgrades(count) {
   return picked;
 }
 
+function isTubeSolved(tube) {
+  return tube.length === MAX_HEIGHT && tube.every((c) => c === tube[0]);
+}
+
 function canPour(tubes, fromIdx, toIdx) {
   if (fromIdx === toIdx) return false;
   const from = tubes[fromIdx], to = tubes[toIdx];
@@ -296,17 +300,17 @@ function buildShareCard({ round, upgrades, best }) {
 
 /* ═══════════  COMPONENTS  ═══════════ */
 
-function Tube({ balls, selected, onClick, disabled, hintFrom, hintTo }) {
+function Tube({ balls, selected, onClick, disabled, hintFrom, hintTo, solved }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       width: 62, height: MAX_HEIGHT * 48 + 20,
-      background: T.tubeBg, border: `2px solid ${selected ? T.accent : hintFrom ? T.go : hintTo ? T.go + "aa" : T.tubeEdge}`,
+      background: T.tubeBg, border: `2px solid ${selected ? T.accent : solved ? T.go + "88" : hintFrom ? T.go : hintTo ? T.go + "aa" : T.tubeEdge}`,
       borderRadius: 32, padding: "8px 6px 6px",
       display: "flex", flexDirection: "column-reverse", justifyContent: "flex-start",
       alignItems: "center", cursor: disabled ? "default" : "pointer",
       transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
       transform: selected ? "translateY(-8px)" : "translateY(0)",
-      boxShadow: selected ? `0 12px 30px ${T.accent}44` : (hintFrom || hintTo) ? `0 0 0 3px ${T.go}33` : "none",
+      boxShadow: selected ? `0 12px 30px ${T.accent}44` : solved ? `0 0 0 2px ${T.go}44, 0 4px 16px ${T.go}33` : (hintFrom || hintTo) ? `0 0 0 3px ${T.go}33` : "none",
       opacity: disabled ? 0.4 : 1,
     }}>
       {balls.map((colorIdx, i) => (
@@ -749,7 +753,7 @@ export default function Cascade() {
       <div style={{ ...S.board, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
         <div style={S.tubesRow}>
           {tubes.map((balls, i) => (
-            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} />
+            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} />
           ))}
         </div>
       </div>
