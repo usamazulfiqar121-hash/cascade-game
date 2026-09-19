@@ -103,13 +103,47 @@ function isSolved(tubes) {
   return tubes.every((t) => t.length === 0 || (t.length === MAX_HEIGHT && t.every((c) => c === t[0])));
 }
 
-function shuffle(a) {
+function shuffle(a, rng = Math.random) {
   const arr = [...a];
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = (Math.random() * (i + 1)) | 0;
+    const j = (rng() * (i + 1)) | 0;
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
+}
+
+/* ═══════════ DAILY CHALLENGE — SEEDED RNG (UTC) ═══════════ */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* UTC date key — same board for players worldwide.
+   Local time use karne se timezone mismatch hota hai. */
+function dailyKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);  // YYYY-MM-DD
+}
+
+function dateToSeed(date = new Date()) {
+  return parseInt(dailyKey(date).replace(/-/g, ""), 10);
+}
+
+function computeStreak(results) {
+  let streak = 0;
+  const today = new Date();
+  const todayDone = !!results[dailyKey(today)];
+  const start = todayDone ? 0 : 1;
+  for (let i = start; i < 365; i++) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    if (results[dailyKey(d)]) streak++;
+    else break;
+  }
+  return streak;
 }
 
 function applyAutoSort(tubes, count) {
@@ -139,7 +173,8 @@ function applyAutoSort(tubes, count) {
   return result;
 }
 
-function generateLevel(round, runUpgrades, prevMovesLeft) {
+function generateLevel(round, runUpgrades, prevMovesLeft, seed = null) {
+  const rng = seed !== null ? mulberry32(seed) : Math.random;
   const colorCount = Math.min(2 + Math.floor((round - 1) / 2), 7);
   const balls = [];
   for (let c = 0; c < colorCount; c++) for (let i = 0; i < MAX_HEIGHT; i++) balls.push(c);
@@ -147,7 +182,7 @@ function generateLevel(round, runUpgrades, prevMovesLeft) {
   let tubes = [];
   let attempts = 0;
   do {
-    const sh = shuffle(balls);
+    const sh = shuffle(balls, rng);
     tubes = [];
     for (let i = 0; i < colorCount; i++) tubes.push(sh.slice(i * MAX_HEIGHT, (i + 1) * MAX_HEIGHT));
     for (let i = 0; i < 2; i++) tubes.push([]);
@@ -366,6 +401,8 @@ function UpgradeCard({ upgrade, onPick }) {
 
 export default function Cascade() {
   const [round, setRound] = useState(1);
+  const [isDaily, setIsDaily] = useState(false);
+  const [dailyResults, setDailyResults] = useState({});
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
   const [level, setLevel] = useState(() => generateLevel(1, [], 0));
@@ -421,6 +458,10 @@ export default function Cascade() {
       try {
         const a = localStorage.getItem(ACH_KEY);
         if (a) setAchievements(JSON.parse(a));
+      } catch {}
+      try {
+        const dr = localStorage.getItem("cascade:dailyResults");
+        if (dr) setDailyResults(JSON.parse(dr));
       } catch {}
       if (t === "1") setTutorialSeen(true);
       else {
@@ -535,6 +576,17 @@ export default function Cascade() {
         const remainingAtClear = newMovesLeft;
         /* Schedule the round transition FIRST — an achievement hiccup
            must never block the player from advancing to the upgrade. */
+        /* Daily challenge — save completion when round 1 clears.
+           Guard: idempotent, StrictMode double-fire safe. */
+        if (isDaily && round === 1) {
+          const k = dailyKey();
+          setDailyResults((prev) => {
+            if (prev[k]) return prev;
+            const updated = { ...prev, [k]: { completed: true, ts: Date.now() } };
+            try { localStorage.setItem("cascade:dailyResults", JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
         setTimeout(() => {
           setLastRoundMovesLeft(remainingAtClear);
           setPendingUpgrades(pickRandomUpgrades(3));
@@ -569,7 +621,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch]);
+  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults]);
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
@@ -627,8 +679,9 @@ export default function Cascade() {
   }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades]);
 
   const retry = useCallback(() => {
-    setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft));
-  }, [round, runUpgrades, lastRoundMovesLeft]);
+    const seed = isDaily ? dateToSeed() : null;
+    setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
+  }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
 
   const restartRun = useCallback(() => {
     setRound(1);
@@ -636,6 +689,7 @@ export default function Cascade() {
     setLastRoundMovesLeft(0);
     setShareImage(null);
     setShared(false);
+    setIsDaily(false);
     setLevel(generateLevel(1, [], 0));
   }, []);
 
@@ -771,7 +825,10 @@ export default function Cascade() {
 
       <div style={S.hud}>
         <div>
-          <div style={S.roundLabel}>Round {round}</div>
+          <div style={S.roundLabel}>
+            {isDaily && <span style={S.dailyBadge}>DAILY</span>}
+            Round {round}
+          </div>
           <div style={S.colorCount}>{level.colorCount} colors · best {best}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -883,6 +940,31 @@ export default function Cascade() {
             <button style={S.settingRow} onClick={() => { setShowSettings(false); setShowAchievements(true); }}>
               <span style={S.settingLabel}>🏆 Achievements</span>
               <span style={{ fontSize: 12, fontWeight: 900, color: T.gold }}>{achievements.length}/{ACHIEVEMENTS.length}</span>
+            </button>
+            <button style={S.settingRow} onClick={() => {
+              if (isDaily) {
+                restartRun();
+              } else {
+                setIsDaily(true);
+                setRound(1);
+                setRunUpgrades([]);
+                setLastRoundMovesLeft(0);
+                setShareImage(null);
+                setShared(false);
+                setLevel(generateLevel(1, [], 0, dateToSeed()));
+              }
+              setShowSettings(false);
+            }}>
+              <span style={S.settingLabel}>🎯 Daily Challenge</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: isDaily ? T.go : dailyResults[dailyKey()] ? T.muted : T.gold }}>
+                {isDaily ? "EXIT" : dailyResults[dailyKey()] ? "✓ Done" : "New"}
+              </span>
+            </button>
+            <button style={S.settingRow}>
+              <span style={S.settingLabel}>🔥 Streak</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: T.gold }}>
+                {computeStreak(dailyResults)} days
+              </span>
             </button>
             <button style={{ ...S.primary, marginTop: 20 }} onClick={() => setShowSettings(false)}>
               Close
@@ -1079,6 +1161,7 @@ const S = {
   ovStat: { background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "12px 6px", textAlign: "center" },
   ovStatNum: { fontSize: 22, fontWeight: 900, color: T.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
   ovStatLabel: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 },
+  dailyBadge: { display: "inline-block", fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: T.gold, background: `${T.gold}22`, border: `1px solid ${T.gold}66`, padding: "2px 6px", borderRadius: 6, marginRight: 6, verticalAlign: "middle" },
   comboBadge: { display: "flex", alignItems: "center", gap: 6, alignSelf: "center", background: `${T.gold}22`, border: `1px solid ${T.gold}66`, borderRadius: 999, padding: "5px 12px 5px 10px", marginBottom: 6 },
   comboFlame: { fontSize: 13 },
   comboText: { fontSize: 12, fontWeight: 900, color: T.gold, letterSpacing: "0.02em", fontVariantNumeric: "tabular-nums" },
