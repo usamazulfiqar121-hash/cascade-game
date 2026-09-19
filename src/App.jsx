@@ -360,6 +360,11 @@ export default function Cascade() {
   const [comboCount, setComboCount] = useState(0);
   const [shake, setShake] = useState(0);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
+  /* Shown only on the game-over overlay. Distinct from lastRoundMovesLeft
+     (which is the moves left when the last round was *cleared* and feeds
+     Perfect Clear). On a loss, "moves left" was still reporting the number
+     from the previous clear — three or four — when the real value is 0. */
+  const [finalMovesLeft, setFinalMovesLeft] = useState(0);
   const [particles, setParticles] = useState([]);
   const [bonusPops, setBonusPops] = useState([]);
   const [best, setBest] = useState(0);
@@ -479,6 +484,9 @@ export default function Cascade() {
             setBest(round);
             try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
           }
+
+          setFinalMovesLeft(Math.max(0, newMovesLeft));
+
           setPhase("gameover");
           Snd.fail();
           buzz(60);
@@ -689,13 +697,37 @@ export default function Cascade() {
 
       {phase === "gameover" && (
         <div style={S.overlay}>
-          <div style={{ ...S.ovCard, maxWidth: 360 }}>
+          <div style={{ ...S.ovCard, maxWidth: 380 }}>
             {!shareImage ? (
               <>
-                <div style={{ ...S.ovTitle, color: T.danger }}>Out of moves</div>
-                <div style={S.ovSub}>You reached Round {round}</div>
-                {round > best && <div style={{ color: T.gold, fontWeight: 900, fontSize: 14, marginBottom: 12 }}>🏆 New Best!</div>}
-                <button style={S.primary} onClick={retry}>Retry Round</button>
+                {/* Big round display */}
+                <div style={S.ovIconCircle}>
+                  <span style={{ fontSize: 32 }}>{round >= best && round > 1 ? "🏆" : "💥"}</span>
+                </div>
+                <div style={S.ovTitle}>Run Over</div>
+                <div style={S.ovBigNum}>{round}</div>
+                <div style={S.ovBigLabel}>ROUNDS SURVIVED</div>
+                {round >= best && round > 1 && (
+                  <div style={S.ovNewBest}>✨ New Personal Best</div>
+                )}
+
+                {/* Stats grid */}
+                <div style={S.ovStats}>
+                  <div style={S.ovStat}>
+                    <div style={S.ovStatNum}>{runUpgrades.length}</div>
+                    <div style={S.ovStatLabel}>Upgrades</div>
+                  </div>
+                  <div style={S.ovStat}>
+                    <div style={S.ovStatNum}>{best}</div>
+                    <div style={S.ovStatLabel}>Best</div>
+                  </div>
+                  <div style={S.ovStat}>
+                    <div style={S.ovStatNum}>{finalMovesLeft}</div>
+                    <div style={S.ovStatLabel}>Moves Left</div>
+                  </div>
+                </div>
+
+                <button style={S.primary} onClick={retry}>Retry Round {round}</button>
                 <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
                 <button style={S.ghost} onClick={restartRun}>Start Over</button>
               </>
@@ -732,6 +764,14 @@ const S = {
   hint: { fontSize: 13, fontWeight: 700, color: T.muted, textAlign: "center" },
   overlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.94)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)" },
   ovCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 24, padding: 24, textAlign: "center", maxWidth: 320, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" },
+  ovIconCircle: { width: 64, height: 64, borderRadius: 20, background: `${T.danger}22`, border: `2px solid ${T.danger}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" },
+  ovBigNum: { fontSize: 72, fontWeight: 900, color: T.ink, letterSpacing: "-0.05em", lineHeight: 1, marginTop: 8 },
+  ovBigLabel: { fontSize: 11, fontWeight: 900, letterSpacing: "0.15em", color: T.muted, marginTop: 6, textTransform: "uppercase" },
+  ovNewBest: { display: "inline-block", background: `${T.gold}22`, border: `1px solid ${T.gold}66`, color: T.gold, fontSize: 12, fontWeight: 900, padding: "6px 14px", borderRadius: 999, marginTop: 12 },
+  ovStats: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, margin: "20px 0 20px" },
+  ovStat: { background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "12px 6px", textAlign: "center" },
+  ovStatNum: { fontSize: 22, fontWeight: 900, color: T.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+  ovStatLabel: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 },
   tutOverlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)", zIndex: 100 },
   tutCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 28, padding: 28, maxWidth: 380, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" },
   tutHeader: { textAlign: "center", marginBottom: 24 },
