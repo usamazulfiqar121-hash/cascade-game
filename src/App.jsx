@@ -151,6 +151,8 @@ function generateLevel(round, runUpgrades, prevMovesLeft) {
   return { tubes, moveLimit, colorCount };
 }
 
+const buzz = (ms) => { try { navigator?.vibrate?.(ms); } catch {} };
+
 const Snd = (() => {
   let ctx = null, sfxBus = null, sfxOn = true;
   function ensure() {
@@ -416,6 +418,7 @@ export default function Cascade() {
       setTubes(next);
       setSelected(null);
       Snd.pour(movedCount);
+      buzz(8);
 
       // Particle burst at destination
       if (e) {
@@ -449,6 +452,7 @@ export default function Cascade() {
           setPendingUpgrades(pickRandomUpgrades(3));
           setPhase("upgrade");
           Snd.clear();
+          buzz(30);
         }, 250);
       } else if (newMovesLeft <= 0) {
         setTimeout(() => {
@@ -459,10 +463,12 @@ export default function Cascade() {
           }
           setPhase("gameover");
           Snd.fail();
+          buzz(60);
         }, 250);
       }
     } else {
       setShake((s) => s + 1);
+      buzz(15);
       setSelected(null);
       setComboCount(0);
     }
