@@ -24,7 +24,7 @@ export default function BottomNav({ activeTab, onTabChange, onPlay, onAwards, on
             style={S.centerFab}
             aria-label="Play"
           >
-            <PlayIcon size={22} active={true} />
+            <PlayIcon size={22} white={true} />
           </button>
 
           <TabButton

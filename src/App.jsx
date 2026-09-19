@@ -14,6 +14,7 @@ import UpgradeCard from "./UpgradeCard";
 import HomeScreen from "./HomeScreen";
 import AchievementsScreen from "./AchievementsScreen";
 import Tutorial from "./Tutorial";
+import SettingsScreen from "./screens/SettingsScreen";
 
 
 
@@ -644,55 +645,43 @@ export default function Cascade() {
       </div>
 
       {showSettings && (
-        <div style={S.ovTop} onClick={() => setShowSettings(false)}>
-          <div style={S.ovCard} onClick={(e) => e.stopPropagation()}>
-            <div style={{ ...S.ovTitle, fontSize: 22 }}>Settings</div>
-            <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-              <button style={S.settingRow} onClick={() => {
-                const next = !soundOn;
-                setSoundOn(next);
-                Snd.setSfx(next);
-                try { localStorage.setItem("cascade:soundOn", next ? "1" : "0"); } catch {}
-              }}>
-                <span style={S.settingLabel}>🔊 Sound</span>
-                <span style={{ ...S.togglePill, background: soundOn ? T.accent : T.line }}>
-                  {soundOn ? "ON" : "OFF"}
-                </span>
-              </button>
-              <button style={S.settingRow} onClick={() => {
-                const next = !vibeOn;
-                setVibeOn(next);
-                setVibe(next);
-                try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
-              }}>
-                <span style={S.settingLabel}>📳 Vibration</span>
-                <span style={{ ...S.togglePill, background: vibeOn ? T.accent : T.line }}>
-                  {vibeOn ? "ON" : "OFF"}
-                </span>
-              </button>
-              <button style={{ ...S.settingRow, borderColor: T.danger + "44" }} onClick={() => {
-                if (window.confirm("Reset all progress? This deletes your best score and tutorial.")) {
-                  try {
-                    localStorage.removeItem(BEST_KEY);
-                    localStorage.removeItem("cascade:tutorialSeen");
-                  } catch {}
-                  setBest(0);
-                  restartRun();
-                  setShowSettings(false);
-                }
-              }}>
-                <span style={{ ...S.settingLabel, color: T.danger }}>🗑 Reset Progress</span>
-              </button>
-            </div>
-            <button style={S.settingRow} onClick={() => { setShowSettings(false); setShowAchievements(true); }}>
-              <span style={S.settingLabel}>🏆 Achievements</span>
-              <span style={{ fontSize: 12, fontWeight: 900, color: T.gold }}>{achievements.length}/{ACHIEVEMENTS.length}</span>
-            </button>
-            <button style={{ ...S.primary, marginTop: 20 }} onClick={() => setShowSettings(false)}>
-              Close
-            </button>
-          </div>
-        </div>
+        <SettingsScreen
+          soundOn={soundOn}
+          vibeOn={vibeOn}
+          onToggleSound={() => {
+            const next = !soundOn;
+            setSoundOn(next);
+            Snd.setSfx(next);
+            try { localStorage.setItem("cascade:soundOn", next ? "1" : "0"); } catch {}
+          }}
+          onToggleVibe={() => {
+            const next = !vibeOn;
+            setVibeOn(next);
+            setVibe(next);
+            try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
+          }}
+          onReset={() => {
+            if (window.confirm("Reset all progress? This deletes your best score and tutorial.")) {
+              try {
+                localStorage.removeItem(BEST_KEY);
+                localStorage.removeItem("cascade:tutorialSeen");
+              } catch {}
+              setBest(0);
+              restartRun();
+              setShowSettings(false);
+            }
+          }}
+          onAwards={() => setShowAchievements(true)}
+          onClose={() => setShowSettings(false)}
+          achievements={achievements}
+          ACHIEVEMENTS={ACHIEVEMENTS}
+          best={best}
+          isDaily={isDaily}
+          onExitDaily={() => {
+            restartRun();
+            setShowSettings(false);
+          }}
+        />
       )}
 
       {showAchievements && (
