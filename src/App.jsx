@@ -296,17 +296,17 @@ function buildShareCard({ round, upgrades, best }) {
 
 /* ═══════════  COMPONENTS  ═══════════ */
 
-function Tube({ balls, selected, onClick, disabled }) {
+function Tube({ balls, selected, onClick, disabled, hintFrom, hintTo }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       width: 62, height: MAX_HEIGHT * 48 + 20,
-      background: T.tubeBg, border: `2px solid ${selected ? T.accent : T.tubeEdge}`,
+      background: T.tubeBg, border: `2px solid ${selected ? T.accent : hintFrom ? T.go : hintTo ? T.go + "aa" : T.tubeEdge}`,
       borderRadius: 32, padding: "8px 6px 6px",
       display: "flex", flexDirection: "column-reverse", justifyContent: "flex-start",
       alignItems: "center", cursor: disabled ? "default" : "pointer",
       transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
       transform: selected ? "translateY(-8px)" : "translateY(0)",
-      boxShadow: selected ? `0 12px 30px ${T.accent}44` : "none",
+      boxShadow: selected ? `0 12px 30px ${T.accent}44` : (hintFrom || hintTo) ? `0 0 0 3px ${T.go}33` : "none",
       opacity: disabled ? 0.4 : 1,
     }}>
       {balls.map((colorIdx, i) => (
@@ -364,6 +364,8 @@ export default function Cascade() {
      Only the tubes need saving — moves / bonus / combo all revert together
      with the snapshot so the counter stays honest. */
   const [snapshots, setSnapshots] = useState([]);
+  const [hintLeft, setHintLeft] = useState(2);
+  const [hint, setHint] = useState(null);
   const [shake, setShake] = useState(0);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
   /* Shown only on the game-over overlay. Distinct from lastRoundMovesLeft
@@ -416,6 +418,8 @@ export default function Cascade() {
     setComboCount(0);
     setUndoLeft(2);
     setSnapshots([]);
+    setHintLeft(2);
+    setHint(null);
     setPhase("playing");
   }, [level]);
 
@@ -519,6 +523,25 @@ export default function Cascade() {
     }
   }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles]);
 
+  const useHint = useCallback(() => {
+    if (hintLeft <= 0) return;
+    if (phase !== "playing") return;
+    for (let from = 0; from < tubes.length; from++) {
+      if (tubes[from].length === 0) continue;
+      if (tubes[from].length === MAX_HEIGHT && tubes[from].every((c) => c === tubes[from][0])) continue;
+      for (let to = 0; to < tubes.length; to++) {
+        if (canPour(tubes, from, to)) {
+          setHint({ from, to, key: Date.now() });
+          setHintLeft((h) => h - 1);
+          Snd.select();
+          buzz(12);
+          setTimeout(() => setHint(null), 1600);
+          return;
+        }
+      }
+    }
+  }, [hintLeft, phase, tubes]);
+
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
     if (snapshots.length === 0) return;
@@ -604,6 +627,27 @@ export default function Cascade() {
     <div style={S.root}>
       <style>{CSS}</style>
       <Particles bursts={particles} />
+
+      <button
+        onClick={useHint}
+        disabled={hintLeft <= 0 || phase !== "playing"}
+        aria-label="Show hint"
+        style={{
+          position: "fixed", right: 16, bottom: 92,
+          width: 54, height: 54, borderRadius: 18,
+          background: T.card,
+          border: "1.5px solid " + (hintLeft > 0 && phase === "playing" ? T.go + "66" : T.line),
+          color: hintLeft > 0 && phase === "playing" ? T.go : T.muted,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          cursor: hintLeft > 0 && phase === "playing" ? "pointer" : "default",
+          opacity: hintLeft <= 0 || phase !== "playing" ? 0.4 : 1,
+          fontFamily: "'Nunito', sans-serif",
+          zIndex: 30,
+        }}
+      >
+        <span style={{ fontSize: 20, lineHeight: 1 }}>💡</span>
+        <span style={{ fontSize: 10, fontWeight: 900, marginTop: 2 }}>{hintLeft}</span>
+      </button>
 
       {/* Undo — floats bottom-left, above the footer hint */}
       <button
@@ -705,7 +749,7 @@ export default function Cascade() {
       <div style={{ ...S.board, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
         <div style={S.tubesRow}>
           {tubes.map((balls, i) => (
-            <Tube key={i} balls={balls} selected={selected === i} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} />
+            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} />
           ))}
         </div>
       </div>
