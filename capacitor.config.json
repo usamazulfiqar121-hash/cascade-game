@@ -1,0 +1,9 @@
+{
+  "appId": "com.aurapulse.cascade",
+  "appName": "Cascade",
+  "webDir": "dist",
+  "backgroundColor": "#0A0F1F",
+  "android": {
+    "backgroundColor": "#0A0F1F"
+  }
+}

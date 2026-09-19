@@ -1,0 +1,10 @@
+node_modules/
+dist/
+android/
+ios/
+*.log
+.env
+.DS_Store
+*.bak
+*.bak2
+*.bak3
