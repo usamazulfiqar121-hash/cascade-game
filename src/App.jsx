@@ -13,6 +13,40 @@ const T = {
   tubeBg: "rgba(255,255,255,0.04)", tubeEdge: "rgba(255,255,255,0.10)",
 };
 
+/* ═══════════ DESIGN TOKENS (D) ═══════════
+   Premium design system. All new UI references D. */
+const D = {
+  bg0: "#05070F", bg1: "#0A0F1F", bg2: "#121A31",
+  glass: "rgba(15, 21, 40, 0.72)",
+  glassElevated: "rgba(20, 27, 50, 0.85)",
+  glassModal: "rgba(10, 15, 31, 0.94)",
+  glassBorder: "rgba(255, 255, 255, 0.08)",
+  glassBorderStrong: "rgba(255, 255, 255, 0.14)",
+  accent: "#4C8DFF",
+  accentGlow: "rgba(76, 141, 255, 0.35)",
+  accentGrad: "linear-gradient(135deg, #5A9BFF 0%, #3B7BF0 100%)",
+  gold: "#FFC24B",
+  goldGlow: "rgba(255, 194, 75, 0.35)",
+  go: "#22C58A",
+  goGlow: "rgba(34, 197, 138, 0.35)",
+  danger: "#FF5C7A",
+  text: "#EAF0FF",
+  textSub: "#7A85A8",
+  textDim: "#4A5578",
+  s4: 4, s8: 8, s12: 12, s16: 16, s24: 24, s32: 32, s48: 48,
+  rPill: 999, rCard: 20, rModal: 28, rSm: 12,
+  shadowSm: "0 4px 12px rgba(0, 0, 0, 0.35)",
+  shadowMd: "0 8px 24px rgba(0, 0, 0, 0.45)",
+  shadowLg: "0 20px 48px rgba(0, 0, 0, 0.55)",
+  shadowAccent: "0 12px 32px rgba(76, 141, 255, 0.4)",
+  shadowGold: "0 12px 32px rgba(255, 194, 75, 0.35)",
+  tPress: "120ms cubic-bezier(0.2, 1.1, 0.3, 1)",
+  tQuick: "200ms cubic-bezier(0.16, 1, 0.3, 1)",
+  tScreen: "300ms cubic-bezier(0.16, 1, 0.3, 1)",
+  tModal: "400ms cubic-bezier(0.16, 1, 0.3, 1)",
+  tSpring: "500ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+};
+
 const BEST_KEY = "cascade:best";
 const ACH_KEY = "cascade:achievements";
 
@@ -1150,7 +1184,7 @@ export default function Cascade() {
 
 /* ═══════════ HOME SCREEN ═══════════ */
 function HomeScreen({
-  onPlay, onDaily, onSettings, isDaily,
+  onPlay, onDaily, onSettings,
   dailyResults, computeStreak, dailyKey,
   hasPlayedOnce, achievements, ACHIEVEMENTS,
 }) {
@@ -1174,72 +1208,100 @@ function HomeScreen({
 
   return (
     <div style={S.homeRoot}>
-      {/* Title block */}
-      <div style={S.homeTitleBlock}>
-        <div style={S.homeTitle}>CASCADE</div>
-        <div style={S.homeSubtitle}>ROGUELIKE SORT</div>
-      </div>
+      {/* Ambient background — static radial gradients (GPU-safe) */}
+      <div aria-hidden="true" style={S.homeAmbient} />
 
-      {/* Primary CTA — Play (endless) */}
-      <button style={S.homePlayBtn} onClick={onPlay}>
-        <span style={S.homePlayIcon}>▶</span>
-        <span style={S.homePlayText}>Play</span>
-      </button>
+      {/* Content */}
+      <div style={S.homeContent}>
+        {/* Title block */}
+        <div className="fade-up" style={{ ...S.homeTitleBlock, animationDelay: "60ms" }}>
+          <div className="font-display" style={S.homeTitle}>CASCADE</div>
+          <div className="text-overline" style={S.homeSubtitle}>ROGUELIKE SORT</div>
+        </div>
 
-      {/* Daily Challenge card */}
-      {hasPlayedOnce && (
+        {/* Primary CTA — Play */}
         <button
-          style={{
-            ...S.homeDailyCard,
-            border: todayDone ? `1.5px solid ${T.go}66` : `1.5px solid ${T.gold}66`,
-          }}
-          onClick={onDaily}
+          className="press fade-up"
+          style={{ ...S.homePlayBtn, animationDelay: "140ms" }}
+          onClick={onPlay}
         >
-          <div style={S.homeDailyHeader}>
-            <span style={S.homeDailyIcon}>🎯</span>
-            <span style={S.homeDailyLabel}>DAILY CHALLENGE</span>
-            {streak > 0 && (
-              <span style={S.homeStreak}>
-                <span style={{ fontSize: 14 }}>🔥</span>
-                <span style={S.homeStreakNum}>{streak}</span>
-              </span>
-            )}
-          </div>
-
-          {/* Week strip */}
-          <div style={S.homeWeekRow}>
-            {days.map((d) => (
-              <div key={d.key} style={S.homeDayCol}>
-                <div style={S.homeDayLabel}>{d.label}</div>
-                <div style={{
-                  ...S.homeDayDot,
-                  background: d.done ? T.go : "transparent",
-                  border: d.done ? `1.5px solid ${T.go}` : `1.5px solid ${T.line}`,
-                  transform: d.isToday ? "scale(1.15)" : "scale(1)",
-                  boxShadow: d.isToday ? `0 0 0 2px ${T.accent}33` : "none",
-                }} />
-              </div>
-            ))}
-          </div>
-
-          <div style={S.homeDailyCta}>
-            {todayDone ? "✓ Completed — Come back tomorrow" : "Tap to play today's puzzle"}
-          </div>
+          <span style={S.homePlayGlow} aria-hidden="true" />
+          <span style={S.homePlayInner}>
+            <span style={S.homePlayIcon}>▶</span>
+            <span className="font-display" style={S.homePlayText}>Play</span>
+          </span>
         </button>
-      )}
 
-      {/* Footer row — settings + achievements */}
-      <div style={S.homeFooterRow}>
-        <button style={S.homeIconBtn} onClick={onSettings} aria-label="Settings">
-          ⚙️
-        </button>
-        <div style={S.homeAchPill}>
-          🏆 {achievements.length}/{ACHIEVEMENTS.length}
+        {/* Daily Challenge card */}
+        {hasPlayedOnce && (
+          <button
+            className="press fade-up"
+            style={{
+              ...S.homeDailyCard,
+              animationDelay: "220ms",
+              borderColor: todayDone ? "rgba(34, 197, 138, 0.4)" : "rgba(255, 194, 75, 0.32)",
+            }}
+            onClick={onDaily}
+          >
+            <div style={S.homeDailyHeader}>
+              <span style={S.homeDailyIcon}>🎯</span>
+              <span className="text-overline" style={S.homeDailyLabel}>Daily Challenge</span>
+              {streak > 0 && (
+                <span style={S.homeStreak}>
+                  <span style={{ fontSize: 13, lineHeight: 1 }}>🔥</span>
+                  <span className="font-mono" style={S.homeStreakNum}>{streak}</span>
+                </span>
+              )}
+            </div>
+
+            <div style={S.homeWeekRow}>
+              {days.map((d) => (
+                <div key={d.key} style={S.homeDayCol}>
+                  <div style={S.homeDayLabel}>{d.label}</div>
+                  <div style={{
+                    ...S.homeDayDot,
+                    background: d.done ? D.go : "transparent",
+                    borderColor: d.done ? D.go : (d.isToday ? D.accent : D.textDim),
+                    boxShadow: d.isToday && !d.done ? `0 0 0 3px ${D.accentGlow}` : (d.done ? `0 0 8px ${D.goGlow}` : "none"),
+                    transform: d.isToday ? "scale(1.12)" : "scale(1)",
+                  }} />
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              ...S.homeDailyCta,
+              color: todayDone ? D.go : D.textSub,
+            }}>
+              {todayDone ? "✓ Completed — come back tomorrow" : "Tap to play today's puzzle"}
+            </div>
+          </button>
+        )}
+
+        {/* Footer — settings + achievements */}
+        <div className="fade-up" style={{ ...S.homeFooterRow, animationDelay: "300ms" }}>
+          <button
+            className="press glass-minimal"
+            style={S.homeIconBtn}
+            onClick={onSettings}
+            aria-label="Settings"
+          >⚙️</button>
+
+          <div className="glass-minimal" style={S.homeAchPill}>
+            <span style={{ fontSize: 14 }}>🏆</span>
+            <span className="font-mono" style={{ fontSize: 12, fontWeight: 900, color: D.text }}>
+              {achievements.length}
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: D.textDim }}>
+              / {ACHIEVEMENTS.length}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 const S = {
   root: { position: "fixed", inset: 0, background: `radial-gradient(120% 80% at 50% 30%, #121A31 0%, ${T.bg} 70%)`, color: T.ink, fontFamily: "'Nunito', system-ui, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden", userSelect: "none", WebkitTapHighlightColor: "transparent" },
@@ -1271,27 +1333,31 @@ const S = {
   comboFlame: { fontSize: 13 },
   comboText: { fontSize: 12, fontWeight: 900, color: T.gold, letterSpacing: "0.02em", fontVariantNumeric: "tabular-nums" },
   /* ─── HOME SCREEN ─── */
-  homeRoot: { position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 20, background: `radial-gradient(120% 80% at 50% 30%, #121A31 0%, ${T.bg} 70%)` },
-  homeTitleBlock: { textAlign: "center", marginBottom: 8 },
-  homeTitle: { fontWeight: 900, fontSize: 44, letterSpacing: "-0.04em", color: T.ink, lineHeight: 1 },
-  homeSubtitle: { fontSize: 11, fontWeight: 800, letterSpacing: "0.25em", color: T.muted, marginTop: 8 },
-  homePlayBtn: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, width: "100%", maxWidth: 320, background: T.accent, color: "#fff", border: "none", borderRadius: 999, padding: "18px 32px", fontFamily: "'Nunito', sans-serif", fontWeight: 900, fontSize: 22, cursor: "pointer", boxShadow: `0 12px 36px ${T.accent}66`, letterSpacing: "-0.01em" },
-  homePlayIcon: { fontSize: 20, lineHeight: 1 },
-  homePlayText: { lineHeight: 1 },
-  homeDailyCard: { width: "100%", maxWidth: 320, background: T.card, borderRadius: 20, padding: "16px 18px", cursor: "pointer", fontFamily: "'Nunito', sans-serif", textAlign: "left", color: T.ink, display: "flex", flexDirection: "column", gap: 12 },
-  homeDailyHeader: { display: "flex", alignItems: "center", gap: 8 },
-  homeDailyIcon: { fontSize: 18 },
-  homeDailyLabel: { fontSize: 11, fontWeight: 900, letterSpacing: "0.15em", color: T.gold, flex: 1 },
-  homeStreak: { display: "flex", alignItems: "center", gap: 4, background: `${T.gold}22`, border: `1px solid ${T.gold}66`, padding: "3px 8px", borderRadius: 999 },
-  homeStreakNum: { fontSize: 13, fontWeight: 900, color: T.gold, fontVariantNumeric: "tabular-nums" },
-  homeWeekRow: { display: "flex", justifyContent: "space-between", gap: 4 },
-  homeDayCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 },
-  homeDayLabel: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: "0.05em" },
-  homeDayDot: { width: 20, height: 20, borderRadius: "50%", transition: "all 200ms ease" },
-  homeDailyCta: { fontSize: 11, fontWeight: 700, color: T.muted, textAlign: "center", letterSpacing: "0.02em" },
-  homeFooterRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 8 },
-  homeIconBtn: { width: 44, height: 44, borderRadius: 14, background: T.tubeBg, border: `1px solid ${T.tubeEdge}`, color: T.muted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 },
-  homeAchPill: { display: "flex", alignItems: "center", gap: 6, background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 999, padding: "8px 14px", fontSize: 12, fontWeight: 900, color: T.muted },
+  homeRoot: { position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#05070F", overflow: "hidden" },
+  homeAmbient: { position: "absolute", inset: 0, background: "radial-gradient(80% 60% at 20% 15%, rgba(76, 141, 255, 0.10) 0%, transparent 55%), radial-gradient(70% 50% at 85% 75%, rgba(255, 194, 75, 0.06) 0%, transparent 55%), linear-gradient(180deg, #05070F 0%, #0A0F1F 100%)", pointerEvents: "none" },
+  homeContent: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: D.s24, padding: D.s24, width: "100%", maxWidth: 380 },
+  homeTitleBlock: { textAlign: "center", marginBottom: D.s8 },
+  homeTitle: { fontSize: 52, lineHeight: 1, color: D.text },
+  homeSubtitle: { color: D.textSub, marginTop: D.s12 },
+  homePlayBtn: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: 68, border: "none", borderRadius: D.rPill, background: D.accentGrad, color: "#fff", cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif", boxShadow: `${D.accentGlow}, inset 0 1px 0 rgba(255,255,255,0.2)`, overflow: "hidden" },
+  homePlayGlow: { position: "absolute", inset: 0, background: "radial-gradient(60% 100% at 50% 0%, rgba(255,255,255,0.25) 0%, transparent 60%)", pointerEvents: "none" },
+  homePlayInner: { position: "relative", display: "flex", alignItems: "center", gap: D.s12 },
+  homePlayIcon: { fontSize: 22, lineHeight: 1 },
+  homePlayText: { fontSize: 24, lineHeight: 1 },
+  homeDailyCard: { display: "flex", flexDirection: "column", gap: D.s16, width: "100%", background: D.glassStandard, backdropFilter: "blur(20px) saturate(140%)", WebkitBackdropFilter: "blur(20px) saturate(140%)", border: "1px solid rgba(255, 194, 75, 0.32)", borderRadius: D.rCard, padding: D.s16 + " " + D.s24, cursor: "pointer", fontFamily: "'Inter', sans-serif", textAlign: "left", color: D.text, boxShadow: D.shadowMd },
+  homeDailyHeader: { display: "flex", alignItems: "center", gap: D.s8 },
+  homeDailyIcon: { fontSize: 18, lineHeight: 1 },
+  homeDailyLabel: { flex: 1, color: D.gold },
+  homeStreak: { display: "flex", alignItems: "center", gap: D.s4, background: "rgba(255, 194, 75, 0.18)", border: "1px solid rgba(255, 194, 75, 0.4)", padding: "4px 10px", borderRadius: D.rPill },
+  homeStreakNum: { fontSize: 13, color: D.gold },
+  homeWeekRow: { display: "flex", justifyContent: "space-between", gap: D.s4, paddingTop: D.s4 },
+  homeDayCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: D.s8, flex: 1 },
+  homeDayLabel: { fontSize: 10, fontWeight: 800, color: D.textSub, letterSpacing: "0.08em", fontFamily: "'Inter', sans-serif" },
+  homeDayDot: { width: 22, height: 22, borderRadius: "50%", border: "1.5px solid transparent", transition: `all ${D.tQuick}` },
+  homeDailyCta: { fontSize: 12, fontWeight: 700, textAlign: "center", letterSpacing: "0.01em", fontFamily: "'Inter', sans-serif" },
+  homeFooterRow: { display: "flex", alignItems: "center", gap: D.s12, marginTop: D.s8 },
+  homeIconBtn: { width: 48, height: 48, borderRadius: D.rSm, border: `1px solid ${D.glassBorder}`, color: D.textSub, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontFamily: "'Inter', sans-serif" },
+  homeAchPill: { display: "flex", alignItems: "center", gap: D.s8, border: `1px solid ${D.glassBorder}`, borderRadius: D.rPill, padding: "12px 18px", fontFamily: "'Inter', sans-serif" },
   settingRow: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "14px 16px", cursor: "pointer", fontFamily: "'Nunito', sans-serif", color: T.ink },
   settingLabel: { fontWeight: 800, fontSize: 14 },
   togglePill: { fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: "#fff", padding: "4px 10px", borderRadius: 999 },
@@ -1322,8 +1388,19 @@ const CSS = `
 }
 .achSlide { animation: achSlideIn 400ms cubic-bezier(.16,1.1,.3,1); }
 
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap');
-html, body, #root { background: #0A0F1F; margin: 0; padding: 0; overflow: hidden; height: 100%; }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=Inter:wght@600;700;800;900&family=JetBrains+Mono:wght@700;800&family=Nunito:wght@600;800;900&display=swap');
+html, body, #root {
+  background: #0A0F1F;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 button { transition: transform 200ms cubic-bezier(.2,1.1,.3,1); }
 button:active:not(:disabled) { transform: scale(0.97); }
@@ -1350,4 +1427,79 @@ button:active:not(:disabled) { transform: scale(0.97); }
   100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
 }
 .cascade-particle { animation: cascadeParticle 600ms cubic-bezier(.2,.8,.3,1) forwards; }
+
+/* ═══════════ PREMIUM UTILITIES ═══════════ */
+.glass-premium {
+  background: rgba(20, 27, 50, 0.88);
+  backdrop-filter: blur(40px) saturate(140%);
+  -webkit-backdrop-filter: blur(40px) saturate(140%);
+}
+.glass-standard {
+  background: rgba(15, 21, 40, 0.72);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+.glass-minimal {
+  background: rgba(15, 21, 40, 0.55);
+}
+.press {
+  transition: transform 120ms cubic-bezier(0.2, 1.1, 0.3, 1);
+  will-change: transform;
+  transform: translateZ(0);
+}
+.press:active { transform: scale(0.965); }
+
+/* ═══════════ TYPE UTILITIES ═══════════ */
+.font-display {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+.font-heading {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.font-body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 700;
+}
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.text-overline {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.fade-in { animation: fadeIn 300ms ease both; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════ PREMIUM UTILITIES ═══════════ */
+.glass {
+  background: rgba(15, 21, 40, 0.72);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+.glass-elevated {
+  background: rgba(20, 27, 50, 0.85);
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+}
 `;
