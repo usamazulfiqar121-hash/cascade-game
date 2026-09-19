@@ -14,6 +14,18 @@ const T = {
 };
 
 const BEST_KEY = "cascade:best";
+const ACH_KEY = "cascade:achievements";
+
+const ACHIEVEMENTS = [
+  { id: "first_clear", name: "First Steps", desc: "Clear your first round", icon: "🌟" },
+  { id: "round_10", name: "Getting Good", desc: "Reach Round 10", icon: "🎯" },
+  { id: "round_25", name: "Halfway Hero", desc: "Reach Round 25", icon: "🏅" },
+  { id: "round_50", name: "Survivor", desc: "Reach Round 50", icon: "👑" },
+  { id: "legendary", name: "Legendary Find", desc: "Take a Legendary upgrade", icon: "✨" },
+  { id: "upgrades_10", name: "Collector", desc: "Hold 10 upgrades in one run", icon: "🎁" },
+  { id: "combo_10", name: "Chain Master", desc: "Hit a 10× combo", icon: "🔥" },
+  { id: "no_undo_5", name: "Purist", desc: "Clear 5 rounds without undo", icon: "🛡" },
+];
 
 const RARITY = {
   1: { name: "Common", color: "#8592BC" },
@@ -380,6 +392,8 @@ export default function Cascade() {
   const [particles, setParticles] = useState([]);
   const [bonusPops, setBonusPops] = useState([]);
   const [best, setBest] = useState(0);
+  const [achievements, setAchievements] = useState([]);
+  const [achToast, setAchToast] = useState(null);
   const [shareImage, setShareImage] = useState(null);
   const [shared, setShared] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -403,6 +417,10 @@ export default function Cascade() {
       /* Tutorial has its own key so it never shows twice — even if the player
          never loses (so best stays 0), and even across app reinstalls. */
       const t = localStorage.getItem("cascade:tutorialSeen");
+      try {
+        const a = localStorage.getItem(ACH_KEY);
+        if (a) setAchievements(JSON.parse(a));
+      } catch {}
       if (t === "1") setTutorialSeen(true);
       else {
         setTutorialSeen(false);
@@ -497,6 +515,12 @@ export default function Cascade() {
 
       if (isSolved(next)) {
         const remainingAtClear = newMovesLeft;
+        // Achievement triggers — cheap set-membership checks, safe here
+        unlockAch("first_clear");
+        if (round + 1 >= 10) unlockAch("round_10");
+        if (round + 1 >= 25) unlockAch("round_25");
+        if (round + 1 >= 50) unlockAch("round_50");
+        if (nextCombo >= 10) unlockAch("combo_10");
         setTimeout(() => {
           setLastRoundMovesLeft(remainingAtClear);
           setPendingUpgrades(pickRandomUpgrades(3));
@@ -525,7 +549,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles]);
+  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch]);
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
@@ -545,6 +569,20 @@ export default function Cascade() {
       }
     }
   }, [hintLeft, phase, tubes]);
+
+  const unlockAch = useCallback((id) => {
+    setAchievements((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
+      const meta = ACHIEVEMENTS.find((a) => a.id === id);
+      if (meta) {
+        setAchToast(meta);
+        setTimeout(() => setAchToast(null), 2600);
+      }
+      return next;
+    });
+  }, []);
 
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
@@ -569,6 +607,8 @@ export default function Cascade() {
     if (pendingUpgrades.length === 0) return;
     const newUpgrades = [...runUpgrades, upgrade.id];
     setRunUpgrades(newUpgrades);
+    if (upgrade.rarity === 4) unlockAch("legendary");
+    if (newUpgrades.length >= 10) unlockAch("upgrades_10");
     /* Reset the combo indicator here as well as in the level effect — the
        effect runs a tick later, and for that one frame the old combo badge
        would still be on screen while the new board was being built. */
@@ -631,6 +671,35 @@ export default function Cascade() {
     <div style={S.root}>
       <style>{CSS}</style>
       <Particles bursts={particles} />
+
+      {/* Achievement toast — slides down from top */}
+      {achToast && (
+        <div style={{
+          position: "fixed", top: 60, left: 0, right: 0,
+          display: "flex", justifyContent: "center",
+          pointerEvents: "none", zIndex: 200,
+        }} className="achSlide">
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12,
+            background: T.card,
+            border: `1.5px solid ${T.gold}66`,
+            borderRadius: 16,
+            padding: "12px 18px",
+            boxShadow: `0 12px 40px ${T.gold}44, 0 4px 12px rgba(0,0,0,0.4)`,
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: `${T.gold}22`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 22,
+            }}>{achToast.icon}</div>
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", color: T.gold, textTransform: "uppercase" }}>Achievement</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: T.ink }}>{achToast.name}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         onClick={useHint}
@@ -985,6 +1054,13 @@ const S = {
 };
 
 const CSS = `
+@keyframes achSlideIn {
+  0% { opacity: 0; transform: translateY(-30px); }
+  60% { transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.achSlide { animation: achSlideIn 400ms cubic-bezier(.16,1.1,.3,1); }
+
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap');
 html, body, #root { background: #0A0F1F; margin: 0; padding: 0; overflow: hidden; height: 100%; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
