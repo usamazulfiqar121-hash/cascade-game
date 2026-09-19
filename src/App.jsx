@@ -364,6 +364,8 @@ export default function Cascade() {
   const [best, setBest] = useState(0);
   const [shareImage, setShareImage] = useState(null);
   const [shared, setShared] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialSeen, setTutorialSeen] = useState(true); // default true = don't flash
   const runStartRound = useRef(1);
 
   const movesLeft = level.moveLimit + bonusMoves - moves;
@@ -373,6 +375,15 @@ export default function Cascade() {
     try {
       const v = localStorage.getItem(BEST_KEY);
       if (v) setBest(parseInt(v, 10) || 0);
+      /* Tutorial has its own key so it never shows twice — even if the player
+         never loses (so best stays 0), and even across app reinstalls. */
+      const t = localStorage.getItem("cascade:tutorialSeen");
+      if (t === "1") setTutorialSeen(true);
+      else {
+        setTutorialSeen(false);
+        const timer = setTimeout(() => setShowTutorial(true), 700);
+        return () => clearTimeout(timer);
+      }
     } catch {}
   }, []);
 
@@ -587,6 +598,61 @@ export default function Cascade() {
         )}
       </div>
 
+      {showTutorial && (
+        <div style={S.tutOverlay} className="tutIn">
+          <div style={S.tutCard}>
+            {/* Header */}
+            <div style={S.tutHeader}>
+              <div style={S.tutIconCircle}>
+                <span style={{ fontSize: 28 }}>🎯</span>
+              </div>
+              <div style={S.tutTitle}>How to Play</div>
+              <div style={S.tutSub}>Three simple rules</div>
+            </div>
+
+            {/* Steps */}
+            <div style={S.tutSteps}>
+              <div style={S.tutStep}>
+                <div style={S.tutNum}>1</div>
+                <div style={S.tutStepBody}>
+                  <div style={S.tutStepTitle}>Tap a tube</div>
+                  <div style={S.tutStepDesc}>Pick up the <b style={{ color: T.accent }}>top ball</b></div>
+                </div>
+              </div>
+
+              <div style={S.tutStep}>
+                <div style={S.tutNum}>2</div>
+                <div style={S.tutStepBody}>
+                  <div style={S.tutStepTitle}>Tap another</div>
+                  <div style={S.tutStepDesc}>Pour onto a <b style={{ color: T.go }}>matching color</b> or an <b style={{ color: T.go }}>empty tube</b></div>
+                </div>
+              </div>
+
+              <div style={S.tutStep}>
+                <div style={S.tutNum}>3</div>
+                <div style={S.tutStepBody}>
+                  <div style={S.tutStepTitle}>Sort them all</div>
+                  <div style={S.tutStepDesc}>Each tube one <b style={{ color: T.gold }}>single color</b></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div style={S.tutWarning}>
+              <span style={{ fontSize: 15 }}>⚠️</span>
+              <span>Each pour costs a move. You have a limited number.</span>
+            </div>
+
+            <button style={S.primary} onClick={() => {
+              setShowTutorial(false);
+              try { localStorage.setItem("cascade:tutorialSeen", "1"); } catch {}
+            }}>
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
       {phase === "upgrade" && (
         <div style={S.overlay}>
           <div style={{ ...S.ovCard, maxWidth: 360 }}>
@@ -646,6 +712,19 @@ const S = {
   hint: { fontSize: 13, fontWeight: 700, color: T.muted, textAlign: "center" },
   overlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.94)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)" },
   ovCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 24, padding: 24, textAlign: "center", maxWidth: 320, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" },
+  tutOverlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)", zIndex: 100 },
+  tutCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 28, padding: 28, maxWidth: 380, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" },
+  tutHeader: { textAlign: "center", marginBottom: 24 },
+  tutIconCircle: { width: 64, height: 64, borderRadius: 20, background: `${T.accent}22`, border: `2px solid ${T.accent}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" },
+  tutTitle: { fontWeight: 900, fontSize: 24, color: T.ink, letterSpacing: "-0.02em" },
+  tutSub: { fontSize: 13, fontWeight: 700, color: T.muted, marginTop: 4 },
+  tutSteps: { display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 },
+  tutStep: { display: "flex", alignItems: "flex-start", gap: 14 },
+  tutNum: { width: 32, height: 32, borderRadius: 10, background: T.accent, color: "#fff", fontWeight: 900, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  tutStepBody: { flex: 1, minWidth: 0, paddingTop: 2 },
+  tutStepTitle: { fontWeight: 900, fontSize: 15, color: T.ink },
+  tutStepDesc: { fontSize: 13, fontWeight: 600, color: T.muted, marginTop: 2, lineHeight: 1.45 },
+  tutWarning: { display: "flex", alignItems: "center", gap: 10, background: `${T.danger}15`, border: `1px solid ${T.danger}44`, borderRadius: 14, padding: "10px 14px", marginBottom: 20, fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.4 },
   ovTitle: { fontWeight: 900, fontSize: 28, letterSpacing: "-0.02em" },
   ovSub: { fontSize: 14, fontWeight: 600, color: T.muted, marginTop: 8, marginBottom: 24 },
   primary: { display: "block", width: "100%", background: T.accent, color: "#fff", border: "none", borderRadius: 999, padding: "14px 24px", fontFamily: "'Nunito', sans-serif", fontWeight: 900, fontSize: 15, cursor: "pointer", boxShadow: `0 8px 24px ${T.accent}55` },
@@ -658,6 +737,11 @@ html, body, #root { background: #0A0F1F; margin: 0; padding: 0; overflow: hidden
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 button { transition: transform 200ms cubic-bezier(.2,1.1,.3,1); }
 button:active:not(:disabled) { transform: scale(0.97); }
+@keyframes tutIn {
+  0% { opacity: 0; transform: scale(0.92) translateY(20px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.tutIn { animation: tutIn 340ms cubic-bezier(.16,1,.3,1); }
 @keyframes cascadeParticle {
   0% { transform: translate(0, 0) scale(1); opacity: 1; }
   100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
