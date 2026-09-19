@@ -10,25 +10,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - run: npm ci || npm install
       - run: npm run build
+
       - name: Add Android
         run: |
           npm install @capacitor/android
           npx cap add android || true
-          npx cap sync android
+
+      - name: Generate icon and splash
+        run: |
+          npm install -D @capacitor/assets
+          npx @capacitor/assets generate --android || true
+
+      - run: npx cap sync android
+
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '21'
+
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
+
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug
