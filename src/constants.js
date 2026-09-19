@@ -28,6 +28,12 @@ export const D = {
   accentGrad: "linear-gradient(135deg, #5A9BFF 0%, #3B7BF0 100%)",
   accentGlow: "0 12px 32px rgba(76, 141, 255, 0.4)",
   accentSoft: "rgba(76, 141, 255, 0.35)",
+  /* Daily mode — premium amber palette */
+  dailyGrad: "linear-gradient(135deg, #FFD86B 0%, #FFC24B 50%, #E8A02A 100%)",
+  dailyShimmer: "linear-gradient(120deg, #FFD86B 0%, #FFF2C4 25%, #FFC24B 50%, #FFF2C4 75%, #FFD86B 100%)",
+  dailyGlow: "0 12px 40px rgba(255, 194, 75, 0.45)",
+  dailySoft: "rgba(255, 194, 75, 0.35)",
+  dailyBorder: "rgba(255, 194, 75, 0.5)",
   gold: "#FFC24B",
   goldGlow: "0 12px 32px rgba(255, 194, 75, 0.35)",
   go: "#22C58A",

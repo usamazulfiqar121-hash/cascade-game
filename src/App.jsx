@@ -882,6 +882,66 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .fade-up { animation: fadeUp 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .fade-in { animation: fadeIn 300ms ease both; }
+
+/* ═══════════ DAILY PREMIUM ANIMATIONS ═══════════ */
+@property --daily-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes daily-rotate {
+  to { --daily-angle: 360deg; }
+}
+@keyframes flamePulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px rgba(255,194,75,0.5)); }
+  50% { transform: scale(1.1); filter: drop-shadow(0 0 10px rgba(255,194,75,0.9)); }
+}
+@keyframes dailyDotPulse {
+  0% { box-shadow: 0 0 0 0 rgba(255,194,75,0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(255,194,75,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,194,75,0); }
+}
+@keyframes shimmerSlide {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes dailyBadgeGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,194,75,0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(255,194,75,0.1); }
+}
+
+/* Daily utility classes — applied via className */
+.daily-border-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 21.5px;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--daily-angle),
+    rgba(255,194,75,0.7) 0deg,
+    rgba(255,194,75,0.08) 90deg,
+    rgba(255,194,75,0.7) 180deg,
+    rgba(255,194,75,0.08) 270deg,
+    rgba(255,194,75,0.7) 360deg
+  );
+  animation: daily-rotate 8s linear infinite;
+  box-shadow: 0 8px 32px rgba(255, 194, 75, 0.12);
+}
+.daily-shimmer {
+  background: linear-gradient(120deg, #FFD86B 0%, #FFF2C4 30%, #FFC24B 50%, #FFF2C4 70%, #FFD86B 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmerSlide 4s linear infinite;
+}
+.flamePulse {
+  display: inline-block;
+  animation: flamePulse 1.8s ease-in-out infinite;
+}
+.dailyDotPulse {
+  animation: dailyDotPulse 2s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

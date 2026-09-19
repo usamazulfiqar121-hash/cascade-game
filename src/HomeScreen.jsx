@@ -54,21 +54,22 @@ export default function HomeScreen({
 
         {/* Daily Challenge card */}
         {hasPlayedOnce && (
+          <div className="daily-border-wrap fade-up" style={{ animationDelay: "220ms" }}>
           <button
-            className="press fade-up"
+            className="press"
             style={{
               ...S.homeDailyCard,
-              animationDelay: "220ms",
-              borderColor: todayDone ? "rgba(34, 197, 138, 0.4)" : "rgba(255, 194, 75, 0.32)",
+              border: "none",
+              animationDelay: "0ms",
             }}
             onClick={onDaily}
           >
             <div style={S.homeDailyHeader}>
               <span style={S.homeDailyIcon}>🎯</span>
-              <span className="text-overline" style={S.homeDailyLabel}>Daily Challenge</span>
+              <span className="text-overline daily-shimmer" style={S.homeDailyLabel}>Daily Challenge</span>
               {streak > 0 && (
                 <span style={S.homeStreak}>
-                  <span style={{ fontSize: 13, lineHeight: 1 }}>🔥</span>
+                  <span className="flamePulse" style={{ fontSize: 13, lineHeight: 1 }}>🔥</span>
                   <span className="font-mono" style={S.homeStreakNum}>{streak}</span>
                 </span>
               )}
@@ -78,26 +79,27 @@ export default function HomeScreen({
               {days.map((d) => (
                 <div key={d.key} style={S.homeDayCol}>
                   <div style={S.homeDayLabel}>{d.label}</div>
-                  <div style={{
-                    ...S.homeDayDot,
-                    background: d.done ? D.go : "transparent",
-                    borderColor: d.done ? D.go : (d.isToday ? D.accent : D.textDim),
-                    boxShadow: d.isToday && !d.done
-                      ? `0 0 0 3px ${D.accentSoft}`
-                      : (d.done ? `0 0 8px ${D.goSoft}` : "none"),
-                    transform: d.isToday ? "scale(1.12)" : "scale(1)",
-                  }} />
+                  <div
+                    className={d.isToday && !d.done ? "dailyDotPulse" : ""}
+                    style={{
+                      ...S.homeDayDot,
+                      background: d.done ? D.go : "transparent",
+                      borderColor: d.done ? D.go : (d.isToday ? D.gold : D.textDim),
+                      boxShadow: d.done ? `0 0 8px ${D.goSoft}` : "none",
+                      transform: d.isToday ? "scale(1.15)" : "scale(1)",
+                    }} />
                 </div>
               ))}
             </div>
 
             <div style={{
               ...S.homeDailyCta,
-              color: todayDone ? D.go : D.textSub,
+              color: todayDone ? D.go : D.gold,
             }}>
               {todayDone ? "✓ Completed — come back tomorrow" : "Tap to play today's puzzle"}
             </div>
           </button>
+          </div>
         )}
 
         {/* Footer — settings + achievements */}
