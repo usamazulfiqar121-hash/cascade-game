@@ -401,8 +401,6 @@ export default function Cascade() {
     } catch {}
   }, []);
 
-  useEffect(() => { VIBE_ON = vibeOn; }, [vibeOn]);
-
   useEffect(() => {
     setTubes(level.tubes);
     setMoves(0);
