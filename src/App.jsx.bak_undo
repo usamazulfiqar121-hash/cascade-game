@@ -359,11 +359,6 @@ export default function Cascade() {
   const [selected, setSelected] = useState(null);
   const [phase, setPhase] = useState("playing");
   const [comboCount, setComboCount] = useState(0);
-  const [undoLeft, setUndoLeft] = useState(2);
-  /* Full snapshot of the board before each pour. Undo pops the latest one.
-     Only the tubes need saving — moves / bonus / combo all revert together
-     with the snapshot so the counter stays honest. */
-  const [snapshots, setSnapshots] = useState([]);
   const [shake, setShake] = useState(0);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
   /* Shown only on the game-over overlay. Distinct from lastRoundMovesLeft
@@ -414,8 +409,6 @@ export default function Cascade() {
     setBonusMoves(0);
     setSelected(null);
     setComboCount(0);
-    setUndoLeft(2);
-    setSnapshots([]);
     setPhase("playing");
   }, [level]);
 
@@ -445,8 +438,6 @@ export default function Cascade() {
     if (selected === idx) { setSelected(null); return; }
 
     if (canPour(tubes, selected, idx)) {
-      /* Snapshot BEFORE the pour lands, so undo has something to restore. */
-      setSnapshots((s) => [...s, { tubes: tubes.map((t) => [...t]), moves, bonusMoves, comboCount }]);
       const beforeLen = tubes[idx].length;
       const next = pour(tubes, selected, idx);
       const movedCount = next[idx].length - beforeLen;
@@ -519,22 +510,6 @@ export default function Cascade() {
     }
   }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles]);
 
-  const undo = useCallback(() => {
-    if (undoLeft <= 0) return;
-    if (snapshots.length === 0) return;
-    if (phase !== "playing") return;
-    const last = snapshots[snapshots.length - 1];
-    setSnapshots((s) => s.slice(0, -1));
-    setTubes(last.tubes);
-    setMoves(last.moves);
-    setBonusMoves(last.bonusMoves);
-    setComboCount(last.combo);
-    setSelected(null);
-    setUndoLeft((u) => u - 1);
-    Snd.select();
-    buzz(10);
-  }, [undoLeft, snapshots, phase]);
-
   const chooseUpgrade = useCallback((upgrade) => {
     /* Guard against a double-tap racing through two upgrade cards before
        the overlay unmounts. pendingUpgrades is cleared the instant the
@@ -604,34 +579,6 @@ export default function Cascade() {
     <div style={S.root}>
       <style>{CSS}</style>
       <Particles bursts={particles} />
-
-      {/* Undo — floats bottom-left, above the footer hint */}
-      <button
-        onClick={undo}
-        disabled={undoLeft <= 0 || snapshots.length === 0 || phase !== "playing"}
-        aria-label="Undo last pour"
-        style={{
-          position: "fixed",
-          left: 16,
-          bottom: 92,
-          width: 54, height: 54, borderRadius: 18,
-          background: T.card,
-          border: `1.5px solid ${undoLeft > 0 && snapshots.length > 0 ? T.accent + "66" : T.line}`,
-          color: undoLeft > 0 && snapshots.length > 0 ? T.accent : T.muted,
-          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-          cursor: undoLeft > 0 && snapshots.length > 0 ? "pointer" : "default",
-          boxShadow: undoLeft > 0 && snapshots.length > 0 ? `0 6px 20px ${T.accent}33` : "none",
-          opacity: undoLeft <= 0 || snapshots.length === 0 ? 0.4 : 1,
-          fontFamily: "'Nunito', sans-serif",
-          zIndex: 30,
-          transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
-        }}
-      >
-        <span style={{ fontSize: 20, lineHeight: 1 }}>↶</span>
-        <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.05em", marginTop: 2 }}>
-          {undoLeft}
-        </span>
-      </button>
       {/* Floating "+N" popups for bonus moves — centered, above the tubes */}
       <div style={{ position: "fixed", top: "42%", left: 0, right: 0, pointerEvents: "none", zIndex: 60, display: "flex", justifyContent: "center" }}>
         {bonusPops.map((b) => (
