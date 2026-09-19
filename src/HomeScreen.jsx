@@ -83,8 +83,8 @@ export default function HomeScreen({
                     background: d.done ? D.go : "transparent",
                     borderColor: d.done ? D.go : (d.isToday ? D.accent : D.textDim),
                     boxShadow: d.isToday && !d.done
-                      ? `0 0 0 3px ${D.accentGlow}`
-                      : (d.done ? `0 0 8px ${D.goGlow}` : "none"),
+                      ? `0 0 0 3px ${D.accentSoft}`
+                      : (d.done ? `0 0 8px ${D.goSoft}` : "none"),
                     transform: d.isToday ? "scale(1.12)" : "scale(1)",
                   }} />
                 </div>

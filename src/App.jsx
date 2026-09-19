@@ -152,7 +152,6 @@ export default function Cascade() {
   const [showAchievements, setShowAchievements] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [vibeOn, setVibeOn] = useState(true);
-  const runStartRound = useRef(1);
 
   const movesLeft = level.moveLimit + bonusMoves - moves;
 
@@ -780,6 +779,8 @@ export default function Cascade() {
 }
 
 const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=Inter:wght@600;700;800;900&family=JetBrains+Mono:wght@700;800&family=Nunito:wght@600;800;900&display=swap');
+
 @keyframes achSlideIn {
   0% { opacity: 0; transform: translateY(-30px); }
   60% { transform: translateY(6px); }
@@ -787,7 +788,6 @@ const CSS = `
 }
 .achSlide { animation: achSlideIn 400ms cubic-bezier(.16,1.1,.3,1); }
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=Inter:wght@600;700;800;900&family=JetBrains+Mono:wght@700;800&family=Nunito:wght@600;800;900&display=swap');
 html, body, #root {
   background: #0A0F1F;
   margin: 0;
