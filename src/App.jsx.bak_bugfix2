@@ -511,22 +511,14 @@ export default function Cascade() {
   }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles]);
 
   const chooseUpgrade = useCallback((upgrade) => {
-    /* Guard against a double-tap racing through two upgrade cards before
-       the overlay unmounts. pendingUpgrades is cleared the instant the
-       first pick lands, so the second tap can never fire. */
-    if (pendingUpgrades.length === 0) return;
     const newUpgrades = [...runUpgrades, upgrade.id];
     setRunUpgrades(newUpgrades);
-    /* Reset the combo indicator here as well as in the level effect — the
-       effect runs a tick later, and for that one frame the old combo badge
-       would still be on screen while the new board was being built. */
-    setComboCount(0);
-    setPendingUpgrades([]);
     const nextRound = round + 1;
     setRound(nextRound);
     setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft));
+    setPendingUpgrades([]);
     Snd.upgrade();
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades]);
+  }, [round, runUpgrades, lastRoundMovesLeft]);
 
   const retry = useCallback(() => {
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft));
@@ -766,7 +758,7 @@ export default function Cascade() {
         </div>
       )}
 
-      {phase === "upgrade" && pendingUpgrades.length > 0 && (
+      {phase === "upgrade" && (
         <div style={S.overlay}>
           <div style={{ ...S.ovCard, maxWidth: 360 }}>
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
