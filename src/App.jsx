@@ -402,6 +402,8 @@ function UpgradeCard({ upgrade, onPick }) {
 export default function Cascade() {
   const [round, setRound] = useState(1);
   const [isDaily, setIsDaily] = useState(false);
+  const [screen, setScreen] = useState("home");   // "home" | "game"
+  const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [dailyResults, setDailyResults] = useState({});
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
@@ -462,6 +464,9 @@ export default function Cascade() {
       try {
         const dr = localStorage.getItem("cascade:dailyResults");
         if (dr) setDailyResults(JSON.parse(dr));
+      try {
+        if (localStorage.getItem("cascade:hasPlayedOnce") === "1") setHasPlayedOnce(true);
+      } catch {}
       } catch {}
       if (t === "1") setTutorialSeen(true);
       else {
@@ -539,6 +544,10 @@ export default function Cascade() {
       setTubes(next);
       setSelected(null);
       Snd.pour(movedCount);
+      if (!hasPlayedOnce) {
+        setHasPlayedOnce(true);
+        try { localStorage.setItem("cascade:hasPlayedOnce", "1"); } catch {}
+      }
       buzz(8);
 
       // Particle burst at destination
@@ -621,7 +630,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults]);
+  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce]);
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
@@ -730,6 +739,33 @@ export default function Cascade() {
   return (
     <div style={S.root}>
       <style>{CSS}</style>
+
+      {/* HOME — visible when screen === "home" */}
+      {screen === "home" && (
+        <HomeScreen
+          onPlay={() => { restartRun(); setScreen("game"); }}
+          onDaily={() => {
+            setIsDaily(true);
+            setRound(1);
+            setRunUpgrades([]);
+            setLastRoundMovesLeft(0);
+            setShareImage(null);
+            setShared(false);
+            setLevel(generateLevel(1, [], 0, dateToSeed()));
+            setScreen("game");
+          }}
+          onSettings={() => setShowSettings(true)}
+          dailyResults={dailyResults}
+          computeStreak={computeStreak}
+          dailyKey={dailyKey}
+          hasPlayedOnce={hasPlayedOnce}
+          achievements={achievements}
+          ACHIEVEMENTS={ACHIEVEMENTS}
+        />
+      )}
+
+      {/* GAME — hidden when on home */}
+      {screen === "game" && (<>
       <Particles bursts={particles} />
 
       {/* Achievement toast — slides down from top */}
@@ -1132,6 +1168,100 @@ export default function Cascade() {
           </div>
         </div>
       )}
+      </>)}
+    </div>
+  );
+}
+
+/* ═══════════ HOME SCREEN ═══════════ */
+function HomeScreen({
+  onPlay, onDaily, onSettings, isDaily,
+  dailyResults, computeStreak, dailyKey,
+  hasPlayedOnce, achievements, ACHIEVEMENTS,
+}) {
+  const todayDone = !!dailyResults[dailyKey()];
+  const streak = computeStreak(dailyResults);
+
+  /* Week strip — last 7 days, oldest → newest */
+  const days = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const k = dailyKey(d);
+    days.push({
+      key: k,
+      label: ["S","M","T","W","T","F","S"][d.getDay()],
+      done: !!dailyResults[k],
+      isToday: i === 0,
+    });
+  }
+
+  return (
+    <div style={S.homeRoot}>
+      {/* Title block */}
+      <div style={S.homeTitleBlock}>
+        <div style={S.homeTitle}>CASCADE</div>
+        <div style={S.homeSubtitle}>ROGUELIKE SORT</div>
+      </div>
+
+      {/* Primary CTA — Play (endless) */}
+      <button style={S.homePlayBtn} onClick={onPlay}>
+        <span style={S.homePlayIcon}>▶</span>
+        <span style={S.homePlayText}>Play</span>
+      </button>
+
+      {/* Daily Challenge card */}
+      {hasPlayedOnce && (
+        <button
+          style={{
+            ...S.homeDailyCard,
+            border: todayDone ? `1.5px solid ${T.go}66` : `1.5px solid ${T.gold}66`,
+          }}
+          onClick={onDaily}
+        >
+          <div style={S.homeDailyHeader}>
+            <span style={S.homeDailyIcon}>🎯</span>
+            <span style={S.homeDailyLabel}>DAILY CHALLENGE</span>
+            {streak > 0 && (
+              <span style={S.homeStreak}>
+                <span style={{ fontSize: 14 }}>🔥</span>
+                <span style={S.homeStreakNum}>{streak}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Week strip */}
+          <div style={S.homeWeekRow}>
+            {days.map((d) => (
+              <div key={d.key} style={S.homeDayCol}>
+                <div style={S.homeDayLabel}>{d.label}</div>
+                <div style={{
+                  ...S.homeDayDot,
+                  background: d.done ? T.go : "transparent",
+                  border: d.done ? `1.5px solid ${T.go}` : `1.5px solid ${T.line}`,
+                  transform: d.isToday ? "scale(1.15)" : "scale(1)",
+                  boxShadow: d.isToday ? `0 0 0 2px ${T.accent}33` : "none",
+                }} />
+              </div>
+            ))}
+          </div>
+
+          <div style={S.homeDailyCta}>
+            {todayDone ? "✓ Completed — Come back tomorrow" : "Tap to play today's puzzle"}
+          </div>
+        </button>
+      )}
+
+      {/* Footer row — settings + achievements */}
+      <div style={S.homeFooterRow}>
+        <button style={S.homeIconBtn} onClick={onSettings} aria-label="Settings">
+          ⚙️
+        </button>
+        <div style={S.homeAchPill}>
+          🏆 {achievements.length}/{ACHIEVEMENTS.length}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1165,6 +1295,28 @@ const S = {
   comboBadge: { display: "flex", alignItems: "center", gap: 6, alignSelf: "center", background: `${T.gold}22`, border: `1px solid ${T.gold}66`, borderRadius: 999, padding: "5px 12px 5px 10px", marginBottom: 6 },
   comboFlame: { fontSize: 13 },
   comboText: { fontSize: 12, fontWeight: 900, color: T.gold, letterSpacing: "0.02em", fontVariantNumeric: "tabular-nums" },
+  /* ─── HOME SCREEN ─── */
+  homeRoot: { position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 20, background: `radial-gradient(120% 80% at 50% 30%, #121A31 0%, ${T.bg} 70%)` },
+  homeTitleBlock: { textAlign: "center", marginBottom: 8 },
+  homeTitle: { fontWeight: 900, fontSize: 44, letterSpacing: "-0.04em", color: T.ink, lineHeight: 1 },
+  homeSubtitle: { fontSize: 11, fontWeight: 800, letterSpacing: "0.25em", color: T.muted, marginTop: 8 },
+  homePlayBtn: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, width: "100%", maxWidth: 320, background: T.accent, color: "#fff", border: "none", borderRadius: 999, padding: "18px 32px", fontFamily: "'Nunito', sans-serif", fontWeight: 900, fontSize: 22, cursor: "pointer", boxShadow: `0 12px 36px ${T.accent}66`, letterSpacing: "-0.01em" },
+  homePlayIcon: { fontSize: 20, lineHeight: 1 },
+  homePlayText: { lineHeight: 1 },
+  homeDailyCard: { width: "100%", maxWidth: 320, background: T.card, borderRadius: 20, padding: "16px 18px", cursor: "pointer", fontFamily: "'Nunito', sans-serif", textAlign: "left", color: T.ink, display: "flex", flexDirection: "column", gap: 12 },
+  homeDailyHeader: { display: "flex", alignItems: "center", gap: 8 },
+  homeDailyIcon: { fontSize: 18 },
+  homeDailyLabel: { fontSize: 11, fontWeight: 900, letterSpacing: "0.15em", color: T.gold, flex: 1 },
+  homeStreak: { display: "flex", alignItems: "center", gap: 4, background: `${T.gold}22`, border: `1px solid ${T.gold}66`, padding: "3px 8px", borderRadius: 999 },
+  homeStreakNum: { fontSize: 13, fontWeight: 900, color: T.gold, fontVariantNumeric: "tabular-nums" },
+  homeWeekRow: { display: "flex", justifyContent: "space-between", gap: 4 },
+  homeDayCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 },
+  homeDayLabel: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: "0.05em" },
+  homeDayDot: { width: 20, height: 20, borderRadius: "50%", transition: "all 200ms ease" },
+  homeDailyCta: { fontSize: 11, fontWeight: 700, color: T.muted, textAlign: "center", letterSpacing: "0.02em" },
+  homeFooterRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 8 },
+  homeIconBtn: { width: 44, height: 44, borderRadius: 14, background: T.tubeBg, border: `1px solid ${T.tubeEdge}`, color: T.muted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 },
+  homeAchPill: { display: "flex", alignItems: "center", gap: 6, background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 999, padding: "8px 14px", fontSize: 12, fontWeight: 900, color: T.muted },
   settingRow: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "14px 16px", cursor: "pointer", fontFamily: "'Nunito', sans-serif", color: T.ink },
   settingLabel: { fontWeight: 800, fontSize: 14 },
   togglePill: { fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: "#fff", padding: "4px 10px", borderRadius: 999 },
