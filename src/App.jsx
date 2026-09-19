@@ -453,17 +453,20 @@ export default function Cascade() {
   }, [shake]);
 
   const unlockAch = useCallback((id) => {
+    const meta = ACHIEVEMENTS.find((a) => a.id === id);
     setAchievements((prev) => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
       try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
-      const meta = ACHIEVEMENTS.find((a) => a.id === id);
-      if (meta) {
-        setAchToast(meta);
-        setTimeout(() => setAchToast(null), 2600);
-      }
       return next;
     });
+    /* setAchToast called OUTSIDE the updater — keeps the updater pure,
+       which React 19 + StrictMode requires. Previously this side effect
+       inside the updater was blocking the round-clear setTimeout. */
+    if (meta) {
+      setAchToast(meta);
+      setTimeout(() => setAchToast(null), 2600);
+    }
   }, []);
 
   const spawnParticles = useCallback((x, y, color) => {
@@ -530,12 +533,8 @@ export default function Cascade() {
 
       if (isSolved(next)) {
         const remainingAtClear = newMovesLeft;
-        // Achievement triggers — cheap set-membership checks, safe here
-        unlockAch("first_clear");
-        if (round + 1 >= 10) unlockAch("round_10");
-        if (round + 1 >= 25) unlockAch("round_25");
-        if (round + 1 >= 50) unlockAch("round_50");
-        if (nextCombo >= 10) unlockAch("combo_10");
+        /* Schedule the round transition FIRST — an achievement hiccup
+           must never block the player from advancing to the upgrade. */
         setTimeout(() => {
           setLastRoundMovesLeft(remainingAtClear);
           setPendingUpgrades(pickRandomUpgrades(3));
@@ -543,6 +542,12 @@ export default function Cascade() {
           Snd.clear();
           buzz(30);
         }, 250);
+        /* Achievement triggers — fired after the transition is queued */
+        unlockAch("first_clear");
+        if (round + 1 >= 10) unlockAch("round_10");
+        if (round + 1 >= 25) unlockAch("round_25");
+        if (round + 1 >= 50) unlockAch("round_50");
+        if (newCombo >= 10) unlockAch("combo_10");
       } else if (newMovesLeft <= 0) {
         setTimeout(() => {
           // Save best if this is a new best
