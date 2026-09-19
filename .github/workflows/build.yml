@@ -1,10 +1,7 @@
-name: Build & Release Android
+name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
-  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -12,11 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  # ═══════════════════════════════════════════
-  # JOB 1: Debug APK (main branch, PRs)
-  # ═══════════════════════════════════════════
   build-debug:
-    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,7 +32,7 @@ jobs:
           npm install @capacitor/android @capacitor/assets
           npx cap add android || true
 
-      - name: Generate icons & splash
+      - name: Generate icons and splash
         run: |
           npx @capacitor/assets generate \
             --android \
@@ -56,7 +49,6 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '21'
-          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -73,95 +65,3 @@ jobs:
           name: cascade-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
-
-  # ═══════════════════════════════════════════
-  # JOB 2: Release APK (git tags — v1.0.0)
-  # ═══════════════════════════════════════════
-  build-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci || npm install
-
-      - name: Build web
-        run: npm run build
-
-      - name: Add Android platform
-        run: |
-          npm install @capacitor/android @capacitor/assets
-          npx cap add android || true
-
-      - name: Generate icons & splash
-        run: |
-          npx @capacitor/assets generate \
-            --android \
-            --iconBackgroundColor '#0A0F1F' \
-            --iconBackgroundColorDark '#0A0F1F' \
-            --splashBackgroundColor '#0A0F1F' \
-            --splashBackgroundColorDark '#0A0F1F'
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '21'
-          cache: 'gradle'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Decode Keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/cascade-release.keystore
-
-      - name: Build Release APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          cd android
-          chmod +x gradlew
-          if [ -f app/cascade-release.keystore ]; then
-            ./gradlew assembleRelease --no-daemon
-          else
-            echo "⚠️  Keystore missing — building unsigned release"
-            ./gradlew assembleRelease --no-daemon -x lint
-          fi
-
-      - name: Rename APK
-        run: |
-          mkdir -p release
-          cp android/app/build/outputs/apk/release/app-release*.apk \
-             release/Cascade-${{ github.ref_name }}.apk 2>/dev/null || \
-          cp android/app/build/outputs/apk/release/app-release-unsigned.apk \
-             release/Cascade-${{ github.ref_name }}-unsigned.apk
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/*.apk
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-
-      - name: Upload Release APK (artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: cascade-release-${{ github.ref_name }}
-          path: release/*.apk
-          retention-days: 90
