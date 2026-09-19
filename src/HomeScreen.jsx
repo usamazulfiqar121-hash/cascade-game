@@ -1,11 +1,13 @@
 /* ═══════════ HOME SCREEN ═══════════
-   Clean premium landing. Restraint-driven design.
-   v2: tightened glow, unified state colors, refined spacing. */
+   Clean premium landing.
+   v3: bottom navigation + custom StreakBadge. */
 
 import { D } from "./constants";
+import BottomNav from "./components/BottomNav";
+import StreakBadge from "./components/StreakBadge";
 
 export default function HomeScreen({
-  onPlay, onDaily, onSettings,
+  onPlay, onDaily, onSettings, onAwards,
   dailyResults, computeStreak, dailyKey,
   hasPlayedOnce, achievements, ACHIEVEMENTS,
 }) {
@@ -25,7 +27,7 @@ export default function HomeScreen({
     });
   }
 
-  /* Daily card unified color family */
+  /* Unified state color family */
   const dailyAccent = todayDone ? D.go : D.gold;
   const dailySoft = todayDone ? "rgba(34, 197, 138, 0.28)" : "rgba(255, 194, 75, 0.22)";
   const dailyBg = todayDone ? "rgba(34, 197, 138, 0.10)" : "rgba(255, 194, 75, 0.10)";
@@ -69,16 +71,7 @@ export default function HomeScreen({
                 {todayDone ? "✓  Daily Complete" : "🎯  Daily Challenge"}
               </span>
               {streak > 0 && (
-                <span style={{
-                  ...S.streakPill,
-                  background: dailyBg,
-                  borderColor: dailyBorderSoft,
-                }}>
-                  <span style={{ fontSize: 11, lineHeight: 1 }}>
-                    {todayDone ? "✓" : "🔥"}
-                  </span>
-                  <span style={{ ...S.streakNum, color: dailyAccent }}>{streak}</span>
-                </span>
+                <StreakBadge streak={streak} complete={todayDone} size="md" />
               )}
             </div>
 
@@ -122,25 +115,16 @@ export default function HomeScreen({
             </div>
           </button>
         )}
-
-        {/* Footer */}
-        <div className="fade-up" style={{ ...S.footerRow, animationDelay: "300ms" }}>
-          <button
-            className="press"
-            style={S.iconBtn}
-            onClick={onSettings}
-            aria-label="Settings"
-          >⚙️</button>
-
-          <div style={S.achPill}>
-            <span style={{ fontSize: 13, lineHeight: 1 }}>🏆</span>
-            <span style={S.achCount}>
-              {achievements.length}
-              <span style={S.achTotal}> / {ACHIEVEMENTS.length}</span>
-            </span>
-          </div>
-        </div>
       </div>
+
+      {/* Bottom navigation */}
+      <BottomNav
+        activeTab="home"
+        onTabChange={() => {}}
+        onPlay={onPlay}
+        onAwards={onAwards}
+        onSettings={onSettings}
+      />
     </div>
   );
 }
@@ -168,17 +152,12 @@ const S = {
     display: "flex", flexDirection: "column",
     alignItems: "center",
     gap: 18,
-    padding: "24px 24px 0",
+    padding: "24px 24px 140px",  /* extra bottom padding for nav */
     width: "100%",
     maxWidth: 360,
   },
 
-  /* Title */
-  titleBlock: {
-    textAlign: "center",
-    marginTop: 12,
-    marginBottom: 4,
-  },
+  titleBlock: { textAlign: "center", marginTop: 12, marginBottom: 4 },
   title: {
     fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
     fontSize: 48, fontWeight: 900, lineHeight: 1,
@@ -191,7 +170,6 @@ const S = {
     marginTop: 14,
   },
 
-  /* Play button — subtler glow */
   playBtn: {
     display: "flex", alignItems: "center", justifyContent: "center",
     gap: 12,
@@ -201,7 +179,7 @@ const S = {
     background: D.accentGrad,
     color: "#fff",
     cursor: "pointer",
-    boxShadow: `0 8px 20px rgba(76, 141, 255, 0.28), inset 0 1px 0 rgba(255,255,255,0.18)`,
+    boxShadow: "0 8px 20px rgba(76, 141, 255, 0.28), inset 0 1px 0 rgba(255,255,255,0.18)",
     appearance: "none", WebkitAppearance: "none",
     padding: 0, outline: "none",
     WebkitTapHighlightColor: "transparent",
@@ -217,7 +195,6 @@ const S = {
     letterSpacing: "-0.02em",
   },
 
-  /* Daily card — tighter gap */
   dailyCard: {
     display: "flex", flexDirection: "column",
     gap: 14,
@@ -250,19 +227,6 @@ const S = {
     textTransform: "uppercase",
     transition: `color ${D.tQuick}`,
   },
-  streakPill: {
-    display: "flex", alignItems: "center", gap: 5,
-    padding: "3px 9px",
-    borderRadius: 999,
-    border: "1px solid transparent",
-    transition: `all ${D.tQuick}`,
-  },
-  streakNum: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 11, fontWeight: 800,
-    fontVariantNumeric: "tabular-nums",
-    transition: `color ${D.tQuick}`,
-  },
 
   weekRow: {
     display: "flex", justifyContent: "space-between",
@@ -291,43 +255,5 @@ const S = {
     textAlign: "center",
     letterSpacing: "0.01em",
     transition: `color ${D.tQuick}`,
-  },
-
-  /* Footer */
-  footerRow: {
-    display: "flex", alignItems: "center",
-    gap: 12,
-    marginTop: 4,
-  },
-  iconBtn: {
-    width: 44, height: 44,
-    borderRadius: 12,
-    background: "rgba(15, 21, 40, 0.55)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
-    color: D.textSub,
-    cursor: "pointer",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 17,
-    appearance: "none", WebkitAppearance: "none",
-    outline: "none",
-    WebkitTapHighlightColor: "transparent",
-  },
-  achPill: {
-    display: "flex", alignItems: "center", gap: 8,
-    background: "rgba(15, 21, 40, 0.55)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
-    borderRadius: 999,
-    padding: "12px 16px",
-  },
-  achCount: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 12, fontWeight: 800,
-    color: D.text,
-    fontVariantNumeric: "tabular-nums",
-  },
-  achTotal: {
-    fontFamily: "'Inter', system-ui, sans-serif",
-    fontSize: 11, fontWeight: 600,
-    color: D.textDim,
   },
 };
