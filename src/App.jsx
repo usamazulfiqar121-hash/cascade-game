@@ -209,17 +209,16 @@ export default function Cascade() {
   }, [shake]);
 
   const unlockAch = useCallback((id) => {
-    /* Read from localStorage synchronously — source of truth.
-       If already unlocked, return EARLY so the toast never fires twice. */
-    let current = [];
-    try { current = JSON.parse(localStorage.getItem(ACH_KEY) || "[]"); } catch {}
-    if (current.includes(id)) return;
-
-    const next = [...current, id];
-    try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
-    setAchievements(next);
-
     const meta = ACHIEVEMENTS.find((a) => a.id === id);
+    setAchievements((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    /* setAchToast called OUTSIDE the updater — keeps the updater pure,
+       which React 19 + StrictMode requires. Previously this side effect
+       inside the updater was blocking the round-clear setTimeout. */
     if (meta) {
       setAchToast(meta);
       setTimeout(() => setAchToast(null), 2600);
@@ -300,13 +299,12 @@ export default function Cascade() {
            Guard: idempotent, StrictMode double-fire safe. */
         if (isDaily && round === 1) {
           const k = dailyKey();
-          let dailyCurrent = {};
-          try { dailyCurrent = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}"); } catch {}
-          if (!dailyCurrent[k]) {
-            const updated = { ...dailyCurrent, [k]: { completed: true, ts: Date.now() } };
+          setDailyResults((prev) => {
+            if (prev[k]) return prev;
+            const updated = { ...prev, [k]: { completed: true, ts: Date.now() } };
             try { localStorage.setItem("cascade:dailyResults", JSON.stringify(updated)); } catch {}
-            setDailyResults(updated);
-          }
+            return updated;
+          });
         }
         setTimeout(() => {
           setLastRoundMovesLeft(remainingAtClear);
@@ -403,14 +401,6 @@ export default function Cascade() {
     const seed = isDaily ? dateToSeed() : null;
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
   }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
-
-  /* Home navigation — resets run, returns to home screen.
-     Mid-game progress intentionally lost; matches casual game UX. */
-  const goHome = useCallback(() => {
-    restartRun();
-    setScreen("home");
-    setShowSettings(false);
-  }, [restartRun]);
 
   const restartRun = useCallback(() => {
     setRound(1);
@@ -593,13 +583,6 @@ export default function Cascade() {
               {Math.max(0, movesLeft)} <span style={S.movesSub}>moves left</span>
             </div>
           </div>
-          <button onClick={goHome} aria-label="Home" style={{
-            width: 34, height: 34, borderRadius: 12,
-            background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
-            color: T.muted, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, flexShrink: 0,
-          }}>🏠</button>
           <button onClick={() => setShowSettings(true)} aria-label="Settings" style={{
             width: 34, height: 34, borderRadius: 12,
             background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
@@ -703,10 +686,6 @@ export default function Cascade() {
             <button style={S.settingRow} onClick={() => { setShowSettings(false); setShowAchievements(true); }}>
               <span style={S.settingLabel}>🏆 Achievements</span>
               <span style={{ fontSize: 12, fontWeight: 900, color: T.gold }}>{achievements.length}/{ACHIEVEMENTS.length}</span>
-            </button>
-            <button style={{ ...S.settingRow }} onClick={goHome}>
-              <span style={S.settingLabel}>🏠 Home</span>
-              <span style={{ fontSize: 12, fontWeight: 900, color: T.muted }}>→</span>
             </button>
             <button style={{ ...S.primary, marginTop: 20 }} onClick={() => setShowSettings(false)}>
               Close
