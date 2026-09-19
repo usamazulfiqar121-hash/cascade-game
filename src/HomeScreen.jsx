@@ -1,7 +1,6 @@
 /* ═══════════ HOME SCREEN ═══════════
-   Clean premium landing — Play, Daily, Settings.
-   Design: deep navy glass, single accent per element.
-   No gimmicks. Restraint = premium. */
+   Clean premium landing. Restraint-driven design.
+   v2: tightened glow, unified state colors, refined spacing. */
 
 import { D } from "./constants";
 
@@ -25,6 +24,12 @@ export default function HomeScreen({
       isToday: i === 0,
     });
   }
+
+  /* Daily card unified color family */
+  const dailyAccent = todayDone ? D.go : D.gold;
+  const dailySoft = todayDone ? "rgba(34, 197, 138, 0.28)" : "rgba(255, 194, 75, 0.22)";
+  const dailyBg = todayDone ? "rgba(34, 197, 138, 0.10)" : "rgba(255, 194, 75, 0.10)";
+  const dailyBorderSoft = todayDone ? "rgba(34, 197, 138, 0.28)" : "rgba(255, 194, 75, 0.28)";
 
   return (
     <div style={S.homeRoot}>
@@ -54,24 +59,25 @@ export default function HomeScreen({
             style={{
               ...S.dailyCard,
               animationDelay: "220ms",
-              borderColor: todayDone
-                ? "rgba(34, 197, 138, 0.28)"
-                : "rgba(255, 194, 75, 0.22)",
+              borderColor: dailySoft,
             }}
             onClick={onDaily}
           >
             {/* Header row */}
             <div style={S.dailyHeader}>
-              <span style={{
-                ...S.dailyLabel,
-                color: todayDone ? D.go : D.gold,
-              }}>
+              <span style={{ ...S.dailyLabel, color: dailyAccent }}>
                 {todayDone ? "✓  Daily Complete" : "🎯  Daily Challenge"}
               </span>
               {streak > 0 && (
-                <span style={S.streakPill}>
-                  <span style={{ fontSize: 11, lineHeight: 1 }}>🔥</span>
-                  <span style={S.streakNum}>{streak}</span>
+                <span style={{
+                  ...S.streakPill,
+                  background: dailyBg,
+                  borderColor: dailyBorderSoft,
+                }}>
+                  <span style={{ fontSize: 11, lineHeight: 1 }}>
+                    {todayDone ? "✓" : "🔥"}
+                  </span>
+                  <span style={{ ...S.streakNum, color: dailyAccent }}>{streak}</span>
                 </span>
               )}
             </div>
@@ -81,11 +87,12 @@ export default function HomeScreen({
               {days.map((d) => {
                 const dotFilled = d.done;
                 const dotToday = d.isToday && !d.done;
+                const labelActive = d.isToday || d.done;
                 return (
                   <div key={d.key} style={S.dayCol}>
                     <div style={{
                       ...S.dayLabel,
-                      color: d.isToday ? D.text : "rgba(122, 133, 168, 0.6)",
+                      color: labelActive ? D.text : "rgba(122, 133, 168, 0.55)",
                     }}>{d.label}</div>
                     <div style={{
                       ...S.dayDot,
@@ -93,10 +100,10 @@ export default function HomeScreen({
                       borderColor: dotFilled
                         ? D.go
                         : dotToday
-                        ? "rgba(255, 194, 75, 0.7)"
+                        ? "rgba(255, 194, 75, 0.70)"
                         : "rgba(255, 255, 255, 0.10)",
                       boxShadow: dotFilled
-                        ? "0 0 10px rgba(34, 197, 138, 0.4)"
+                        ? "0 0 10px rgba(34, 197, 138, 0.35)"
                         : dotToday
                         ? "0 0 0 4px rgba(255, 194, 75, 0.10)"
                         : "none",
@@ -107,7 +114,10 @@ export default function HomeScreen({
             </div>
 
             {/* CTA */}
-            <div style={S.dailyCta}>
+            <div style={{
+              ...S.dailyCta,
+              color: todayDone ? D.go : D.textSub,
+            }}>
               {todayDone ? "Come back tomorrow" : "Tap to play today's puzzle"}
             </div>
           </button>
@@ -157,14 +167,18 @@ const S = {
     position: "relative",
     display: "flex", flexDirection: "column",
     alignItems: "center",
-    gap: 20,
-    padding: 24,
+    gap: 18,
+    padding: "24px 24px 0",
     width: "100%",
     maxWidth: 360,
   },
 
   /* Title */
-  titleBlock: { textAlign: "center", marginBottom: 4 },
+  titleBlock: {
+    textAlign: "center",
+    marginTop: 12,
+    marginBottom: 4,
+  },
   title: {
     fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
     fontSize: 48, fontWeight: 900, lineHeight: 1,
@@ -177,7 +191,7 @@ const S = {
     marginTop: 14,
   },
 
-  /* Play button */
+  /* Play button — subtler glow */
   playBtn: {
     display: "flex", alignItems: "center", justifyContent: "center",
     gap: 12,
@@ -187,7 +201,7 @@ const S = {
     background: D.accentGrad,
     color: "#fff",
     cursor: "pointer",
-    boxShadow: `0 10px 28px rgba(76, 141, 255, 0.38), inset 0 1px 0 rgba(255,255,255,0.18)`,
+    boxShadow: `0 8px 20px rgba(76, 141, 255, 0.28), inset 0 1px 0 rgba(255,255,255,0.18)`,
     appearance: "none", WebkitAppearance: "none",
     padding: 0, outline: "none",
     WebkitTapHighlightColor: "transparent",
@@ -203,17 +217,17 @@ const S = {
     letterSpacing: "-0.02em",
   },
 
-  /* Daily card */
+  /* Daily card — tighter gap */
   dailyCard: {
     display: "flex", flexDirection: "column",
-    gap: 18,
+    gap: 14,
     width: "100%",
     background: "rgba(15, 21, 40, 0.62)",
     backdropFilter: "blur(20px) saturate(160%)",
     WebkitBackdropFilter: "blur(20px) saturate(160%)",
     border: "1px solid rgba(255, 194, 75, 0.22)",
     borderRadius: 18,
-    padding: "18px 20px 20px",
+    padding: "18px 20px 18px",
     cursor: "pointer",
     fontFamily: "'Inter', system-ui, sans-serif",
     textAlign: "left",
@@ -234,19 +248,20 @@ const S = {
     fontSize: 11, fontWeight: 900,
     letterSpacing: "0.14em",
     textTransform: "uppercase",
+    transition: `color ${D.tQuick}`,
   },
   streakPill: {
     display: "flex", alignItems: "center", gap: 5,
-    background: "rgba(255, 194, 75, 0.10)",
-    border: "1px solid rgba(255, 194, 75, 0.28)",
     padding: "3px 9px",
     borderRadius: 999,
+    border: "1px solid transparent",
+    transition: `all ${D.tQuick}`,
   },
   streakNum: {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 11, fontWeight: 800,
-    color: D.gold,
     fontVariantNumeric: "tabular-nums",
+    transition: `color ${D.tQuick}`,
   },
 
   weekRow: {
@@ -273,9 +288,9 @@ const S = {
   dailyCta: {
     fontFamily: "'Inter', system-ui, sans-serif",
     fontSize: 11.5, fontWeight: 700,
-    color: D.textSub,
     textAlign: "center",
     letterSpacing: "0.01em",
+    transition: `color ${D.tQuick}`,
   },
 
   /* Footer */
