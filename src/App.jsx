@@ -1,315 +1,40 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, DAILY_KEY, PLAYED_KEY, ACHIEVEMENTS, RARITY, UPGRADES } from "./constants";
+import {
+  sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
+  pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
+  shuffle, mulberry32, dailyKey, dateToSeed, computeStreak,
+  applyAutoSort, generateLevel,
+} from "./gameLogic";
+import { S } from "./theme";
+import { Snd, buzz, setVibe } from "./sound";
+import Particles from "./Particles";
+import Tube from "./Tube";
+import UpgradeCard from "./UpgradeCard";
+import HomeScreen from "./HomeScreen";
 
-const MAX_HEIGHT = 4;
-const COLORS = [
-  "#FF4D6A", "#2F7BF6", "#0E9F6E", "#FFC24B",
-  "#8B5CF6", "#F2761B", "#22C5C5", "#FF85C8",
-];
 
-const T = {
-  bg: "#0A0F1F", card: "#141B32", ink: "#EAF0FF", muted: "#7A85A8",
-  accent: "#4C8DFF", danger: "#FF5C7A", go: "#22C58A", gold: "#FFC24B",
-  line: "#222E4C", edge: "rgba(140,170,255,0.10)",
-  tubeBg: "rgba(255,255,255,0.04)", tubeEdge: "rgba(255,255,255,0.10)",
-};
 
-/* ═══════════ DESIGN TOKENS (D) ═══════════
-   Premium design system. All new UI references D. */
-const D = {
-  bg0: "#05070F", bg1: "#0A0F1F", bg2: "#121A31",
-  glass: "rgba(15, 21, 40, 0.72)",
-  glassElevated: "rgba(20, 27, 50, 0.85)",
-  glassModal: "rgba(10, 15, 31, 0.94)",
-  glassBorder: "rgba(255, 255, 255, 0.08)",
-  glassBorderStrong: "rgba(255, 255, 255, 0.14)",
-  accent: "#4C8DFF",
-  accentGlow: "rgba(76, 141, 255, 0.35)",
-  accentGrad: "linear-gradient(135deg, #5A9BFF 0%, #3B7BF0 100%)",
-  gold: "#FFC24B",
-  goldGlow: "rgba(255, 194, 75, 0.35)",
-  go: "#22C58A",
-  goGlow: "rgba(34, 197, 138, 0.35)",
-  danger: "#FF5C7A",
-  text: "#EAF0FF",
-  textSub: "#7A85A8",
-  textDim: "#4A5578",
-  s4: 4, s8: 8, s12: 12, s16: 16, s24: 24, s32: 32, s48: 48,
-  rPill: 999, rCard: 20, rModal: 28, rSm: 12,
-  shadowSm: "0 4px 12px rgba(0, 0, 0, 0.35)",
-  shadowMd: "0 8px 24px rgba(0, 0, 0, 0.45)",
-  shadowLg: "0 20px 48px rgba(0, 0, 0, 0.55)",
-  shadowAccent: "0 12px 32px rgba(76, 141, 255, 0.4)",
-  shadowGold: "0 12px 32px rgba(255, 194, 75, 0.35)",
-  tPress: "120ms cubic-bezier(0.2, 1.1, 0.3, 1)",
-  tQuick: "200ms cubic-bezier(0.16, 1, 0.3, 1)",
-  tScreen: "300ms cubic-bezier(0.16, 1, 0.3, 1)",
-  tModal: "400ms cubic-bezier(0.16, 1, 0.3, 1)",
-  tSpring: "500ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-};
 
-const BEST_KEY = "cascade:best";
-const ACH_KEY = "cascade:achievements";
 
-const ACHIEVEMENTS = [
-  { id: "first_clear", name: "First Steps", desc: "Clear your first round", icon: "🌟" },
-  { id: "round_10", name: "Getting Good", desc: "Reach Round 10", icon: "🎯" },
-  { id: "round_25", name: "Halfway Hero", desc: "Reach Round 25", icon: "🏅" },
-  { id: "round_50", name: "Survivor", desc: "Reach Round 50", icon: "👑" },
-  { id: "legendary", name: "Legendary Find", desc: "Take a Legendary upgrade", icon: "✨" },
-  { id: "upgrades_10", name: "Collector", desc: "Hold 10 upgrades in one run", icon: "🎁" },
-  { id: "combo_10", name: "Chain Master", desc: "Hit a 10× combo", icon: "🔥" },
-  { id: "no_undo_5", name: "Purist", desc: "Clear 5 rounds without undo", icon: "🛡" },
-];
 
-const RARITY = {
-  1: { name: "Common", color: "#8592BC" },
-  2: { name: "Uncommon", color: "#22C58A" },
-  3: { name: "Rare", color: "#4C8DFF" },
-  4: { name: "Legendary", color: "#FFC24B" },
-};
 
-const UPGRADES = [
-  { id: "m2", name: "+2 Moves", desc: "+2 moves every round", icon: "🏃", rarity: 1, value: 2 },
-  { id: "m3", name: "+3 Moves", desc: "+3 moves every round", icon: "⚡", rarity: 1, value: 3 },
-  { id: "m5", name: "+5 Moves", desc: "+5 moves every round", icon: "🔥", rarity: 2, value: 5 },
-  { id: "m8", name: "+8 Moves", desc: "+8 moves every round", icon: "💎", rarity: 3, value: 8 },
-  { id: "start", name: "Head Start", desc: "+10 moves every round", icon: "🚀", rarity: 4, value: 10 },
-  { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1 },
-  { id: "lucky2", name: "Super Lucky", desc: "35% chance per pour: +1 move", icon: "🌟", rarity: 3 },
-  { id: "combo3", name: "Combo Master", desc: "Every 3rd pour gives +1 move", icon: "🎯", rarity: 2 },
-  { id: "combo2", name: "Combo Legend", desc: "Every 2nd pour gives +1 move", icon: "🎪", rarity: 3 },
-  { id: "mega", name: "Mega Bonus", desc: "Every 5th pour gives +2 moves", icon: "🎊", rarity: 2 },
-  { id: "clear", name: "Perfect Clear", desc: "Finish with 5+ moves left: +3 next round", icon: "✨", rarity: 2 },
-  { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently", icon: "🔧", rarity: 3 },
-  { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round", icon: "🎁", rarity: 4 },
-];
 
-function sumMoveBonus(ups) { return ups.reduce((s, id) => s + (UPGRADES.find((u) => u.id === id)?.value || 0), 0); }
-function getLuckyChance(ups) { return Math.min(0.7, ups.reduce((s, id) => s + (id === "lucky" ? 0.2 : id === "lucky2" ? 0.35 : 0), 0)); }
-function getComboEvery(ups) { if (ups.includes("combo2")) return 2; if (ups.includes("combo3")) return 3; return 0; }
-function getMegaEvery(ups) { return ups.includes("mega") ? 5 : 0; }
 
-function pickRandomUpgrades(count) {
-  const weighted = [];
-  UPGRADES.forEach((u) => {
-    const weight = Math.max(1, 6 - u.rarity * 1.5) | 0;
-    for (let i = 0; i < weight; i++) weighted.push(u);
-  });
-  const picked = [];
-  const used = new Set();
-  let guard = 0;
-  while (picked.length < count && guard < 200) {
-    const u = weighted[(Math.random() * weighted.length) | 0];
-    if (used.has(u.id)) { guard++; continue; }
-    used.add(u.id);
-    picked.push(u);
-  }
-  return picked;
-}
 
-function isTubeSolved(tube) {
-  return tube.length === MAX_HEIGHT && tube.every((c) => c === tube[0]);
-}
 
-function canPour(tubes, fromIdx, toIdx) {
-  if (fromIdx === toIdx) return false;
-  const from = tubes[fromIdx], to = tubes[toIdx];
-  if (from.length === 0 || to.length >= MAX_HEIGHT) return false;
-  if (to.length === 0) return true;
-  return to[to.length - 1] === from[from.length - 1];
-}
-
-function pour(tubes, fromIdx, toIdx) {
-  if (!canPour(tubes, fromIdx, toIdx)) return null;
-  const next = tubes.map((t) => [...t]);
-  const from = next[fromIdx], to = next[toIdx];
-  const color = from[from.length - 1];
-  const moving = [];
-  while (from.length > 0 && from[from.length - 1] === color) moving.push(from.pop());
-  const space = MAX_HEIGHT - to.length;
-  const fits = moving.slice(0, space);
-  to.push(...fits);
-  if (fits.length < moving.length) from.push(...moving.slice(fits.length));
-  return next;
-}
-
-function isSolved(tubes) {
-  return tubes.every((t) => t.length === 0 || (t.length === MAX_HEIGHT && t.every((c) => c === t[0])));
-}
-
-function shuffle(a, rng = Math.random) {
-  const arr = [...a];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = (rng() * (i + 1)) | 0;
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
 
 /* ═══════════ DAILY CHALLENGE — SEEDED RNG (UTC) ═══════════ */
-function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /* UTC date key — same board for players worldwide.
    Local time use karne se timezone mismatch hota hai. */
-function dailyKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);  // YYYY-MM-DD
-}
 
-function dateToSeed(date = new Date()) {
-  return parseInt(dailyKey(date).replace(/-/g, ""), 10);
-}
 
-function computeStreak(results) {
-  let streak = 0;
-  const today = new Date();
-  const todayDone = !!results[dailyKey(today)];
-  const start = todayDone ? 0 : 1;
-  for (let i = start; i < 365; i++) {
-    const d = new Date(today);
-    d.setUTCDate(d.getUTCDate() - i);
-    if (results[dailyKey(d)]) streak++;
-    else break;
-  }
-  return streak;
-}
 
-function applyAutoSort(tubes, count) {
-  if (count <= 0) return tubes;
-  const result = tubes.map((t) => [...t]);
-  for (let k = 0; k < count; k++) {
-    const emptyIdx = result.findIndex((t) => t.length === 0);
-    if (emptyIdx === -1) break;
-    const colors = new Set();
-    result.forEach((t) => t.forEach((c) => colors.add(c)));
-    const colorArr = [...colors];
-    if (!colorArr.length) break;
-    let sorted = false;
-    for (const color of shuffle(colorArr)) {
-      let total = 0;
-      result.forEach((t) => t.forEach((c) => { if (c === color) total++; }));
-      if (total !== MAX_HEIGHT) continue;
-      const alreadySorted = result.some((t) => t.length === MAX_HEIGHT && t.every((c) => c === color));
-      if (alreadySorted) continue;
-      for (let i = 0; i < result.length; i++) result[i] = result[i].filter((c) => c !== color);
-      result[emptyIdx] = Array(MAX_HEIGHT).fill(color);
-      sorted = true;
-      break;
-    }
-    if (!sorted) break;
-  }
-  return result;
-}
 
-function generateLevel(round, runUpgrades, prevMovesLeft, seed = null) {
-  const rng = seed !== null ? mulberry32(seed) : Math.random;
-  const colorCount = Math.min(2 + Math.floor((round - 1) / 2), 7);
-  const balls = [];
-  for (let c = 0; c < colorCount; c++) for (let i = 0; i < MAX_HEIGHT; i++) balls.push(c);
 
-  let tubes = [];
-  let attempts = 0;
-  do {
-    const sh = shuffle(balls, rng);
-    tubes = [];
-    for (let i = 0; i < colorCount; i++) tubes.push(sh.slice(i * MAX_HEIGHT, (i + 1) * MAX_HEIGHT));
-    for (let i = 0; i < 2; i++) tubes.push([]);
-    attempts++;
-  } while (attempts < 8 && tubes.some((t) => t.length === MAX_HEIGHT && t.every((c) => c === t[0])));
 
-  const extraTubes = runUpgrades.filter((id) => id === "tube").length;
-  for (let i = 0; i < extraTubes; i++) tubes.push([]);
-  const autoSortCount = runUpgrades.filter((id) => id === "auto").length;
-  tubes = applyAutoSort(tubes, autoSortCount);
 
-  const baseLimit = Math.round(colorCount * 3 + round * 0.8) + 4;
-  const moveBonus = sumMoveBonus(runUpgrades);
-  const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
-  const moveLimit = baseLimit + moveBonus + perfectClearBonus;
-
-  return { tubes, moveLimit, colorCount };
-}
-
-let VIBE_ON = true;
-const buzz = (ms) => { if (!VIBE_ON) return; try { navigator?.vibrate?.(ms); } catch {} };
-
-const Snd = (() => {
-  let ctx = null, sfxBus = null, sfxOn = true;
-  function ensure() {
-    if (ctx) { if (ctx.state === "suspended") ctx.resume().catch(() => {}); return ctx; }
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      ctx = new AC();
-      const m = ctx.createGain();
-      m.gain.value = 0.5;
-      m.connect(ctx.destination);
-      sfxBus = ctx.createGain();
-      sfxBus.gain.value = 0.6;
-      sfxBus.connect(m);
-    } catch { ctx = null; }
-    return ctx;
-  }
-  function tone(freq, { type = "sine", dur = 0.15, peak = 0.25, glide = 0, delay = 0 } = {}) {
-    const c = ensure();
-    if (!c) return;
-    const t = c.currentTime + delay;
-    const o = c.createOscillator();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t);
-    if (glide) o.frequency.exponentialRampToValueAtTime(Math.max(freq * glide, 20), t + dur * 0.8);
-    const g = c.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g);
-    g.connect(sfxBus);
-    o.start(t);
-    o.stop(t + dur + 0.05);
-  }
-  return {
-    unlock: ensure,
-    pour: (n = 1) => { if (sfxOn) tone(400 + n * 80, { type: "sine", dur: 0.12, peak: 0.2, glide: 1.3 }); },
-    select: () => { if (sfxOn) tone(600, { type: "sine", dur: 0.06, peak: 0.12 }); },
-    bonus: () => { if (sfxOn) { tone(880, { type: "sine", dur: 0.1, peak: 0.15 }); tone(1174, { type: "sine", dur: 0.1, peak: 0.12, delay: 0.06 }); } },
-    clear: () => { if (!sfxOn) return; [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.35, peak: 0.18, delay: i * 0.07 })); },
-    upgrade: () => { if (!sfxOn) return; [523.25, 783.99, 1046.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.4, peak: 0.18, delay: i * 0.08 })); },
-    fail: () => { if (!sfxOn) return; [392, 311.13, 261.63].forEach((f, i) => tone(f, { type: "triangle", dur: 0.35, peak: 0.2, delay: i * 0.11 })); },
-    setSfx: (v) => { sfxOn = v; },
-  };
-})();
-
-/* ═══════════  PARTICLES  ═══════════ */
-
-function Particles({ bursts }) {
-  return (
-    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 50 }}>
-      {bursts.map((b) => (
-        <div key={b.id} style={{ position: "absolute", left: b.x, top: b.y }}>
-          {Array.from({ length: 6 }).map((_, i) => {
-            const angle = (i / 6) * Math.PI * 2 + b.seed;
-            return (
-              <div key={i} className="cascade-particle" style={{
-                position: "absolute",
-                width: 8, height: 8, borderRadius: "50%",
-                background: b.color,
-                boxShadow: `0 0 8px ${b.color}`,
-                "--tx": `${Math.cos(angle) * 40}px`,
-                "--ty": `${Math.sin(angle) * 40}px`,
-              }} />
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ═══════════  SHARE CARD  ═══════════ */
 
@@ -380,56 +105,6 @@ function buildShareCard({ round, upgrades, best }) {
 }
 
 /* ═══════════  COMPONENTS  ═══════════ */
-
-function Tube({ balls, selected, onClick, disabled, hintFrom, hintTo, solved }) {
-  return (
-    <button onClick={onClick} disabled={disabled} style={{
-      width: 62, height: MAX_HEIGHT * 48 + 20,
-      background: T.tubeBg, border: `2px solid ${selected ? T.accent : solved ? T.go + "88" : hintFrom ? T.go : hintTo ? T.go + "aa" : T.tubeEdge}`,
-      borderRadius: 32, padding: "8px 6px 6px",
-      display: "flex", flexDirection: "column-reverse", justifyContent: "flex-start",
-      alignItems: "center", cursor: disabled ? "default" : "pointer",
-      transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
-      transform: selected ? "translateY(-8px)" : "translateY(0)",
-      boxShadow: selected ? `0 12px 30px ${T.accent}44` : solved ? `0 0 0 2px ${T.go}44, 0 4px 16px ${T.go}33` : (hintFrom || hintTo) ? `0 0 0 3px ${T.go}33` : "none",
-      opacity: disabled ? 0.4 : 1,
-    }}>
-      {balls.map((colorIdx, i) => (
-        <div key={i} style={{
-          width: "88%", height: 38, borderRadius: 19,
-          background: COLORS[colorIdx],
-          boxShadow: "inset 0 -5px 10px rgba(0,0,0,0.25), inset 0 3px 6px rgba(255,255,255,0.2)",
-          marginTop: i > 0 ? 3 : 0,
-        }} />
-      ))}
-    </button>
-  );
-}
-
-function UpgradeCard({ upgrade, onPick }) {
-  const r = RARITY[upgrade.rarity];
-  return (
-    <button onClick={onPick} style={{
-      width: "100%", background: T.card, border: `2px solid ${r.color}66`,
-      borderRadius: 16, padding: "16px 14px", display: "flex", alignItems: "center",
-      gap: 14, cursor: "pointer", textAlign: "left",
-      fontFamily: "'Nunito', sans-serif", color: T.ink,
-      transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
-      boxShadow: `0 4px 16px rgba(0,0,0,0.3)`,
-    }}>
-      <div style={{
-        width: 52, height: 52, borderRadius: 14, flexShrink: 0,
-        background: `${r.color}22`, border: `2px solid ${r.color}55`,
-        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
-      }}>{upgrade.icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 900, fontSize: 16 }}>{upgrade.name}</div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: T.muted, marginTop: 2, lineHeight: 1.4 }}>{upgrade.desc}</div>
-        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: r.color, marginTop: 4, textTransform: "uppercase" }}>{r.name}</div>
-      </div>
-    </button>
-  );
-}
 
 /* ═══════════  MAIN  ═══════════ */
 
@@ -511,7 +186,7 @@ export default function Cascade() {
     } catch {}
   }, []);
 
-  useEffect(() => { VIBE_ON = vibeOn; }, [vibeOn]);
+  useEffect(() => { setVibe(vibeOn); }, [vibeOn]);
 
   useEffect(() => {
     setTubes(level.tubes);
@@ -985,7 +660,7 @@ export default function Cascade() {
               <button style={S.settingRow} onClick={() => {
                 const next = !vibeOn;
                 setVibeOn(next);
-                VIBE_ON = next;
+                setVibe(next);
                 try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
               }}>
                 <span style={S.settingLabel}>📳 Vibration</span>
@@ -1181,204 +856,6 @@ export default function Cascade() {
     </div>
   );
 }
-
-/* ═══════════ HOME SCREEN ═══════════ */
-function HomeScreen({
-  onPlay, onDaily, onSettings,
-  dailyResults, computeStreak, dailyKey,
-  hasPlayedOnce, achievements, ACHIEVEMENTS,
-}) {
-  const todayDone = !!dailyResults[dailyKey()];
-  const streak = computeStreak(dailyResults);
-
-  /* Week strip — last 7 days, oldest → newest */
-  const days = [];
-  const today = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const k = dailyKey(d);
-    days.push({
-      key: k,
-      label: ["S","M","T","W","T","F","S"][d.getDay()],
-      done: !!dailyResults[k],
-      isToday: i === 0,
-    });
-  }
-
-  return (
-    <div style={S.homeRoot}>
-      {/* Ambient background — static radial gradients (GPU-safe) */}
-      <div aria-hidden="true" style={S.homeAmbient} />
-
-      {/* Content */}
-      <div style={S.homeContent}>
-        {/* Title block */}
-        <div className="fade-up" style={{ ...S.homeTitleBlock, animationDelay: "60ms" }}>
-          <div className="font-display" style={S.homeTitle}>CASCADE</div>
-          <div className="text-overline" style={S.homeSubtitle}>ROGUELIKE SORT</div>
-        </div>
-
-        {/* Primary CTA — Play */}
-        <button
-          className="press fade-up"
-          style={{ ...S.homePlayBtn, animationDelay: "140ms" }}
-          onClick={onPlay}
-        >
-          <span style={S.homePlayGlow} aria-hidden="true" />
-          <span style={S.homePlayInner}>
-            <span style={S.homePlayIcon}>▶</span>
-            <span className="font-display" style={S.homePlayText}>Play</span>
-          </span>
-        </button>
-
-        {/* Daily Challenge card */}
-        {hasPlayedOnce && (
-          <button
-            className="press fade-up"
-            style={{
-              ...S.homeDailyCard,
-              animationDelay: "220ms",
-              borderColor: todayDone ? "rgba(34, 197, 138, 0.4)" : "rgba(255, 194, 75, 0.32)",
-            }}
-            onClick={onDaily}
-          >
-            <div style={S.homeDailyHeader}>
-              <span style={S.homeDailyIcon}>🎯</span>
-              <span className="text-overline" style={S.homeDailyLabel}>Daily Challenge</span>
-              {streak > 0 && (
-                <span style={S.homeStreak}>
-                  <span style={{ fontSize: 13, lineHeight: 1 }}>🔥</span>
-                  <span className="font-mono" style={S.homeStreakNum}>{streak}</span>
-                </span>
-              )}
-            </div>
-
-            <div style={S.homeWeekRow}>
-              {days.map((d) => (
-                <div key={d.key} style={S.homeDayCol}>
-                  <div style={S.homeDayLabel}>{d.label}</div>
-                  <div style={{
-                    ...S.homeDayDot,
-                    background: d.done ? D.go : "transparent",
-                    borderColor: d.done ? D.go : (d.isToday ? D.accent : D.textDim),
-                    boxShadow: d.isToday && !d.done ? `0 0 0 3px ${D.accentGlow}` : (d.done ? `0 0 8px ${D.goGlow}` : "none"),
-                    transform: d.isToday ? "scale(1.12)" : "scale(1)",
-                  }} />
-                </div>
-              ))}
-            </div>
-
-            <div style={{
-              ...S.homeDailyCta,
-              color: todayDone ? D.go : D.textSub,
-            }}>
-              {todayDone ? "✓ Completed — come back tomorrow" : "Tap to play today's puzzle"}
-            </div>
-          </button>
-        )}
-
-        {/* Footer — settings + achievements */}
-        <div className="fade-up" style={{ ...S.homeFooterRow, animationDelay: "300ms" }}>
-          <button
-            className="press glass-minimal"
-            style={S.homeIconBtn}
-            onClick={onSettings}
-            aria-label="Settings"
-          >⚙️</button>
-
-          <div className="glass-minimal" style={S.homeAchPill}>
-            <span style={{ fontSize: 14 }}>🏆</span>
-            <span className="font-mono" style={{ fontSize: 12, fontWeight: 900, color: D.text }}>
-              {achievements.length}
-            </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: D.textDim }}>
-              / {ACHIEVEMENTS.length}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-const S = {
-  root: { position: "fixed", inset: 0, background: `radial-gradient(120% 80% at 50% 30%, #121A31 0%, ${T.bg} 70%)`, color: T.ink, fontFamily: "'Nunito', system-ui, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden", userSelect: "none", WebkitTapHighlightColor: "transparent" },
-  hud: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 10px" },
-  roundLabel: { fontWeight: 900, fontSize: 18, color: T.ink },
-  colorCount: { fontWeight: 700, fontSize: 12, color: T.muted, marginTop: 2 },
-  movesLabel: { fontWeight: 900, fontSize: 22, fontVariantNumeric: "tabular-nums" },
-  movesSub: { fontWeight: 700, fontSize: 11, color: T.muted, marginLeft: 4 },
-  progressTrack: { height: 4, margin: "0 20px 8px", background: T.line, borderRadius: 999, overflow: "hidden" },
-  progressFill: { height: "100%", borderRadius: 999, transition: "all 300ms ease" },
-  upgradeStrip: { display: "flex", gap: 4, padding: "0 20px 8px", flexWrap: "wrap" },
-  board: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
-  tubesRow: { display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", alignItems: "flex-end", maxWidth: 400 },
-  footer: { padding: "12px 20px 32px", minHeight: 60, display: "flex", justifyContent: "center", alignItems: "center" },
-  hint: { fontSize: 13, fontWeight: 700, color: T.muted, textAlign: "center" },
-  ovTop: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.94)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)", zIndex: 90 },
-  overlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.94)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)" },
-  ovCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 24, padding: 24, textAlign: "center", maxWidth: 320, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" },
-  ovIconCircle: { width: 64, height: 64, borderRadius: 20, background: `${T.danger}22`, border: `2px solid ${T.danger}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" },
-  ovBigNum: { fontSize: 72, fontWeight: 900, color: T.ink, letterSpacing: "-0.05em", lineHeight: 1, marginTop: 8 },
-  ovBigLabel: { fontSize: 11, fontWeight: 900, letterSpacing: "0.15em", color: T.muted, marginTop: 6, textTransform: "uppercase" },
-  ovNewBest: { display: "inline-block", background: `${T.gold}22`, border: `1px solid ${T.gold}66`, color: T.gold, fontSize: 12, fontWeight: 900, padding: "6px 14px", borderRadius: 999, marginTop: 12 },
-  ovStats: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, margin: "20px 0 20px" },
-  ovStat: { background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "12px 6px", textAlign: "center" },
-  ovStatNum: { fontSize: 22, fontWeight: 900, color: T.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
-  ovStatLabel: { fontSize: 9, fontWeight: 800, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 },
-  dailyBadge: { display: "inline-block", fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: T.gold, background: `${T.gold}22`, border: `1px solid ${T.gold}66`, padding: "2px 6px", borderRadius: 6, marginRight: 6, verticalAlign: "middle" },
-  comboBadge: { display: "flex", alignItems: "center", gap: 6, alignSelf: "center", background: `${T.gold}22`, border: `1px solid ${T.gold}66`, borderRadius: 999, padding: "5px 12px 5px 10px", marginBottom: 6 },
-  comboFlame: { fontSize: 13 },
-  comboText: { fontSize: 12, fontWeight: 900, color: T.gold, letterSpacing: "0.02em", fontVariantNumeric: "tabular-nums" },
-  /* ─── HOME SCREEN ─── */
-  homeRoot: { position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#05070F", overflow: "hidden" },
-  homeAmbient: { position: "absolute", inset: 0, background: "radial-gradient(80% 60% at 20% 15%, rgba(76, 141, 255, 0.10) 0%, transparent 55%), radial-gradient(70% 50% at 85% 75%, rgba(255, 194, 75, 0.06) 0%, transparent 55%), linear-gradient(180deg, #05070F 0%, #0A0F1F 100%)", pointerEvents: "none" },
-  homeContent: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: D.s24, padding: D.s24, width: "100%", maxWidth: 380 },
-  homeTitleBlock: { textAlign: "center", marginBottom: D.s8 },
-  homeTitle: { fontSize: 52, lineHeight: 1, color: D.text },
-  homeSubtitle: { color: D.textSub, marginTop: D.s12 },
-  homePlayBtn: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: 68, border: "none", borderRadius: D.rPill, background: D.accentGrad, color: "#fff", cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif", boxShadow: `${D.accentGlow}, inset 0 1px 0 rgba(255,255,255,0.2)`, overflow: "hidden" },
-  homePlayGlow: { position: "absolute", inset: 0, background: "radial-gradient(60% 100% at 50% 0%, rgba(255,255,255,0.25) 0%, transparent 60%)", pointerEvents: "none" },
-  homePlayInner: { position: "relative", display: "flex", alignItems: "center", gap: D.s12 },
-  homePlayIcon: { fontSize: 22, lineHeight: 1 },
-  homePlayText: { fontSize: 24, lineHeight: 1 },
-  homeDailyCard: { display: "flex", flexDirection: "column", gap: D.s16, width: "100%", background: D.glassStandard, backdropFilter: "blur(20px) saturate(140%)", WebkitBackdropFilter: "blur(20px) saturate(140%)", border: "1px solid rgba(255, 194, 75, 0.32)", borderRadius: D.rCard, padding: D.s16 + " " + D.s24, cursor: "pointer", fontFamily: "'Inter', sans-serif", textAlign: "left", color: D.text, boxShadow: D.shadowMd },
-  homeDailyHeader: { display: "flex", alignItems: "center", gap: D.s8 },
-  homeDailyIcon: { fontSize: 18, lineHeight: 1 },
-  homeDailyLabel: { flex: 1, color: D.gold },
-  homeStreak: { display: "flex", alignItems: "center", gap: D.s4, background: "rgba(255, 194, 75, 0.18)", border: "1px solid rgba(255, 194, 75, 0.4)", padding: "4px 10px", borderRadius: D.rPill },
-  homeStreakNum: { fontSize: 13, color: D.gold },
-  homeWeekRow: { display: "flex", justifyContent: "space-between", gap: D.s4, paddingTop: D.s4 },
-  homeDayCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: D.s8, flex: 1 },
-  homeDayLabel: { fontSize: 10, fontWeight: 800, color: D.textSub, letterSpacing: "0.08em", fontFamily: "'Inter', sans-serif" },
-  homeDayDot: { width: 22, height: 22, borderRadius: "50%", border: "1.5px solid transparent", transition: `all ${D.tQuick}` },
-  homeDailyCta: { fontSize: 12, fontWeight: 700, textAlign: "center", letterSpacing: "0.01em", fontFamily: "'Inter', sans-serif" },
-  homeFooterRow: { display: "flex", alignItems: "center", gap: D.s12, marginTop: D.s8 },
-  homeIconBtn: { width: 48, height: 48, borderRadius: D.rSm, border: `1px solid ${D.glassBorder}`, color: D.textSub, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontFamily: "'Inter', sans-serif" },
-  homeAchPill: { display: "flex", alignItems: "center", gap: D.s8, border: `1px solid ${D.glassBorder}`, borderRadius: D.rPill, padding: "12px 18px", fontFamily: "'Inter', sans-serif" },
-  settingRow: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: `${T.bg}80`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "14px 16px", cursor: "pointer", fontFamily: "'Nunito', sans-serif", color: T.ink },
-  settingLabel: { fontWeight: 800, fontSize: 14 },
-  togglePill: { fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: "#fff", padding: "4px 10px", borderRadius: 999 },
-  tutOverlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)", zIndex: 100 },
-  tutCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 28, padding: 28, maxWidth: 380, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" },
-  tutHeader: { textAlign: "center", marginBottom: 24 },
-  tutIconCircle: { width: 64, height: 64, borderRadius: 20, background: `${T.accent}22`, border: `2px solid ${T.accent}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" },
-  tutTitle: { fontWeight: 900, fontSize: 24, color: T.ink, letterSpacing: "-0.02em" },
-  tutSub: { fontSize: 13, fontWeight: 700, color: T.muted, marginTop: 4 },
-  tutSteps: { display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 },
-  tutStep: { display: "flex", alignItems: "flex-start", gap: 14 },
-  tutNum: { width: 32, height: 32, borderRadius: 10, background: T.accent, color: "#fff", fontWeight: 900, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  tutStepBody: { flex: 1, minWidth: 0, paddingTop: 2 },
-  tutStepTitle: { fontWeight: 900, fontSize: 15, color: T.ink },
-  tutStepDesc: { fontSize: 13, fontWeight: 600, color: T.muted, marginTop: 2, lineHeight: 1.45 },
-  tutWarning: { display: "flex", alignItems: "center", gap: 10, background: `${T.danger}15`, border: `1px solid ${T.danger}44`, borderRadius: 14, padding: "10px 14px", marginBottom: 20, fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.4 },
-  ovTitle: { fontWeight: 900, fontSize: 28, letterSpacing: "-0.02em" },
-  ovSub: { fontSize: 14, fontWeight: 600, color: T.muted, marginTop: 8, marginBottom: 24 },
-  primary: { display: "block", width: "100%", background: T.accent, color: "#fff", border: "none", borderRadius: 999, padding: "14px 24px", fontFamily: "'Nunito', sans-serif", fontWeight: 900, fontSize: 15, cursor: "pointer", boxShadow: `0 8px 24px ${T.accent}55` },
-  ghost: { display: "block", width: "100%", background: "transparent", color: T.muted, border: "none", padding: 12, fontFamily: "'Nunito', sans-serif", fontWeight: 800, fontSize: 13, cursor: "pointer", marginTop: 6 },
-};
 
 const CSS = `
 @keyframes achSlideIn {
