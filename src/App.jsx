@@ -442,6 +442,54 @@ export default function Cascade() {
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
   }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
 
+  /* ═══════════ NAVIGATION / HISTORY ═══════════ */
+
+  useEffect(() => {
+    window.history.replaceState({ cascade: "home" }, "");
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const s = e.state?.cascade || "home";
+      setShowSettings(s === "settings");
+      setShowAchievements(s === "awards");
+      if (s === "game") setScreen("game");
+      else if (s === "home") setScreen("home");
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+
+  const navToGame = useCallback((daily = false) => {
+    if (daily) {
+      setIsDaily(true);
+      setRound(1);
+      setRunUpgrades([]);
+      setLastRoundMovesLeft(0);
+      setShareImage(null);
+      setShared(false);
+      setLevel(generateLevel(1, [], 0, dateToSeed()));
+    } else {
+      restartRun();
+    }
+    window.history.pushState({ cascade: "game" }, "");
+    setScreen("game");
+  }, [restartRun]);
+
+  const navToSettings = useCallback(() => {
+    window.history.pushState({ cascade: "settings" }, "");
+    setShowSettings(true);
+  }, []);
+
+  const navToAwards = useCallback(() => {
+    window.history.pushState({ cascade: "awards" }, "");
+    setShowAchievements(true);
+  }, []);
+
+  const navBack = useCallback(() => {
+    window.history.back();
+  }, []);
+
   const restartRun = useCallback(() => {
     setRound(1);
     setRunUpgrades([]);
@@ -493,18 +541,9 @@ export default function Cascade() {
       {/* HOME — visible when screen === "home" */}
       {screen === "home" && (
         <HomeScreen
-          onPlay={() => { restartRun(); setScreen("game"); }}
-          onAwards={() => setShowAchievements(true)}
-          onDaily={() => {
-            setIsDaily(true);
-            setRound(1);
-            setRunUpgrades([]);
-            setLastRoundMovesLeft(0);
-            setShareImage(null);
-            setShared(false);
-            setLevel(generateLevel(1, [], 0, dateToSeed()));
-            setScreen("game");
-          }}
+          onPlay={() => navToGame(false)}
+          onAwards={navToAwards}
+          onDaily={() => navToGame(true)}
           onSettings={() => setShowSettings(true)}
           dailyResults={dailyResults}
           computeStreak={computeStreak}
@@ -624,7 +663,7 @@ export default function Cascade() {
               {Math.max(0, movesLeft)} <span style={S.movesSub}>moves left</span>
             </div>
           </div>
-          <button onClick={() => setShowSettings(true)} aria-label="Settings" style={{
+          <button onClick={navToSettings} aria-label="Settings" style={{
             width: 34, height: 34, borderRadius: 12,
             background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
             color: T.muted, cursor: "pointer",
@@ -775,8 +814,8 @@ export default function Cascade() {
               setShowSettings(false);
             }
           }}
-          onAwards={() => setShowAchievements(true)}
-          onClose={() => setShowSettings(false)}
+          onAwards={navToAwards}
+          onClose={navBack}
           achievements={achievements}
           ACHIEVEMENTS={ACHIEVEMENTS}
           best={best}
@@ -793,7 +832,7 @@ export default function Cascade() {
       {showAchievements && (
         <AchievementsScreen
           achievements={achievements}
-          onClose={() => setShowAchievements(false)}
+          onClose={navBack}
         />
       )}
 
