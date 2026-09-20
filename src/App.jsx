@@ -5,6 +5,8 @@ import {
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
   shuffle, mulberry32, dailyKey, dateToSeed, computeStreak,
   applyAutoSort, generateLevel,
+  loadDailyState, saveDailyState, clearDailyState,
+  msUntilNextDaily, formatCountdown, pickDailyUpgrades,
 } from "./gameLogic";
 import { S } from "./theme";
 import { Snd, buzz, setVibe } from "./sound";
@@ -116,6 +118,40 @@ export default function Cascade() {
   const [theme, setTheme] = useState("dark");   /* "dark" | "light" | "system" */
   const [stats, setStats] = useState({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
   const [isDaily, setIsDaily] = useState(false);
+  const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
+  const [dailyCountdown, setDailyCountdown] = useState(0);   /* ms until next */
+
+  /* ═══ DAILY MODE — INITIALIZATION ═══ */
+
+  /* Ref to avoid stale closures in level effect (before isDaily is set) */
+  const isDailyRef = useRef(false);
+  useEffect(() => { isDailyRef.current = isDaily; }, [isDaily]);
+
+  /* Load persisted daily state on mount */
+  useEffect(() => {
+    try {
+      const ds = loadDailyState();
+      if (ds) setDailyState(ds);
+    } catch {}
+  }, []);
+
+  /* Countdown to next UTC midnight — updates every second */
+  useEffect(() => {
+    const tick = () => {
+      const ms = msUntilNextDaily();
+      setDailyCountdown(ms);
+      /* Day rolled over — refresh state */
+      if (ms <= 1000) {
+        try {
+          const fresh = loadDailyState();
+          setDailyState(fresh);
+        } catch {}
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
   const [screen, setScreen] = useState("home");   // "home" | "game"
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [dailyResults, setDailyResults] = useState({});
@@ -261,9 +297,11 @@ export default function Cascade() {
     setBonusMoves(0);
     setSelected(null);
     setComboCount(0);
-    setUndoLeft(2);
+    /* Daily = no undo, no hint (pure skill) */
+    const daily = isDailyRef.current;
+    setUndoLeft(daily ? 0 : 2);
     setSnapshots([]);
-    setHintLeft(2);
+    setHintLeft(daily ? 0 : 2);
     setHint(null);
     setPhase("playing");
   }, [level]);
@@ -362,6 +400,25 @@ export default function Cascade() {
       if (isSolved(next)) {
         const remainingAtClear = newMovesLeft;
         recordRound();
+        /* Daily completion — mark state + increment streak */
+        if (isDaily) {
+          const st = saveDailyState({
+            status: "completed",
+            completedAt: Date.now(),
+            movesUsed: newMovesUsed,
+            movesLeft: remainingAtClear,
+          });
+          setDailyState(st);
+          /* Save streak day */
+          try {
+            const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+            if (!dr[dailyKey()]) {
+              dr[dailyKey()] = { completed: true, ts: Date.now() };
+              localStorage.setItem("cascade:dailyResults", JSON.stringify(dr));
+              setDailyResults(dr);
+            }
+          } catch {}
+        }
         /* Schedule the round transition FIRST — an achievement hiccup
            must never block the player from advancing to the upgrade. */
         /* Daily challenge — save completion when round 1 clears.
@@ -398,6 +455,16 @@ export default function Cascade() {
 
           setFinalMovesLeft(Math.max(0, newMovesLeft));
 
+          /* Daily failure — mark state */
+          if (isDaily) {
+            const st = saveDailyState({
+              status: "failed",
+              failedAt: Date.now(),
+              movesUsed: newMovesUsed,
+            });
+            setDailyState(st);
+          }
+
           setPhase("gameover");
           Snd.fail();
           buzz(60);
@@ -409,7 +476,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo]);
+  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState]);
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
@@ -484,15 +551,36 @@ export default function Cascade() {
   /* Single entry point for starting a new run — increments stats safely.
      Used by Home Play, Home Daily, and Game Over "Start Over". */
   const startNewGame = useCallback((daily = false) => {
+    /* Daily replay prevention — block if already completed/failed today */
+    if (daily) {
+      const fresh = loadDailyState();
+      if (fresh && (fresh.status === "completed" || fresh.status === "failed")) {
+        setDailyState(fresh);
+        try {
+          window.alert(fresh.status === "completed"
+            ? "✓ You already completed today's puzzle.\nCome back tomorrow!"
+            : "One attempt used.\nCome back tomorrow!");
+        } catch {}
+        return;
+      }
+    }
     recordGameStart();
     if (daily) {
+      const seed = dateToSeed();
+      /* Save "in_progress" state before starting */
+      const st = saveDailyState({
+        status: "in_progress",
+        startedAt: Date.now(),
+        seed,
+      });
+      setDailyState(st);
       setIsDaily(true);
       setRound(1);
       setRunUpgrades([]);
       setLastRoundMovesLeft(0);
       setShareImage(null);
       setShared(false);
-      setLevel(generateLevel(1, [], 0, dateToSeed()));
+      setLevel(generateLevel(1, [], 0, seed));
     } else {
       restartRun();
     }
@@ -631,6 +719,7 @@ export default function Cascade() {
         </div>
       )}
 
+      {!isDaily && (
       <button
         onClick={useHint}
         disabled={hintLeft <= 0 || phase !== "playing"}
@@ -651,8 +740,10 @@ export default function Cascade() {
         <span style={{ fontSize: 20, lineHeight: 1 }}>💡</span>
         <span style={{ fontSize: 10, fontWeight: 900, marginTop: 2 }}>{hintLeft}</span>
       </button>
+      )}
 
       {/* Undo — floats bottom-left, above the footer hint */}
+      {!isDaily && (
       <button
         onClick={undo}
         disabled={undoLeft <= 0 || snapshots.length === 0 || phase !== "playing"}
@@ -679,6 +770,7 @@ export default function Cascade() {
           {undoLeft}
         </span>
       </button>
+      )}
       {/* Floating "+N" popups for bonus moves — centered, above the tubes */}
       <div style={{ position: "fixed", top: "42%", left: 0, right: 0, pointerEvents: "none", zIndex: 60, display: "flex", justifyContent: "center" }}>
         {bonusPops.map((b) => (
@@ -812,9 +904,56 @@ export default function Cascade() {
                   </div>
                 </div>
 
-                <button style={S.primary} onClick={retry}>Retry Round {round}</button>
-                <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
-                <button style={S.ghost} onClick={() => startNewGame(false)}>Start Over</button>
+                {isDaily ? (
+                  <>
+                    <div style={{
+                      textAlign: "center",
+                      padding: "16px 20px",
+                      background: "rgba(255, 194, 75, 0.08)",
+                      border: "1px solid rgba(255, 194, 75, 0.25)",
+                      borderRadius: 14,
+                      marginBottom: 12,
+                    }}>
+                      <div style={{
+                        fontSize: 11, fontWeight: 900,
+                        letterSpacing: "0.14em",
+                        color: T.gold,
+                        textTransform: "uppercase",
+                      }}>
+                        One attempt only
+                      </div>
+                      <div style={{
+                        fontSize: 15, fontWeight: 800,
+                        color: T.ink, marginTop: 6,
+                      }}>
+                        Come back tomorrow
+                      </div>
+                      <div style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: T.muted, marginTop: 6,
+                      }}>
+                        Next puzzle in
+                      </div>
+                      <div style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 16, fontWeight: 800,
+                        color: T.gold, marginTop: 4,
+                        fontVariantNumeric: "tabular-nums",
+                        letterSpacing: "-0.02em",
+                      }}>
+                        {formatCountdown(dailyCountdown)}
+                      </div>
+                    </div>
+                    <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
+                    <button style={S.ghost} onClick={() => { setScreen("home"); setIsDaily(false); }}>← Home</button>
+                  </>
+                ) : (
+                  <>
+                    <button style={S.primary} onClick={retry}>Retry Round {round}</button>
+                    <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
+                    <button style={S.ghost} onClick={() => startNewGame(false)}>Start Over</button>
+                  </>
+                )}
               </>
             ) : (
               <>

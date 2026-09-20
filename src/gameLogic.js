@@ -172,3 +172,74 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null) {
 
   return { tubes, moveLimit, colorCount };
 }
+
+/* ═══════════ DAILY MODE — STATE MANAGEMENT ═══════════ */
+
+export const DAILY_STATE_KEY = "cascade:dailyState";
+
+/* Returns daily state: { status, startedAt, result, seed }
+   status: "available" | "in_progress" | "completed" | "failed" */
+export function loadDailyState() {
+  try {
+    const raw = localStorage.getItem(DAILY_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    /* If saved state is from a previous day, treat as fresh */
+    if (parsed.dateKey !== dailyKey()) return null;
+    return parsed;
+  } catch { return null; }
+}
+
+export function saveDailyState(state) {
+  try {
+    const full = { ...state, dateKey: dailyKey(), updatedAt: Date.now() };
+    localStorage.setItem(DAILY_STATE_KEY, JSON.stringify(full));
+    return full;
+  } catch { return state; }
+}
+
+export function clearDailyState() {
+  try { localStorage.removeItem(DAILY_STATE_KEY); } catch {}
+}
+
+/* Milliseconds until next UTC midnight */
+export function msUntilNextDaily() {
+  const now = new Date();
+  const tomorrow = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0, 0
+  ));
+  return tomorrow.getTime() - now.getTime();
+}
+
+/* Format milliseconds → HH:MM:SS */
+export function formatCountdown(ms) {
+  if (ms < 0) return "00:00:00";
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+/* Deterministic 3 upgrades for daily — same for everyone on given date */
+export function pickDailyUpgrades(dateSeed, count = 3) {
+  const rng = mulberry32(dateSeed);
+  const weighted = [];
+  UPGRADES.forEach((u) => {
+    const weight = Math.max(1, 6 - u.rarity * 1.5) | 0;
+    for (let i = 0; i < weight; i++) weighted.push(u);
+  });
+  const picked = [];
+  const used = new Set();
+  let guard = 0;
+  while (picked.length < count && guard < 200) {
+    const u = weighted[(rng() * weighted.length) | 0];
+    if (used.has(u.id)) { guard++; continue; }
+    used.add(u.id);
+    picked.push(u);
+  }
+  return picked;
+}
