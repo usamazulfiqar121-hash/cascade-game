@@ -772,6 +772,71 @@ export default function Cascade() {
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=Inter:wght@600;700;800;900&family=JetBrains+Mono:wght@700;800&family=Nunito:wght@600;800;900&display=swap');
 
+/* ═══════════ THEME VARIABLES ═══════════ */
+:root[data-theme="dark"] {
+  --bg-0: #04060D;
+  --bg-1: #0A0F1F;
+  --bg-2: #121A31;
+  --glass: rgba(15, 21, 40, 0.72);
+  --glass-elevated: rgba(20, 27, 50, 0.88);
+  --glass-modal: rgba(10, 15, 31, 0.94);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-active: rgba(255, 255, 255, 0.16);
+  --text: #EAF0FF;
+  --text-sub: #7A85A8;
+  --text-dim: #4A5578;
+  --accent: #4C8DFF;
+  --accent-soft: rgba(76, 141, 255, 0.35);
+  --accent-grad: linear-gradient(135deg, #5A9BFF 0%, #3B7BF0 100%);
+  --accent-glow: 0 12px 32px rgba(76, 141, 255, 0.4);
+  --gold: #FFC24B;
+  --gold-soft: rgba(255, 194, 75, 0.35);
+  --gold-glow: 0 12px 32px rgba(255, 194, 75, 0.35);
+  --go: #22C58A;
+  --go-soft: rgba(34, 197, 138, 0.4);
+  --go-glow: 0 12px 32px rgba(34, 197, 138, 0.35);
+  --danger: #FF5C7A;
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg-0: #F2F4FA;
+  --bg-1: #FFFFFF;
+  --bg-2: #F7F8FC;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-elevated: rgba(255, 255, 255, 0.88);
+  --glass-modal: rgba(255, 255, 255, 0.96);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-border-active: rgba(15, 23, 42, 0.16);
+  --text: #0F172A;
+  --text-sub: #64748B;
+  --text-dim: #94A3B8;
+  --accent: #2563EB;
+  --accent-soft: rgba(37, 99, 235, 0.28);
+  --accent-grad: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  --accent-glow: 0 12px 32px rgba(37, 99, 235, 0.28);
+  --gold: #D97706;
+  --gold-soft: rgba(217, 119, 6, 0.28);
+  --gold-glow: 0 12px 32px rgba(217, 119, 6, 0.25);
+  --go: #059669;
+  --go-soft: rgba(5, 150, 105, 0.28);
+  --go-glow: 0 12px 32px rgba(5, 150, 105, 0.25);
+  --danger: #DC2626;
+  --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.12);
+  color-scheme: light;
+}
+
+/* Smooth theme transition */
+html, body {
+  transition: background-color 280ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 @keyframes achSlideIn {
   0% { opacity: 0; transform: translateY(-30px); }
   60% { transform: translateY(6px); }
