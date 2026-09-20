@@ -19,7 +19,7 @@ export default function BottomNav({ activeTab, onTabChange, onPlay, onAwards, on
           />
 
           <TabButton
-            label="Awards"
+            label="Profile"
             active={activeTab === "awards"}
             onClick={() => onAwards && onAwards()}
             renderIcon={(a) => <TrophyIcon size={22} active={a} />}

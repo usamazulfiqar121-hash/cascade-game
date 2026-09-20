@@ -1016,6 +1016,8 @@ export default function Cascade() {
       {showAchievements && (
         <AchievementsScreen
           achievements={achievements}
+          stats={stats}
+          best={best}
           onClose={() => setShowAchievements(false)}
         />
       )}
