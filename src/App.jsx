@@ -588,6 +588,7 @@ export default function Cascade() {
       {screen === "home" && (
         <HomeScreen
           onPlay={() => startNewGame(false)}
+          onAwards={() => setShowAchievements(true)}
           onDaily={() => startNewGame(true)}
           onSettings={() => setShowSettings(true)}
           dailyResults={dailyResults}
