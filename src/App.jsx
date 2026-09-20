@@ -541,7 +541,6 @@ export default function Cascade() {
       {screen === "home" && (
         <HomeScreen
           onPlay={() => { restartRun(); setScreen("game"); }}
-          onAwards={() => setShowAchievements(true)}
           onDaily={() => {
             setIsDaily(true);
             setRound(1);
@@ -557,8 +556,6 @@ export default function Cascade() {
           computeStreak={computeStreak}
           dailyKey={dailyKey}
           hasPlayedOnce={hasPlayedOnce}
-          achievements={achievements}
-          ACHIEVEMENTS={ACHIEVEMENTS}
         />
       )}
 
@@ -826,7 +823,6 @@ export default function Cascade() {
           onClose={() => setShowSettings(false)}
           achievements={achievements}
           ACHIEVEMENTS={ACHIEVEMENTS}
-          best={best}
           theme={theme}
           onSetTheme={setTheme}
           isDaily={isDaily}

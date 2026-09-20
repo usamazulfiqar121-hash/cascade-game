@@ -3,9 +3,7 @@ import { D } from "../constants";
 export default function SettingsScreen({
   soundOn, vibeOn,
   onToggleSound, onToggleVibe,
-  onReset, onAwards, onClose,
-  achievements, ACHIEVEMENTS,
-  best = 0,
+  onReset, onClose,
   isDaily = false,
   onExitDaily,
   theme = "dark",
@@ -42,22 +40,6 @@ export default function SettingsScreen({
             onClick={onToggleVibe}
           />
           <ThemeRow theme={theme} onSetTheme={onSetTheme} />
-
-          <Section label="PROGRESS" />
-          <Row
-            icon={<TrophyIcon />}
-            label="Achievements"
-            sub={`${achievements.length} of ${ACHIEVEMENTS.length} unlocked`}
-            right={<span style={S.chev}>›</span>}
-            onClick={() => { onClose(); onAwards && onAwards(); }}
-          />
-          <Row
-            icon={<BestIcon />}
-            label="Best Round"
-            sub="Personal record"
-            right={<span style={S.statVal}>{best}</span>}
-            disabled
-          />
 
           {isDaily && (
             <>
@@ -231,25 +213,6 @@ function VibeIcon({ on }) {
         <path d="M4 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
         <path d="M20 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       </>}
-    </svg>
-  );
-}
-
-function TrophyIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M8 4H16V10C16 12.21 14.21 14 12 14C9.79 14 8 12.21 8 10V4Z" fill={`${D.gold}22`} stroke={D.gold} strokeWidth="1.8" strokeLinejoin="round"/>
-      <path d="M8 6H6C5 6 4 7 4 8V9C4 10.5 5.5 12 7 12" stroke={D.gold} strokeWidth="1.8" strokeLinecap="round"/>
-      <path d="M16 6H18C19 6 20 7 20 8V9C20 10.5 18.5 12 17 12" stroke={D.gold} strokeWidth="1.8" strokeLinecap="round"/>
-      <path d="M12 14V18M8 20H16" stroke={D.gold} strokeWidth="1.8" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function BestIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M12 2L14.5 8.5L21 9.5L16.5 13.5L17.8 20L12 16.8L6.2 20L7.5 13.5L3 9.5L9.5 8.5L12 2Z" fill={`${D.accent}22`} stroke={D.accent} strokeWidth="1.6" strokeLinejoin="round"/>
     </svg>
   );
 }
