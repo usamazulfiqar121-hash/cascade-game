@@ -10,10 +10,18 @@ export const COLORS = [
 
 /* Legacy theme tokens */
 export const T = {
-  bg: "#0A0F1F", card: "#141B32", ink: "#EAF0FF", muted: "#7A85A8",
-  accent: "#4C8DFF", danger: "#FF5C7A", go: "#22C58A", gold: "#FFC24B",
-  line: "#222E4C", edge: "rgba(140,170,255,0.10)",
-  tubeBg: "rgba(255,255,255,0.04)", tubeEdge: "rgba(255,255,255,0.10)",
+  bg: "var(--bg-1)",
+  card: "var(--card)",
+  ink: "var(--ink)",
+  muted: "var(--muted)",
+  accent: "var(--accent)",
+  danger: "var(--danger)",
+  go: "var(--go)",
+  gold: "var(--gold)",
+  line: "var(--line)",
+  edge: "var(--edge)",
+  tubeBg: "var(--tube-bg)",
+  tubeEdge: "var(--tube-edge)",
 };
 
 /* Design tokens — premium system */

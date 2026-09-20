@@ -840,6 +840,13 @@ const CSS = `
   --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.55);
+  --card: #141B32;
+  --ink: #EAF0FF;
+  --muted: #7A85A8;
+  --line: #222E4C;
+  --edge: rgba(140, 170, 255, 0.10);
+  --tube-bg: rgba(255, 255, 255, 0.04);
+  --tube-edge: rgba(255, 255, 255, 0.10);
   color-scheme: dark;
 }
 
@@ -923,6 +930,41 @@ button:active:not(:disabled) { transform: scale(0.97); }
   100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
 }
 .cascade-particle { animation: cascadeParticle 600ms cubic-bezier(.2,.8,.3,1) forwards; }
+
+/* ═══════════ TUBE STATES ═══════════ */
+.tube-btn[data-state="selected"] {
+  transform: translateY(-10px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 32px var(--accent-soft), 0 0 0 1px var(--accent-soft);
+  background: var(--glass);
+}
+.tube-btn[data-state="solved"] {
+  border-color: var(--go);
+  box-shadow: 0 0 0 2px var(--go-soft), 0 6px 20px var(--go-soft);
+}
+.tube-btn[data-state="solved"]::after {
+  content: "✓";
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--go);
+  text-shadow: 0 0 6px var(--go-soft);
+}
+.tube-btn[data-state="hintFrom"] {
+  border-color: var(--go);
+  animation: hintPulse 800ms ease-in-out infinite;
+}
+.tube-btn[data-state="hintTo"] {
+  border-color: var(--go);
+  opacity: 0.92;
+  box-shadow: 0 0 0 3px var(--go-soft);
+}
+@keyframes hintPulse {
+  0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 0 0 3px var(--go-soft); }
+  50%      { transform: translateY(-3px) scale(1.02); box-shadow: 0 0 0 6px transparent; }
+}
 
 @keyframes slideInRight {
   from { transform: translateX(100%); opacity: 0; }
