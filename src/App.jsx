@@ -445,16 +445,21 @@ export default function Cascade() {
   /* ═══════════ NAVIGATION / HISTORY ═══════════ */
 
   useEffect(() => {
-    window.history.replaceState({ cascade: "home" }, "");
+    try { window.history.replaceState({ cascade: "home" }, ""); } catch (e) { console.warn("replaceState failed:", e); }
   }, []);
 
+  /* TEMPORARILY DISABLED — debugging */
   useEffect(() => {
     const handler = (e) => {
-      const s = e.state?.cascade || "home";
-      setShowSettings(s === "settings");
-      setShowAchievements(s === "awards");
-      if (s === "game") setScreen("game");
-      else if (s === "home") setScreen("home");
+      try {
+        const s = e.state?.cascade || "home";
+        setShowSettings(s === "settings");
+        setShowAchievements(s === "awards");
+        if (s === "game") setScreen("game");
+        else if (s === "home") setScreen("home");
+      } catch (err) {
+        console.warn("popstate error:", err);
+      }
     };
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
