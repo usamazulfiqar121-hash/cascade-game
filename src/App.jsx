@@ -924,6 +924,15 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 .cascade-particle { animation: cascadeParticle 600ms cubic-bezier(.2,.8,.3,1) forwards; }
 
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+@keyframes slideOutRight {
+  from { transform: translateX(0);   opacity: 1; }
+  to   { transform: translateX(100%); opacity: 0; }
+}
+
 /* ═══════════ PREMIUM UTILITIES ═══════════ */
 .glass-premium {
   background: rgba(20, 27, 50, 0.88);

@@ -10,23 +10,22 @@ export default function SettingsScreen({
   onExitDaily,
   theme = "dark",
   onSetTheme,
+  onBack,
 }) {
+  const handleBack = onBack || onClose;
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <div style={S.card} onClick={(e) => e.stopPropagation()}>
-        <div style={S.header}>
-          <div>
-            <div style={S.title}>Settings</div>
-            <div style={S.subtitle}>Cascade v1.0.0</div>
-          </div>
-          <button onClick={onClose} style={S.closeBtn} className="press" aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M6 6L18 18M18 6L6 18" stroke={D.textSub} strokeWidth="2.2" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
+    <div style={S.page}>
+      <div style={S.header}>
+        <button onClick={handleBack} className="press" style={S.backBtn} aria-label="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M15 6L9 12L15 18" stroke="var(--text)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <div style={S.title}>Settings</div>
+        <div style={{ width: 40 }} />
+      </div>
 
-        <div style={S.scroll}>
+      <div style={S.scroll}>
           <Section label="PREFERENCES" />
           <Row
             icon={<SoundIcon on={soundOn} />}
@@ -80,7 +79,6 @@ export default function SettingsScreen({
             danger
             onClick={onReset}
           />
-        </div>
       </div>
     </div>
   );
@@ -278,53 +276,44 @@ function TrashIcon() {
 }
 
 const S = {
-  overlay: {
+  page: {
     position: "fixed", inset: 0,
-    background: "rgba(5, 7, 15, 0.88)",
-    backdropFilter: "blur(12px)",
-    WebkitBackdropFilter: "blur(12px)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    padding: 20, zIndex: 90,
-    animation: "fadeIn 200ms ease",
-  },
-  card: {
-    width: "100%", maxWidth: 380, maxHeight: "90vh",
-    background: "rgba(15, 21, 40, 0.78)",
-    backdropFilter: "blur(32px) saturate(160%)",
-    WebkitBackdropFilter: "blur(32px) saturate(160%)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
-    borderRadius: 24,
-    padding: "20px 16px 16px",
-    boxShadow: "0 32px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
-    fontFamily: "'Inter', system-ui, sans-serif",
-    animation: "fadeUp 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+    background: "var(--bg-0)",
     display: "flex", flexDirection: "column",
+    animation: "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
+    zIndex: 80,
+    fontFamily: "'Inter', system-ui, sans-serif",
   },
   header: {
-    display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-    marginBottom: 16, padding: "0 4px",
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    padding: "calc(env(safe-area-inset-top, 0px) + 16px) 20px 16px",
+    borderBottom: "1px solid var(--glass-border)",
+    background: "var(--bg-0)",
+  },
+  backBtn: {
+    width: 40, height: 40,
+    borderRadius: 12,
+    background: "var(--glass)",
+    border: "1px solid var(--glass-border)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer",
+    appearance: "none", WebkitAppearance: "none",
+    padding: 0, outline: "none",
+    WebkitTapHighlightColor: "transparent",
   },
   title: {
     fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-    fontSize: 22, fontWeight: 900,
-    color: D.text, letterSpacing: "-0.02em",
+    fontSize: 17, fontWeight: 900,
+    color: "var(--text)",
+    letterSpacing: "-0.02em",
   },
-  subtitle: {
-    fontSize: 11, fontWeight: 700, color: D.textDim,
-    marginTop: 2, fontFamily: "'JetBrains Mono', monospace",
+  scroll: {
+    flex: 1, overflowY: "auto",
+    padding: "16px 20px calc(env(safe-area-inset-bottom, 0px) + 32px)",
+    WebkitOverflowScrolling: "touch",
   },
-  closeBtn: {
-    width: 36, height: 36, borderRadius: 10,
-    background: "rgba(255, 255, 255, 0.04)",
-    border: "1px solid rgba(255, 255, 255, 0.06)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    cursor: "pointer", appearance: "none", WebkitAppearance: "none",
-    padding: 0, outline: "none", WebkitTapHighlightColor: "transparent",
-    flexShrink: 0,
-  },
-  scroll: { overflowY: "auto", paddingRight: 4, marginRight: -4 },
   sectionLabel: {
-    fontSize: 10, fontWeight: 900, color: D.textDim,
+    fontSize: 10, fontWeight: 900, color: "var(--text-dim)",
     letterSpacing: "0.16em", padding: "16px 12px 8px",
     fontFamily: "'Inter', system-ui, sans-serif",
   },
@@ -346,13 +335,13 @@ const S = {
   },
   rowBody: { flex: 1, minWidth: 0 },
   rowLabel: { fontSize: 14.5, fontWeight: 700, lineHeight: 1.2 },
-  rowSub: { fontSize: 11, fontWeight: 600, color: D.textDim, marginTop: 2 },
+  rowSub: { fontSize: 11, fontWeight: 600, color: "var(--text-dim)", marginTop: 2 },
   rowRight: { display: "flex", alignItems: "center", flexShrink: 0 },
   themeSegment: {
     display: "flex", alignItems: "center", gap: 2,
     padding: 3, borderRadius: 10,
-    background: "rgba(255, 255, 255, 0.04)",
-    border: "1px solid rgba(255, 255, 255, 0.06)",
+    background: "rgba(122, 133, 168, 0.10)",
+    border: "1px solid var(--glass-border)",
   },
   segmentBtn: {
     width: 30, height: 26,
@@ -365,12 +354,12 @@ const S = {
     transition: `background ${D.tQuick}, box-shadow ${D.tQuick}`,
   },
   chev: {
-    fontSize: 22, fontWeight: 300, color: D.textDim,
+    fontSize: 22, fontWeight: 300, color: "var(--text-dim)",
     lineHeight: 1, marginTop: -2,
   },
   statVal: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 15, fontWeight: 800, color: D.accent,
+    fontSize: 15, fontWeight: 800, color: "var(--accent)",
     fontVariantNumeric: "tabular-nums",
   },
   toggle: {
