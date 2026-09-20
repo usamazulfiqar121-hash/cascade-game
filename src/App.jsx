@@ -879,6 +879,16 @@ const CSS = `
   --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
   --shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.12);
+  --card: #FFFFFF;
+  --ink: #0F172A;
+  --muted: #64748B;
+  --line: #E2E8F0;
+  --edge: rgba(15, 23, 42, 0.08);
+  --tube-bg: rgba(15, 23, 42, 0.06);
+  --tube-edge: rgba(15, 23, 42, 0.18);
+  --tube-highlight: rgba(255, 255, 255, 0.5);
+  --bg-grad: radial-gradient(120% 80% at 50% 30%, #FFFFFF 0%, #EDF1F7 70%);
+  --line-strong: rgba(15, 23, 42, 0.12);
   color-scheme: light;
 }
 
