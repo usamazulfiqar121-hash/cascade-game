@@ -232,6 +232,8 @@ export default function Cascade() {
   const [isDaily, setIsDaily] = useState(false);
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
   const [dailyCountdown, setDailyCountdown] = useState(0);   /* ms until next */
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
 
   /* ═══ DAILY MODE — INITIALIZATION ═══ */
 
@@ -399,6 +401,21 @@ export default function Cascade() {
     });
   }, []);
   const recordGameStart = useCallback(() => recordStats((p) => ({ ...p, gamesPlayed: p.gamesPlayed + 1 })), [recordStats]);
+
+  const showToast = useCallback((config) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(config);
+    toastTimerRef.current = setTimeout(() => {
+      setToast((t) => t ? { ...t, exiting: true } : null);
+      toastTimerRef.current = setTimeout(() => setToast(null), 240);
+    }, 2600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
   const recordRound = useCallback(() => recordStats((p) => ({ ...p, totalRounds: p.totalRounds + 1 })), [recordStats]);
   const recordMoves = useCallback((n) => recordStats((p) => ({ ...p, totalMoves: p.totalMoves + n })), [recordStats]);
   const recordCombo = useCallback((c) => recordStats((p) => c > p.highestCombo ? { ...p, highestCombo: c } : p), [recordStats]);
@@ -668,11 +685,12 @@ export default function Cascade() {
       const fresh = loadDailyState();
       if (fresh && (fresh.status === "completed" || fresh.status === "failed")) {
         setDailyState(fresh);
-        try {
-          window.alert(fresh.status === "completed"
-            ? "✓ You already completed today's puzzle.\nCome back tomorrow!"
-            : "One attempt used.\nCome back tomorrow!");
-        } catch {}
+        showToast({
+          icon: fresh.status === "completed" ? "✓" : "⚠",
+          color: fresh.status === "completed" ? "var(--go)" : "var(--gold)",
+          title: fresh.status === "completed" ? "Already Completed" : "One Attempt Used",
+          message: "Come back tomorrow",
+        });
         return;
       }
     }
@@ -826,6 +844,65 @@ export default function Cascade() {
             <div>
               <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", color: T.gold, textTransform: "uppercase" }}>Achievement</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: T.ink }}>{achToast.name}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-app toast */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: "calc(env(safe-area-inset-top, 0px) + 20px)",
+            left: 20, right: 20,
+            display: "flex", justifyContent: "center",
+            pointerEvents: "none",
+            zIndex: 300,
+            animation: toast.exiting
+              ? "toastOut 240ms ease forwards"
+              : "toastIn 380ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        >
+          <div style={{
+            display: "flex", alignItems: "center", gap: 13,
+            background: "var(--glass-modal)",
+            backdropFilter: "blur(24px) saturate(160%)",
+            WebkitBackdropFilter: "blur(24px) saturate(160%)",
+            border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
+            borderRadius: 18,
+            padding: "13px 20px 13px 14px",
+            boxShadow: "0 12px 40px " + (toast.color || "var(--accent)") + "33, 0 4px 12px rgba(0,0,0,0.35)",
+            fontFamily: "'Inter', system-ui, sans-serif",
+            maxWidth: 380,
+            width: "100%",
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: "transparent",
+              border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18, fontWeight: 900,
+              color: toast.color || "var(--accent)",
+              lineHeight: 1,
+            }}>{toast.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 13.5, fontWeight: 900,
+                color: "var(--text)",
+                letterSpacing: "-0.01em",
+                lineHeight: 1.2,
+              }}>{toast.title}</div>
+              {toast.message && (
+                <div style={{
+                  fontSize: 11.5, fontWeight: 600,
+                  color: "var(--text-sub)",
+                  marginTop: 3,
+                  lineHeight: 1.3,
+                }}>{toast.message}</div>
+              )}
             </div>
           </div>
         </div>
@@ -1385,6 +1462,16 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 .fade-up { animation: fadeUp 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes toastIn {
+  0% { opacity: 0; transform: translateY(-24px) scale(0.94); }
+  60% { opacity: 1; transform: translateY(4px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toastOut {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-12px) scale(0.96); }
+}
 .fade-in { animation: fadeIn 300ms ease both; }
 
 /* ═══════════ DAILY PREMIUM ANIMATIONS ═══════════ */
