@@ -135,15 +135,15 @@ const S = {
     position: "fixed", inset: 0,
     display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center",
-    background: "#05070F",
+    background: "var(--bg-0)",
     overflow: "hidden",
   },
   homeAmbient: {
     position: "absolute", inset: 0,
     background: `
-      radial-gradient(80% 50% at 50% 0%, rgba(76, 141, 255, 0.10) 0%, transparent 60%),
-      radial-gradient(60% 40% at 50% 100%, rgba(76, 141, 255, 0.05) 0%, transparent 60%),
-      linear-gradient(180deg, #05070F 0%, #0A0F1F 100%)
+      radial-gradient(80% 50% at 50% 0%, var(--accent-soft) 0%, transparent 60%),
+      radial-gradient(60% 40% at 50% 100%, var(--accent-soft) 0%, transparent 60%),
+      var(--bg-grad)
     `,
     pointerEvents: "none",
   },
@@ -199,7 +199,7 @@ const S = {
     display: "flex", flexDirection: "column",
     gap: 14,
     width: "100%",
-    background: "rgba(15, 21, 40, 0.62)",
+    background: "var(--glass)",
     backdropFilter: "blur(20px) saturate(160%)",
     WebkitBackdropFilter: "blur(20px) saturate(160%)",
     border: "1px solid rgba(255, 194, 75, 0.22)",

@@ -850,6 +850,9 @@ const CSS = `
   --tube-highlight: rgba(255, 255, 255, 0.08);
   --bg-grad: radial-gradient(120% 80% at 50% 30%, #121A31 0%, #0A0F1F 70%);
   --line-strong: rgba(255, 255, 255, 0.12);
+  --overlay-bg: rgba(5, 7, 15, 0.85);
+  --nav-bg: rgba(10, 15, 31, 0.85);
+  --nav-border: rgba(10, 15, 31, 0.9);
   color-scheme: dark;
 }
 
@@ -889,6 +892,9 @@ const CSS = `
   --tube-highlight: rgba(255, 255, 255, 0.5);
   --bg-grad: radial-gradient(120% 80% at 50% 30%, #FFFFFF 0%, #EDF1F7 70%);
   --line-strong: rgba(15, 23, 42, 0.12);
+  --overlay-bg: rgba(15, 23, 42, 0.35);
+  --nav-bg: rgba(255, 255, 255, 0.88);
+  --nav-border: rgba(15, 23, 42, 0.10);
   color-scheme: light;
 }
 

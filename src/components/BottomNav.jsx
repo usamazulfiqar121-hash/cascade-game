@@ -79,7 +79,7 @@ const S = {
   },
   navGlass: {
     position: "relative",
-    background: "rgba(10, 15, 31, 0.85)",
+    background: "var(--nav-bg)",
     backdropFilter: "blur(32px) saturate(180%)",
     WebkitBackdropFilter: "blur(32px) saturate(180%)",
     border: "1px solid rgba(255, 255, 255, 0.08)",
@@ -133,7 +133,7 @@ const S = {
     width: 56, height: 56,
     borderRadius: 999,
     background: D.accentGrad,
-    border: "2px solid rgba(10, 15, 31, 0.9)",
+    border: "2px solid var(--nav-border)",
     cursor: "pointer",
     appearance: "none",
     WebkitAppearance: "none",
