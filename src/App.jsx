@@ -442,16 +442,16 @@ export default function Cascade() {
   }, [shake]);
 
   const unlockAch = useCallback((id) => {
+    /* Read from localStorage first — early return prevents repeat toasts */
+    let current = [];
+    try { current = JSON.parse(localStorage.getItem(ACH_KEY) || "[]"); } catch {}
+    if (current.includes(id)) return;
+
+    const next = [...current, id];
+    try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
+    setAchievements(next);
+
     const meta = ACHIEVEMENTS.find((a) => a.id === id);
-    setAchievements((prev) => {
-      if (prev.includes(id)) return prev;
-      const next = [...prev, id];
-      try { localStorage.setItem(ACH_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-    /* setAchToast called OUTSIDE the updater — keeps the updater pure,
-       which React 19 + StrictMode requires. Previously this side effect
-       inside the updater was blocking the round-clear setTimeout. */
     if (meta) {
       setAchToast(meta);
       setTimeout(() => setAchToast(null), 2600);
