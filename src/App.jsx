@@ -452,6 +452,53 @@ export default function Cascade() {
     setLevel(generateLevel(1, [], 0));
   }, []);
 
+  /* ═══════════ NAVIGATION — Back button infra ═══════════
+     Phase 1: only infrastructure. Nothing wired yet.
+     Refs hold latest state so popstate handler never goes stale. */
+
+  const navStateRef = useRef({ showSettings: false, showAchievements: false, screen: "home" });
+  useEffect(() => {
+    navStateRef.current = { showSettings, showAchievements, screen };
+  }, [showSettings, showAchievements, screen]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      try {
+        const page = e.state?.page || "home";
+        /* If state says we're going home, reset everything */
+        if (page === "home") {
+          setShowSettings(false);
+          setShowAchievements(false);
+          setScreen("home");
+          return;
+        }
+        /* Fallback: close deepest open UI */
+        const st = navStateRef.current;
+        if (st.showSettings) { setShowSettings(false); return; }
+        if (st.showAchievements) { setShowAchievements(false); return; }
+        if (st.screen === "game") { setScreen("home"); return; }
+      } catch (err) {
+        console.warn("[CASCADE] popstate error:", err);
+      }
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+
+  /* Safe push — Phase 2 mein buttons se call karenge */
+  const pushNav = useCallback((page) => {
+    try { window.history.pushState({ page }, ""); } catch (err) {
+      console.warn("[CASCADE] pushState failed:", err);
+    }
+  }, []);
+
+  /* Safe pop — back arrow click se call karenge */
+  const popNav = useCallback(() => {
+    try { window.history.back(); } catch (err) {
+      console.warn("[CASCADE] history.back failed:", err);
+    }
+  }, []);
+
   const generateShare = useCallback(() => {
     try {
       const dataUrl = buildShareCard({ round, upgrades: runUpgrades, best });
