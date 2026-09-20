@@ -4,7 +4,16 @@
 import { T, D } from "./constants";
 
 export const S = {
-  root: { position: "fixed", inset: 0, background: `radial-gradient(120% 80% at 50% 30%, #121A31 0%, ${T.bg} 70%)`, color: T.ink, fontFamily: "'Nunito', system-ui, sans-serif", display: "flex", flexDirection: "column", overflow: "hidden", userSelect: "none", WebkitTapHighlightColor: "transparent" },
+  root: {
+    position: "fixed", inset: 0,
+    background: "var(--bg-grad)",
+    color: "var(--text)",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    display: "flex", flexDirection: "column",
+    overflow: "hidden", userSelect: "none",
+    WebkitTapHighlightColor: "transparent",
+    transition: "background 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1)",
+  },
   hud: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
     padding: "calc(env(safe-area-inset-top, 0px) + 14px) 20px 10px",
@@ -32,7 +41,7 @@ export const S = {
   },
   progressTrack: {
     height: 3, margin: "0 20px 12px",
-    background: "var(--line)", borderRadius: 999, overflow: "hidden",
+    background: "var(--line-strong)", borderRadius: 999, overflow: "hidden",
   },
   progressFill: {
     height: "100%", borderRadius: 999,

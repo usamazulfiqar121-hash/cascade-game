@@ -847,6 +847,9 @@ const CSS = `
   --edge: rgba(140, 170, 255, 0.10);
   --tube-bg: rgba(255, 255, 255, 0.04);
   --tube-edge: rgba(255, 255, 255, 0.10);
+  --tube-highlight: rgba(255, 255, 255, 0.08);
+  --bg-grad: radial-gradient(120% 80% at 50% 30%, #121A31 0%, #0A0F1F 70%);
+  --line-strong: rgba(255, 255, 255, 0.12);
   color-scheme: dark;
 }
 

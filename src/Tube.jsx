@@ -92,7 +92,7 @@ const S = {
     left: 4,
     right: 4,
     height: "40%",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 100%)",
+    background: "linear-gradient(180deg, var(--tube-highlight) 0%, transparent 100%)",
     borderRadius: "28px 28px 0 0",
     pointerEvents: "none",
   },
