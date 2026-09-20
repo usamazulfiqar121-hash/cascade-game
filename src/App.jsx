@@ -1186,6 +1186,10 @@ export default function Cascade() {
                 localStorage.removeItem(BEST_KEY);
                 localStorage.removeItem("cascade:tutorialSeen");
                 localStorage.removeItem("cascade:stats");
+                localStorage.removeItem("cascade:dailyResults");
+                localStorage.removeItem("cascade:dailyState");
+                localStorage.removeItem("cascade:dailyRun");
+                localStorage.removeItem("cascade:hasPlayedOnce");
               } catch {}
               setBest(0);
               setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
