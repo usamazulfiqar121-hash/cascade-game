@@ -114,6 +114,7 @@ function buildShareCard({ round, upgrades, best }) {
 export default function Cascade() {
   const [round, setRound] = useState(1);
   const [theme, setTheme] = useState("dark");   /* "dark" | "light" | "system" */
+  const [stats, setStats] = useState({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
   const [isDaily, setIsDaily] = useState(false);
   const [screen, setScreen] = useState("home");   // "home" | "game"
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
@@ -179,6 +180,18 @@ export default function Cascade() {
       try {
         if (localStorage.getItem("cascade:hasPlayedOnce") === "1") setHasPlayedOnce(true);
       } catch {}
+      try {
+        const raw = localStorage.getItem("cascade:stats");
+        if (raw) {
+          const p = JSON.parse(raw);
+          setStats({
+            gamesPlayed: Number(p.gamesPlayed) || 0,
+            totalRounds: Number(p.totalRounds) || 0,
+            totalMoves: Number(p.totalMoves) || 0,
+            highestCombo: Number(p.highestCombo) || 0,
+          });
+        }
+      } catch {}
       } catch {}
       if (t === "1") setTutorialSeen(true);
       else {
@@ -228,6 +241,19 @@ export default function Cascade() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
+
+  /* ═══ STATS HELPERS ═══ */
+  const recordStats = useCallback((updater) => {
+    setStats((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+      try { localStorage.setItem("cascade:stats", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+  const recordGameStart = useCallback(() => recordStats((p) => ({ ...p, gamesPlayed: p.gamesPlayed + 1 })), [recordStats]);
+  const recordRound = useCallback(() => recordStats((p) => ({ ...p, totalRounds: p.totalRounds + 1 })), [recordStats]);
+  const recordMoves = useCallback((n) => recordStats((p) => ({ ...p, totalMoves: p.totalMoves + n })), [recordStats]);
+  const recordCombo = useCallback((c) => recordStats((p) => c > p.highestCombo ? { ...p, highestCombo: c } : p), [recordStats]);
 
   useEffect(() => {
     setTubes(level.tubes);
@@ -316,6 +342,8 @@ export default function Cascade() {
 
       setComboCount(newCombo);
       const newMovesUsed = moves + 1;
+      recordMoves(1);
+      recordCombo(newCombo);
       const newBonus = bonusMoves + bonus;
       setMoves(newMovesUsed);
       if (bonus > 0) {
@@ -333,6 +361,7 @@ export default function Cascade() {
 
       if (isSolved(next)) {
         const remainingAtClear = newMovesLeft;
+        recordRound();
         /* Schedule the round transition FIRST — an achievement hiccup
            must never block the player from advancing to the upgrade. */
         /* Daily challenge — save completion when round 1 clears.
@@ -380,7 +409,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce]);
+  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo]);
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
@@ -451,6 +480,24 @@ export default function Cascade() {
     setIsDaily(false);
     setLevel(generateLevel(1, [], 0));
   }, []);
+
+  /* Single entry point for starting a new run — increments stats safely.
+     Used by Home Play, Home Daily, and Game Over "Start Over". */
+  const startNewGame = useCallback((daily = false) => {
+    recordGameStart();
+    if (daily) {
+      setIsDaily(true);
+      setRound(1);
+      setRunUpgrades([]);
+      setLastRoundMovesLeft(0);
+      setShareImage(null);
+      setShared(false);
+      setLevel(generateLevel(1, [], 0, dateToSeed()));
+    } else {
+      restartRun();
+    }
+    setScreen("game");
+  }, [recordGameStart, restartRun]);
 
   /* ═══════════ NAVIGATION — Back button infra ═══════════
      Phase 1: only infrastructure. Nothing wired yet.
@@ -540,17 +587,8 @@ export default function Cascade() {
       {/* HOME — visible when screen === "home" */}
       {screen === "home" && (
         <HomeScreen
-          onPlay={() => { restartRun(); setScreen("game"); }}
-          onDaily={() => {
-            setIsDaily(true);
-            setRound(1);
-            setRunUpgrades([]);
-            setLastRoundMovesLeft(0);
-            setShareImage(null);
-            setShared(false);
-            setLevel(generateLevel(1, [], 0, dateToSeed()));
-            setScreen("game");
-          }}
+          onPlay={() => startNewGame(false)}
+          onDaily={() => startNewGame(true)}
           onSettings={() => setShowSettings(true)}
           dailyResults={dailyResults}
           computeStreak={computeStreak}
@@ -775,7 +813,7 @@ export default function Cascade() {
 
                 <button style={S.primary} onClick={retry}>Retry Round {round}</button>
                 <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
-                <button style={S.ghost} onClick={restartRun}>Start Over</button>
+                <button style={S.ghost} onClick={() => startNewGame(false)}>Start Over</button>
               </>
             ) : (
               <>
@@ -809,12 +847,14 @@ export default function Cascade() {
             try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
           }}
           onReset={() => {
-            if (window.confirm("Reset all progress? This deletes your best score and tutorial.")) {
+            if (window.confirm("Reset all progress? This deletes your best score, stats, and tutorial.")) {
               try {
                 localStorage.removeItem(BEST_KEY);
                 localStorage.removeItem("cascade:tutorialSeen");
+                localStorage.removeItem("cascade:stats");
               } catch {}
               setBest(0);
+              setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
               restartRun();
               setShowSettings(false);
             }
