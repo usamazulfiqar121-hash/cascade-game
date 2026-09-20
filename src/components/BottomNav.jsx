@@ -3,7 +3,7 @@
    Center FAB = Play. 4 items, thumb-zone optimized. */
 
 import { D } from "../constants";
-import { HomeIcon, PlayIcon, TrophyIcon, SettingsIcon } from "../icons";
+import { HomeIcon, TrophyIcon, SettingsIcon } from "../icons";
 
 export default function BottomNav({ activeTab, onTabChange, onPlay, onAwards, onSettings }) {
   return (
@@ -17,15 +17,6 @@ export default function BottomNav({ activeTab, onTabChange, onPlay, onAwards, on
             onClick={() => onTabChange("home")}
             renderIcon={(a) => <HomeIcon size={22} active={a} />}
           />
-
-          <button
-            onClick={onPlay}
-            className="press"
-            style={S.centerFab}
-            aria-label="Play"
-          >
-            <PlayIcon size={22} white={true} />
-          </button>
 
           <TabButton
             label="Awards"
