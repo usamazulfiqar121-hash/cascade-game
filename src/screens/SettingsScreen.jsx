@@ -8,6 +8,8 @@ export default function SettingsScreen({
   best = 0,
   isDaily = false,
   onExitDaily,
+  theme = "dark",
+  onSetTheme,
 }) {
   return (
     <div style={S.overlay} onClick={onClose}>
@@ -40,6 +42,7 @@ export default function SettingsScreen({
             right={<Toggle on={vibeOn} />}
             onClick={onToggleVibe}
           />
+          <ThemeRow theme={theme} onSetTheme={onSetTheme} />
 
           <Section label="PROGRESS" />
           <Row
@@ -110,6 +113,87 @@ function Row({ icon, label, sub, right, onClick, danger, disabled }) {
       </div>
       <div style={S.rowRight}>{right}</div>
     </button>
+  );
+}
+
+function ThemeRow({ theme, onSetTheme }) {
+  const options = [
+    { id: "light",  label: "Light",  Icon: SunIcon  },
+    { id: "system", label: "Auto",   Icon: AutoIcon },
+    { id: "dark",   label: "Dark",   Icon: MoonIcon },
+  ];
+  return (
+    <div style={S.row}>
+      <div style={{
+        ...S.rowIcon,
+        background: "rgba(255, 255, 255, 0.05)",
+        borderColor: "rgba(255, 255, 255, 0.06)",
+      }}>
+        <ThemeIcon theme={theme} />
+      </div>
+      <div style={S.rowBody}>
+        <div style={S.rowLabel}>Theme</div>
+        <div style={S.rowSub}>Interface appearance</div>
+      </div>
+      <div style={S.themeSegment}>
+        {options.map((opt) => {
+          const active = theme === opt.id;
+          const Icon = opt.Icon;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => onSetTheme && onSetTheme(opt.id)}
+              className="press"
+              style={{
+                ...S.segmentBtn,
+                background: active ? D.accent : "transparent",
+                boxShadow: active ? `0 2px 8px ${D.accentSoft}` : "none",
+              }}
+              aria-label={opt.label}
+            >
+              <Icon active={active} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ThemeIcon({ theme }) {
+  if (theme === "light") return <SunIcon active={true} />;
+  if (theme === "system") return <AutoIcon active={true} />;
+  return <MoonIcon active={true} />;
+}
+
+function SunIcon({ active }) {
+  const c = active ? D.accent : D.textSub;
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="4" fill={c}/>
+      <path d="M12 2V4M12 20V22M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M2 12H4M20 12H22M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22"
+        stroke={c} strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function MoonIcon({ active }) {
+  const c = active ? "#FFFFFF" : D.textSub;
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <path d="M21 12.79C20.11 13.28 19.11 13.55 18.06 13.55C14.5 13.55 11.61 10.66 11.61 7.1C11.61 6.05 11.88 5.05 12.37 4.16C12.61 3.73 12.29 3.19 11.81 3.25C6.94 3.85 3.14 8.06 3.14 13.14C3.14 18.6 7.55 23 13 23C18.08 23 22.29 19.2 22.89 14.33C22.95 13.85 22.41 13.53 21.98 13.77C21.66 13.94 21.34 14.09 21 14.22Z" fill={c}/>
+    </svg>
+  );
+}
+
+function AutoIcon({ active }) {
+  const c = active ? "#FFFFFF" : D.textSub;
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <path d="M12 2L2 7L12 12L22 7L12 2Z" fill={c}/>
+      <path d="M2 17L12 22L22 17" stroke={c} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+      <path d="M2 12L12 17L22 12" stroke={c} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
   );
 }
 
@@ -264,6 +348,22 @@ const S = {
   rowLabel: { fontSize: 14.5, fontWeight: 700, lineHeight: 1.2 },
   rowSub: { fontSize: 11, fontWeight: 600, color: D.textDim, marginTop: 2 },
   rowRight: { display: "flex", alignItems: "center", flexShrink: 0 },
+  themeSegment: {
+    display: "flex", alignItems: "center", gap: 2,
+    padding: 3, borderRadius: 10,
+    background: "rgba(255, 255, 255, 0.04)",
+    border: "1px solid rgba(255, 255, 255, 0.06)",
+  },
+  segmentBtn: {
+    width: 30, height: 26,
+    border: "none", borderRadius: 7,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer",
+    appearance: "none", WebkitAppearance: "none",
+    padding: 0, outline: "none",
+    WebkitTapHighlightColor: "transparent",
+    transition: `background ${D.tQuick}, box-shadow ${D.tQuick}`,
+  },
   chev: {
     fontSize: 22, fontWeight: 300, color: D.textDim,
     lineHeight: 1, marginTop: -2,

@@ -113,6 +113,7 @@ function buildShareCard({ round, upgrades, best }) {
 
 export default function Cascade() {
   const [round, setRound] = useState(1);
+  const [theme, setTheme] = useState("dark");   /* "dark" | "light" | "system" */
   const [isDaily, setIsDaily] = useState(false);
   const [screen, setScreen] = useState("home");   // "home" | "game"
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
@@ -189,6 +190,44 @@ export default function Cascade() {
   }, []);
 
   useEffect(() => { setVibe(vibeOn); }, [vibeOn]);
+
+  /* ═══ THEME ═══ */
+
+  /* On mount: read saved theme from localStorage */
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("cascade:theme");
+      if (saved === "dark" || saved === "light" || saved === "system") {
+        setTheme(saved);
+      }
+    } catch {}
+  }, []);
+
+  /* Sync theme to <html data-theme="..."> attribute.
+     System mode resolves via prefers-color-scheme media query. */
+  useEffect(() => {
+    const root = document.documentElement;
+    let effective = theme;
+    if (theme === "system") {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      effective = prefersDark ? "dark" : "light";
+    }
+    root.setAttribute("data-theme", effective);
+
+    /* Persist choice */
+    try { localStorage.setItem("cascade:theme", theme); } catch {}
+  }, [theme]);
+
+  /* Listen for system theme changes when in "system" mode */
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e) => {
+      document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
+    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [theme]);
 
   useEffect(() => {
     setTubes(level.tubes);
@@ -741,6 +780,8 @@ export default function Cascade() {
           achievements={achievements}
           ACHIEVEMENTS={ACHIEVEMENTS}
           best={best}
+          theme={theme}
+          onSetTheme={setTheme}
           isDaily={isDaily}
           onExitDaily={() => {
             restartRun();
