@@ -854,12 +854,6 @@ export default function Cascade() {
         </div>
       )}
 
-      {/* In-app toast */}
-                  </div>
-          </div>
-        </div>
-      )}
-
       {!isDaily && (
       <button
         onClick={useHint}
@@ -1111,6 +1105,7 @@ export default function Cascade() {
       )}
       </>)}
 
+      {/* In-app toast */}
       {toast && (
         <div
           role="status"
@@ -1164,7 +1159,10 @@ export default function Cascade() {
                   lineHeight: 1.3,
                 }}>{toast.message}</div>
               )}
-
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSettings && (
         <SettingsScreen
