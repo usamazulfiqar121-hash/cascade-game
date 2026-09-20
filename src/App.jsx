@@ -682,13 +682,18 @@ export default function Cascade() {
   const startNewGame = useCallback((daily = false) => {
     /* Daily replay prevention — block if already completed/failed today */
     if (daily) {
+      /* Check BOTH new state machine AND legacy dailyResults */
       const fresh = loadDailyState();
-      if (fresh && (fresh.status === "completed" || fresh.status === "failed")) {
-        setDailyState(fresh);
+      const legacyDone = !!dailyResults[dailyKey()];
+      const isCompleted = (fresh && fresh.status === "completed") || legacyDone;
+      const isFailed = fresh && fresh.status === "failed";
+
+      if (isCompleted || isFailed) {
+        if (fresh) setDailyState(fresh);
         showToast({
-          icon: fresh.status === "completed" ? "✓" : "⚠",
-          color: fresh.status === "completed" ? "var(--go)" : "var(--gold)",
-          title: fresh.status === "completed" ? "Already Completed" : "One Attempt Used",
+          icon: isCompleted ? "✓" : "⚠",
+          color: isCompleted ? "var(--go)" : "var(--gold)",
+          title: isCompleted ? "Already Completed" : "One Attempt Used",
           message: "Come back tomorrow",
         });
         return;
@@ -715,7 +720,7 @@ export default function Cascade() {
       restartRun();
     }
     setScreen("game");
-  }, [recordGameStart, restartRun]);
+  }, [recordGameStart, restartRun, dailyResults, showToast]);
 
   /* ═══════════ NAVIGATION — Back button infra ═══════════
      Phase 1: only infrastructure. Nothing wired yet.
