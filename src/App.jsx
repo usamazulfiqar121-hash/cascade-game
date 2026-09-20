@@ -855,60 +855,7 @@ export default function Cascade() {
       )}
 
       {/* In-app toast */}
-      {toast && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            position: "fixed",
-            top: "calc(env(safe-area-inset-top, 0px) + 20px)",
-            left: 20, right: 20,
-            display: "flex", justifyContent: "center",
-            pointerEvents: "none",
-            zIndex: 300,
-            animation: toast.exiting
-              ? "toastOut 240ms ease forwards"
-              : "toastIn 380ms cubic-bezier(0.16, 1, 0.3, 1)",
-          }}
-        >
-          <div style={{
-            display: "flex", alignItems: "center", gap: 13,
-            background: "var(--glass-modal)",
-            backdropFilter: "blur(24px) saturate(160%)",
-            WebkitBackdropFilter: "blur(24px) saturate(160%)",
-            border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
-            borderRadius: 18,
-            padding: "13px 20px 13px 14px",
-            boxShadow: "0 12px 40px " + (toast.color || "var(--accent)") + "33, 0 4px 12px rgba(0,0,0,0.35)",
-            fontFamily: "'Inter', system-ui, sans-serif",
-            maxWidth: 380,
-            width: "100%",
-          }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
-              background: "transparent",
-              border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 18, fontWeight: 900,
-              color: toast.color || "var(--accent)",
-              lineHeight: 1,
-            }}>{toast.icon}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: 13.5, fontWeight: 900,
-                color: "var(--text)",
-                letterSpacing: "-0.01em",
-                lineHeight: 1.2,
-              }}>{toast.title}</div>
-              {toast.message && (
-                <div style={{
-                  fontSize: 11.5, fontWeight: 600,
-                  color: "var(--text-sub)",
-                  marginTop: 3,
-                  lineHeight: 1.3,
-                }}>{toast.message}</div>
-              )}
-            </div>
+                  </div>
           </div>
         </div>
       )}
@@ -1163,6 +1110,61 @@ export default function Cascade() {
         </div>
       )}
       </>)}
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: "calc(env(safe-area-inset-top, 0px) + 20px)",
+            left: 20, right: 20,
+            display: "flex", justifyContent: "center",
+            pointerEvents: "none",
+            zIndex: 300,
+            animation: toast.exiting
+              ? "toastOut 240ms ease forwards"
+              : "toastIn 380ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        >
+          <div style={{
+            display: "flex", alignItems: "center", gap: 13,
+            background: "var(--glass-modal)",
+            backdropFilter: "blur(24px) saturate(160%)",
+            WebkitBackdropFilter: "blur(24px) saturate(160%)",
+            border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
+            borderRadius: 18,
+            padding: "13px 20px 13px 14px",
+            boxShadow: "0 12px 40px " + (toast.color || "var(--accent)") + "33, 0 4px 12px rgba(0,0,0,0.35)",
+            fontFamily: "'Inter', system-ui, sans-serif",
+            maxWidth: 380,
+            width: "100%",
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              background: "transparent",
+              border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18, fontWeight: 900,
+              color: toast.color || "var(--accent)",
+              lineHeight: 1,
+            }}>{toast.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 13.5, fontWeight: 900,
+                color: "var(--text)",
+                letterSpacing: "-0.01em",
+                lineHeight: 1.2,
+              }}>{toast.title}</div>
+              {toast.message && (
+                <div style={{
+                  fontSize: 11.5, fontWeight: 600,
+                  color: "var(--text-sub)",
+                  marginTop: 3,
+                  lineHeight: 1.3,
+                }}>{toast.message}</div>
+              )}
+
 
       {showSettings && (
         <SettingsScreen
