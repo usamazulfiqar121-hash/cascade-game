@@ -644,62 +644,6 @@ export default function Cascade() {
         )}
       </div>
 
-      {showSettings && (
-        <SettingsScreen
-          soundOn={soundOn}
-          vibeOn={vibeOn}
-          onToggleSound={() => {
-            const next = !soundOn;
-            setSoundOn(next);
-            Snd.setSfx(next);
-            try { localStorage.setItem("cascade:soundOn", next ? "1" : "0"); } catch {}
-          }}
-          onToggleVibe={() => {
-            const next = !vibeOn;
-            setVibeOn(next);
-            setVibe(next);
-            try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
-          }}
-          onReset={() => {
-            if (window.confirm("Reset all progress? This deletes your best score and tutorial.")) {
-              try {
-                localStorage.removeItem(BEST_KEY);
-                localStorage.removeItem("cascade:tutorialSeen");
-              } catch {}
-              setBest(0);
-              restartRun();
-              setShowSettings(false);
-            }
-          }}
-          onAwards={() => setShowAchievements(true)}
-          onClose={() => setShowSettings(false)}
-          achievements={achievements}
-          ACHIEVEMENTS={ACHIEVEMENTS}
-          best={best}
-          isDaily={isDaily}
-          onExitDaily={() => {
-            restartRun();
-            setShowSettings(false);
-          }}
-        />
-      )}
-
-      {showAchievements && (
-        <AchievementsScreen
-          achievements={achievements}
-          onClose={() => setShowAchievements(false)}
-        />
-      )}
-
-      {showTutorial && (
-        <Tutorial
-          onClose={() => {
-            setShowTutorial(false);
-            try { localStorage.setItem("cascade:tutorialSeen", "1"); } catch {}
-          }}
-        />
-      )}
-
       {phase === "upgrade" && pendingUpgrades.length > 0 && (
         <div style={S.overlay}>
           <div style={{ ...S.ovCard, maxWidth: 360 }}>
@@ -764,6 +708,63 @@ export default function Cascade() {
         </div>
       )}
       </>)}
+
+      {showSettings && (
+        <SettingsScreen
+          soundOn={soundOn}
+          vibeOn={vibeOn}
+          onToggleSound={() => {
+            const next = !soundOn;
+            setSoundOn(next);
+            Snd.setSfx(next);
+            try { localStorage.setItem("cascade:soundOn", next ? "1" : "0"); } catch {}
+          }}
+          onToggleVibe={() => {
+            const next = !vibeOn;
+            setVibeOn(next);
+            setVibe(next);
+            try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
+          }}
+          onReset={() => {
+            if (window.confirm("Reset all progress? This deletes your best score and tutorial.")) {
+              try {
+                localStorage.removeItem(BEST_KEY);
+                localStorage.removeItem("cascade:tutorialSeen");
+              } catch {}
+              setBest(0);
+              restartRun();
+              setShowSettings(false);
+            }
+          }}
+          onAwards={() => setShowAchievements(true)}
+          onClose={() => setShowSettings(false)}
+          achievements={achievements}
+          ACHIEVEMENTS={ACHIEVEMENTS}
+          best={best}
+          isDaily={isDaily}
+          onExitDaily={() => {
+            restartRun();
+            setShowSettings(false);
+          }}
+        />
+      )}
+
+      {showAchievements && (
+        <AchievementsScreen
+          achievements={achievements}
+          onClose={() => setShowAchievements(false)}
+        />
+      )}
+
+      {showTutorial && (
+        <Tutorial
+          onClose={() => {
+            setShowTutorial(false);
+            try { localStorage.setItem("cascade:tutorialSeen", "1"); } catch {}
+          }}
+        />
+      )}
+
     </div>
   );
 }
