@@ -421,7 +421,7 @@ export default function Cascade() {
   const recordCombo = useCallback((c) => recordStats((p) => c > p.highestCombo ? { ...p, highestCombo: c } : p), [recordStats]);
 
   useEffect(() => {
-    setTubes(level.tubes);
+    setTubes(level.tubes.map((t) => [...t]));
     setMoves(0);
     setBonusMoves(0);
     setSelected(null);
