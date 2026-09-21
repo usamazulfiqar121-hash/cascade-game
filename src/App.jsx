@@ -43,6 +43,35 @@ import SettingsScreen from "./screens/SettingsScreen";
 
 /* ═══════════  SHARE CARD  ═══════════ */
 
+function estimateRank(moves, rounds) {
+  if (rounds < 1 || moves < 1) return { label: "Complete" };
+  const avg = moves / rounds;
+  if (avg <= 4) return { label: "Top 5%" };
+  if (avg <= 5) return { label: "Top 12%" };
+  if (avg <= 6) return { label: "Top 25%" };
+  if (avg <= 7.5) return { label: "Top 40%" };
+  if (avg <= 9) return { label: "Top 60%" };
+  return { label: "Top 80%" };
+}
+
+function buildEmojiGrid(rounds, totalMoves, streak) {
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = ["CASCADE Daily " + today, ""];
+  (rounds || []).forEach((r) => {
+    const eff = r.moveLimit > 0 ? r.moves / r.moveLimit : 0.7;
+    let sq = "\uD83D\uDFE9";
+    if (eff > 0.75) sq = "\uD83D\uDFE5";
+    else if (eff > 0.55) sq = "\uD83D\uDFE8";
+    lines.push(sq + "  R" + r.round + " - " + r.moves + " moves");
+  });
+  lines.push("");
+  lines.push("Total: " + totalMoves + " moves");
+  if (streak > 0) lines.push("Streak: " + streak);
+  lines.push("");
+  lines.push("cascade-main-rho.vercel.app");
+  return lines.join("\n");
+}
+
 function buildShareCard({ round, upgrades, best }) {
   try {
     const canvas = document.createElement("canvas");
@@ -233,6 +262,7 @@ export default function Cascade() {
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
   const [dailyCountdown, setDailyCountdown] = useState(0);   /* ms until next */
   const [toast, setToast] = useState(null);
+  const [dailyRun, setDailyRun] = useState({ rounds: [], totalMoves: 0 });
   const toastTimerRef = useRef(null);
 
   /* ═══ DAILY MODE — INITIALIZATION ═══ */
@@ -531,6 +561,10 @@ export default function Cascade() {
         recordRound();
         /* Daily completion — mark state + increment streak */
         if (isDaily) {
+          setDailyRun((prev) => ({
+            rounds: [...prev.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
+            totalMoves: prev.totalMoves + newMovesUsed,
+          }));
           const st = saveDailyState({
             status: "completed",
             completedAt: Date.now(),
@@ -715,6 +749,7 @@ export default function Cascade() {
       setLastRoundMovesLeft(0);
       setShareImage(null);
       setShared(false);
+      setDailyRun({ rounds: [], totalMoves: 0 });
       setLevel(generateLevel(1, [], 0, seed));
     } else {
       restartRun();
@@ -768,6 +803,22 @@ export default function Cascade() {
       console.warn("[CASCADE] history.back failed:", err);
     }
   }, []);
+
+  const shareDaily = useCallback(async () => {
+    try {
+      const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+      const streak = computeStreak(dr);
+      const text = buildEmojiGrid(dailyRun.rounds, dailyRun.totalMoves, streak);
+      if (navigator.share) {
+        await navigator.share({ title: "Cascade Daily", text });
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        showToast({ icon: "C", color: "var(--accent)", title: "Copied!", message: "Paste to share" });
+      }
+    } catch (err) {
+      if (err && err.name !== "AbortError") console.warn("Share failed:", err);
+    }
+  }, [dailyRun, showToast]);
 
   const generateShare = useCallback(() => {
     try {
@@ -1079,7 +1130,7 @@ export default function Cascade() {
                         {formatCountdown(dailyCountdown)}
                       </div>
                     </div>
-                    <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
+                    <button style={{ ...S.ghost, color: T.accent }} onClick={shareDaily}>📋 Share Result</button>
                     <button style={S.ghost} onClick={() => { setScreen("home"); setIsDaily(false); }}>← Home</button>
                   </>
                 ) : (
