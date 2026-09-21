@@ -263,6 +263,7 @@ export default function Cascade() {
   const [dailyCountdown, setDailyCountdown] = useState(0);   /* ms until next */
   const [toast, setToast] = useState(null);
   const [dailyRun, setDailyRun] = useState({ rounds: [], totalMoves: 0 });
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const toastTimerRef = useRef(null);
 
   /* ═══ DAILY MODE — INITIALIZATION ═══ */
@@ -991,10 +992,16 @@ export default function Cascade() {
           </div>
           <button onClick={() => {
             if (phase === "playing" && (moves > 0 || round > 1)) {
-              if (window.confirm("Exit to home? Progress will be lost.")) {
-                restartRun();
-                setScreen("home");
-              }
+              setConfirmDialog({
+                title: "Exit to Home?",
+                message: "Progress will be lost.",
+                confirmLabel: "Exit",
+                onConfirm: () => {
+                  restartRun();
+                  setScreen("home");
+                  setConfirmDialog(null);
+                },
+              });
             } else {
               restartRun();
               setScreen("home");
