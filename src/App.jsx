@@ -358,6 +358,7 @@ export default function Cascade() {
       try {
         const dr = localStorage.getItem("cascade:dailyResults");
         if (dr) setDailyResults(JSON.parse(dr));
+      } catch {}
       try {
         if (localStorage.getItem("cascade:hasPlayedOnce") === "1") setHasPlayedOnce(true);
       } catch {}
@@ -372,7 +373,6 @@ export default function Cascade() {
             highestCombo: Number(p.highestCombo) || 0,
           });
         }
-      } catch {}
       } catch {}
       if (t === "1") setTutorialSeen(true);
       else {
@@ -716,6 +716,18 @@ export default function Cascade() {
     setLevel(generateLevel(1, [], 0));
   }, []);
 
+  /* Save best round reached so far. Called at every place the player can
+     leave a run WITHOUT losing (Home button, Exit Daily Mode) — losing
+     already saves it at the game-over trigger. Deliberately NOT called
+     from inside restartRun() itself: Settings > Reset calls restartRun()
+     right after setBest(0), and saving here would immediately undo that. */
+  const saveBestRound = useCallback(() => {
+    if (round > best) {
+      setBest(round);
+      try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
+    }
+  }, [round, best]);
+
   /* Single entry point for starting a new run — increments stats safely.
      Used by Home Play, Home Daily, and Game Over "Start Over". */
   const startNewGame = useCallback((daily = false) => {
@@ -997,12 +1009,14 @@ export default function Cascade() {
                 message: "Progress will be lost.",
                 confirmLabel: "Exit",
                 onConfirm: () => {
+                  saveBestRound();
                   restartRun();
                   setScreen("home");
                   setConfirmDialog(null);
                 },
               });
             } else {
+              saveBestRound();
               restartRun();
               setScreen("home");
             }
@@ -1260,21 +1274,27 @@ export default function Cascade() {
             try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
           }}
           onReset={() => {
-            if (window.confirm("Reset all progress? This deletes your best score, stats, and tutorial.")) {
-              try {
-                localStorage.removeItem(BEST_KEY);
-                localStorage.removeItem("cascade:tutorialSeen");
-                localStorage.removeItem("cascade:stats");
-                localStorage.removeItem("cascade:dailyResults");
-                localStorage.removeItem("cascade:dailyState");
-                localStorage.removeItem("cascade:dailyRun");
-                localStorage.removeItem("cascade:hasPlayedOnce");
-              } catch {}
-              setBest(0);
-              setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
-              restartRun();
-              setShowSettings(false);
-            }
+            setConfirmDialog({
+              title: "Reset All Progress?",
+              message: "This deletes your best score, stats, and tutorial.",
+              confirmLabel: "Reset",
+              onConfirm: () => {
+                try {
+                  localStorage.removeItem(BEST_KEY);
+                  localStorage.removeItem("cascade:tutorialSeen");
+                  localStorage.removeItem("cascade:stats");
+                  localStorage.removeItem("cascade:dailyResults");
+                  localStorage.removeItem("cascade:dailyState");
+                  localStorage.removeItem("cascade:dailyRun");
+                  localStorage.removeItem("cascade:hasPlayedOnce");
+                } catch {}
+                setBest(0);
+                setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
+                restartRun();
+                setShowSettings(false);
+                setConfirmDialog(null);
+              },
+            });
           }}
           onAwards={() => setShowAchievements(true)}
           onClose={() => setShowSettings(false)}
@@ -1284,6 +1304,7 @@ export default function Cascade() {
           onSetTheme={setTheme}
           isDaily={isDaily}
           onExitDaily={() => {
+            saveBestRound();
             restartRun();
             setShowSettings(false);
           }}
@@ -1306,6 +1327,22 @@ export default function Cascade() {
             try { localStorage.setItem("cascade:tutorialSeen", "1"); } catch {}
           }}
         />
+      )}
+
+      {/* Exit-to-Home confirm — state existed but was never rendered, so the
+          Home button silently did nothing whenever moves > 0 || round > 1
+          (the confirm-required case, i.e. almost always). */}
+      {confirmDialog && (
+        <div style={S.overlay}>
+          <div style={{ ...S.ovCard, maxWidth: 340 }}>
+            <div style={{ ...S.ovTitle, fontSize: 20 }}>{confirmDialog.title}</div>
+            <div style={{ ...S.ovSub, marginBottom: 20 }}>{confirmDialog.message}</div>
+            <button style={S.primary} onClick={confirmDialog.onConfirm}>
+              {confirmDialog.confirmLabel || "Confirm"}
+            </button>
+            <button style={S.ghost} onClick={() => setConfirmDialog(null)}>Cancel</button>
+          </div>
+        </div>
       )}
 
     </div>
