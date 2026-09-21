@@ -602,7 +602,12 @@ export default function Cascade() {
         }
         setTimeout(() => {
           setLastRoundMovesLeft(remainingAtClear);
-          setPendingUpgrades(pickRandomUpgrades(3));
+          /* Daily upgrade choices must be identical for every player too —
+             pickRandomUpgrades() alone used Math.random even in daily mode,
+             so two players clearing the same round saw different 3 cards. */
+          setPendingUpgrades(
+            isDaily ? pickDailyUpgrades(dateToSeed() + round + 1) : pickRandomUpgrades(3)
+          );
           setPhase("upgrade");
           Snd.clear();
           buzz(30);
