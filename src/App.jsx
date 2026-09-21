@@ -989,6 +989,23 @@ export default function Cascade() {
               {Math.max(0, movesLeft)} <span style={S.movesSub}>moves left</span>
             </div>
           </div>
+          <button onClick={() => {
+            if (phase === "playing" && (moves > 0 || round > 1)) {
+              if (window.confirm("Exit to home? Progress will be lost.")) {
+                restartRun();
+                setScreen("home");
+              }
+            } else {
+              restartRun();
+              setScreen("home");
+            }
+          }} aria-label="Home" style={{
+            width: 34, height: 34, borderRadius: 12,
+            background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
+            color: T.muted, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, flexShrink: 0,
+          }}>←</button>
           <button onClick={() => setShowSettings(true)} aria-label="Settings" style={{
             width: 34, height: 34, borderRadius: 12,
             background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
