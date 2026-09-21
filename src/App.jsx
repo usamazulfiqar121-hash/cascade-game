@@ -809,14 +809,24 @@ export default function Cascade() {
      Phase 1: only infrastructure. Nothing wired yet.
      Refs hold latest state so popstate handler never goes stale. */
 
-  const navStateRef = useRef({ showSettings: false, showAchievements: false, screen: "home" });
+  const navStateRef = useRef({ showSettings: false, showAchievements: false, screen: "home", confirmDialog: false });
   useEffect(() => {
-    navStateRef.current = { showSettings, showAchievements, screen };
-  }, [showSettings, showAchievements, screen]);
+    navStateRef.current = { showSettings, showAchievements, screen, confirmDialog: !!confirmDialog };
+  }, [showSettings, showAchievements, screen, confirmDialog]);
 
   useEffect(() => {
     const handler = (e) => {
       try {
+        /* A confirm dialog (Exit to Home?, Reset Progress?, ...) sits on top
+           of everything and never pushes its own history entry. Without this
+           check, hardware back while it's showing would fall straight
+           through to closing whatever's underneath — silently bypassing the
+           "progress will be lost" warning and skipping saveBestRound(). Back
+           should just cancel the dialog, same as tapping outside it. */
+        if (navStateRef.current.confirmDialog) {
+          setConfirmDialog(null);
+          return;
+        }
         const page = e.state?.page;
         /* An explicit "home" checkpoint always resets everything —
            nothing pushes one yet, kept for a future full checkpoint. */
@@ -915,9 +925,9 @@ export default function Cascade() {
       {/* HOME — visible when screen === "home" */}
       {screen === "home" && (
         <HomeScreen
-          onPlay={() => startNewGame(false)}
+          onPlay={() => { startNewGame(false); pushNav("game"); }}
           onAwards={() => { setShowAchievements(true); pushNav("awards"); }}
-          onDaily={() => startNewGame(true)}
+          onDaily={() => { startNewGame(true); pushNav("game"); }}
           onSettings={() => { setShowSettings(true); pushNav("settings"); }}
           dailyResults={dailyResults}
           computeStreak={computeStreak}
@@ -1048,14 +1058,14 @@ export default function Cascade() {
                 onConfirm: () => {
                   saveBestRound();
                   restartRun();
-                  setScreen("home");
+                  popNav();
                   setConfirmDialog(null);
                 },
               });
             } else {
               saveBestRound();
               restartRun();
-              setScreen("home");
+              popNav();
             }
           }} aria-label="Home" style={{
             width: 34, height: 34, borderRadius: 12,
@@ -1210,7 +1220,7 @@ export default function Cascade() {
                       </div>
                     </div>
                     <button style={{ ...S.ghost, color: T.accent }} onClick={shareDaily}>📋 Share Result</button>
-                    <button style={S.ghost} onClick={() => { setScreen("home"); setIsDaily(false); }}>← Home</button>
+                    <button style={S.ghost} onClick={() => { popNav(); setIsDaily(false); }}>← Home</button>
                   </>
                 ) : (
                   <>
