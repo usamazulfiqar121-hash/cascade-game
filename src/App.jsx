@@ -561,6 +561,10 @@ export default function Cascade() {
         recordRound();
         /* Daily completion — mark state + increment streak */
         if (isDaily) {
+          if (round > best) {
+            setBest(round);
+            try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
+          }
           setDailyRun((prev) => ({
             rounds: [...prev.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
             totalMoves: prev.totalMoves + newMovesUsed,
