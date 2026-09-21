@@ -817,15 +817,21 @@ export default function Cascade() {
   useEffect(() => {
     const handler = (e) => {
       try {
-        const page = e.state?.page || "home";
-        /* If state says we're going home, reset everything */
+        const page = e.state?.page;
+        /* An explicit "home" checkpoint always resets everything —
+           nothing pushes one yet, kept for a future full checkpoint. */
         if (page === "home") {
           setShowSettings(false);
           setShowAchievements(false);
           setScreen("home");
           return;
         }
-        /* Fallback: close deepest open UI */
+        /* Landed on an entry with no known page — normally the base
+           entry from before anything was pushed. Close just the deepest
+           thing that's actually open, one layer at a time, instead of
+           assuming "home": Settings can be opened from inside an active
+           game, and forcing screen back to home here would yank the
+           player out of a run just for closing an overlay. */
         const st = navStateRef.current;
         if (st.showSettings) { setShowSettings(false); return; }
         if (st.showAchievements) { setShowAchievements(false); return; }
@@ -912,7 +918,7 @@ export default function Cascade() {
           onPlay={() => startNewGame(false)}
           onAwards={() => setShowAchievements(true)}
           onDaily={() => startNewGame(true)}
-          onSettings={() => setShowSettings(true)}
+          onSettings={() => { setShowSettings(true); pushNav("settings"); }}
           dailyResults={dailyResults}
           computeStreak={computeStreak}
           dailyKey={dailyKey}
@@ -1058,7 +1064,7 @@ export default function Cascade() {
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 16, flexShrink: 0,
           }}>←</button>
-          <button onClick={() => setShowSettings(true)} aria-label="Settings" style={{
+          <button onClick={() => { setShowSettings(true); pushNav("settings"); }} aria-label="Settings" style={{
             width: 34, height: 34, borderRadius: 12,
             background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
             color: T.muted, cursor: "pointer",
@@ -1322,13 +1328,13 @@ export default function Cascade() {
                 setBest(0);
                 setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
                 restartRun();
-                setShowSettings(false);
+                popNav();
                 setConfirmDialog(null);
               },
             });
           }}
           onAwards={() => setShowAchievements(true)}
-          onClose={() => setShowSettings(false)}
+          onClose={() => popNav()}
           achievements={achievements}
           ACHIEVEMENTS={ACHIEVEMENTS}
           theme={theme}
@@ -1337,7 +1343,7 @@ export default function Cascade() {
           onExitDaily={() => {
             saveBestRound();
             restartRun();
-            setShowSettings(false);
+            popNav();
           }}
         />
       )}
