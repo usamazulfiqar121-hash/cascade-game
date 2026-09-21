@@ -1,10 +1,13 @@
-/* ═══════════ TUBE COMPONENT v2 ═══════════
+/* ═══════════ TUBE COMPONENT v3 ═══════════
    Premium glass tube. Theme-aware via CSS vars.
-   Refined selection/hint/solved states. */
+   Responsive scale prop — shrinks as board grows. */
 
 import { COLORS, MAX_HEIGHT } from "./constants";
 
-export default function Tube({ balls, selected, onClick, disabled, hintFrom, hintTo, solved }) {
+export default function Tube({
+  balls, selected, onClick, disabled,
+  hintFrom, hintTo, solved, scale = 1,
+}) {
   /* State priority: selected > solved > hintFrom > hintTo > idle */
   const state = selected
     ? "selected"
@@ -16,6 +19,20 @@ export default function Tube({ balls, selected, onClick, disabled, hintFrom, hin
     ? "hintTo"
     : "idle";
 
+  /* Responsive dimensions — all scaled proportionally */
+  const dims = {
+    width: 62 * scale,
+    height: MAX_HEIGHT * 48 * scale + 22,
+    padding: `${10 * scale}px ${6 * scale}px ${6 * scale}px`,
+    borderRadius: 32 * scale,
+    glassRadius: 28 * scale,
+    ballH: 38 * scale,
+    ballMT: 3 * scale,
+    ballRadius: 19 * scale,
+    highlightTop: 4 * scale,
+    highlightH: 6 * scale,
+  };
+
   return (
     <button
       onClick={onClick}
@@ -25,11 +42,18 @@ export default function Tube({ balls, selected, onClick, disabled, hintFrom, hin
       aria-label={`Tube${selected ? ", selected" : ""}${solved ? ", solved" : ""}`}
       style={{
         ...S.tube,
+        width: dims.width,
+        height: dims.height,
+        padding: dims.padding,
+        borderRadius: dims.borderRadius,
         opacity: disabled ? 0.45 : 1,
       }}
     >
       {/* Inner glass highlight */}
-      <span style={S.glass} aria-hidden="true" />
+      <span
+        style={{ ...S.glass, borderRadius: `${dims.glassRadius}px ${dims.glassRadius}px 0 0` }}
+        aria-hidden="true"
+      />
 
       {/* Balls stack (bottom → top) */}
       {balls.map((colorIdx, i) => (
@@ -37,10 +61,13 @@ export default function Tube({ balls, selected, onClick, disabled, hintFrom, hin
           key={i}
           style={{
             ...S.ball,
+            height: dims.ballH,
+            marginTop: dims.ballMT,
+            borderRadius: dims.ballRadius,
             background: `linear-gradient(180deg, ${COLORS[colorIdx]} 0%, ${shade(COLORS[colorIdx], -0.15)} 100%)`,
           }}
         >
-          <span style={S.ballHighlight} />
+          <span style={{ ...S.ballHighlight, top: dims.highlightTop, height: dims.highlightH }} />
         </div>
       ))}
     </button>
@@ -65,12 +92,8 @@ function shade(hex, amount) {
 const S = {
   tube: {
     position: "relative",
-    width: 62,
-    height: MAX_HEIGHT * 48 + 22,
     background: "var(--tube-bg)",
     border: "2px solid var(--tube-edge)",
-    borderRadius: 32,
-    padding: "10px 6px 6px",
     display: "flex",
     flexDirection: "column-reverse",
     justifyContent: "flex-start",
@@ -93,15 +116,11 @@ const S = {
     right: 4,
     height: "40%",
     background: "linear-gradient(180deg, var(--tube-highlight) 0%, transparent 100%)",
-    borderRadius: "28px 28px 0 0",
     pointerEvents: "none",
   },
   ball: {
     position: "relative",
     width: "88%",
-    height: 38,
-    borderRadius: 19,
-    marginTop: 3,
     boxShadow: `
       inset 0 -4px 8px rgba(0, 0, 0, 0.25),
       inset 0 2px 4px rgba(255, 255, 255, 0.15),
@@ -111,10 +130,8 @@ const S = {
   },
   ballHighlight: {
     position: "absolute",
-    top: 4,
     left: "20%",
     right: "20%",
-    height: 6,
     borderRadius: 999,
     background: "rgba(255, 255, 255, 0.35)",
     filter: "blur(1px)",

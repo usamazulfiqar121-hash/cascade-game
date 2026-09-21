@@ -41,6 +41,23 @@ import SettingsScreen from "./screens/SettingsScreen";
 
 
 
+/* ═══════════  BOARD LAYOUT  ═══════════ */
+
+/* Tube row is capped at maxWidth 400 with a 62px tube + 12px gap, so only
+   5 tubes fit per row at full size. colorCount alone caps at 7 (+2 empty
+   tubes = 9 tubes by round 11), and the "Extra Tube" upgrade can push it
+   well past that over a long run — with no scaling, a 3rd+ row of tubes
+   ran past the board's fixed-height area and got clipped (root has
+   overflow: hidden, no scroll fallback). Shrink tubes as the count grows
+   so more fit per row and total board height stays in bounds. */
+function tubeScaleFor(tubeCount) {
+  if (tubeCount <= 7) return 1;
+  if (tubeCount <= 9) return 0.86;
+  if (tubeCount <= 11) return 0.74;
+  if (tubeCount <= 13) return 0.64;
+  return 0.56;
+}
+
 /* ═══════════  SHARE CARD  ═══════════ */
 
 function estimateRank(moves, rounds) {
@@ -1089,7 +1106,7 @@ export default function Cascade() {
       <div style={{ ...S.board, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
         <div style={S.tubesRow}>
           {tubes.map((balls, i) => (
-            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} />
+            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} />
           ))}
         </div>
       </div>
