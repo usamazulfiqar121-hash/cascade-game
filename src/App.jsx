@@ -916,7 +916,7 @@ export default function Cascade() {
       {screen === "home" && (
         <HomeScreen
           onPlay={() => startNewGame(false)}
-          onAwards={() => setShowAchievements(true)}
+          onAwards={() => { setShowAchievements(true); pushNav("awards"); }}
           onDaily={() => startNewGame(true)}
           onSettings={() => { setShowSettings(true); pushNav("settings"); }}
           dailyResults={dailyResults}
@@ -1353,7 +1353,7 @@ export default function Cascade() {
           achievements={achievements}
           stats={stats}
           best={best}
-          onClose={() => setShowAchievements(false)}
+          onClose={() => popNav()}
         />
       )}
 
