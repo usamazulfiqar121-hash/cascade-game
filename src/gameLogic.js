@@ -115,8 +115,12 @@ export function computeStreak(results) {
   return streak;
 }
 
-/* ─── Auto-sort (roguelike upgrade effect) ─── */
-export function applyAutoSort(tubes, count) {
+/* ─── Auto-sort (roguelike upgrade effect) ───
+   rng defaults to Math.random so callers outside generateLevel (tests,
+   future call sites) keep working unseeded; generateLevel always passes
+   its own rng through so daily-challenge boards stay deterministic even
+   when the run has the Auto-Sort upgrade. */
+export function applyAutoSort(tubes, count, rng = Math.random) {
   if (count <= 0) return tubes;
   const result = tubes.map((t) => [...t]);
   for (let k = 0; k < count; k++) {
@@ -127,7 +131,7 @@ export function applyAutoSort(tubes, count) {
     const colorArr = [...colors];
     if (!colorArr.length) break;
     let sorted = false;
-    for (const color of shuffle(colorArr)) {
+    for (const color of shuffle(colorArr, rng)) {
       let total = 0;
       result.forEach((t) => t.forEach((c) => { if (c === color) total++; }));
       if (total !== MAX_HEIGHT) continue;
@@ -163,7 +167,7 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null) {
   const extraTubes = runUpgrades.filter((id) => id === "tube").length;
   for (let i = 0; i < extraTubes; i++) tubes.push([]);
   const autoSortCount = runUpgrades.filter((id) => id === "auto").length;
-  tubes = applyAutoSort(tubes, autoSortCount);
+  tubes = applyAutoSort(tubes, autoSortCount, rng);
 
   const baseLimit = Math.round(colorCount * 3 + round * 0.8) + 4;
   const moveBonus = sumMoveBonus(runUpgrades);

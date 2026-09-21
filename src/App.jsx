@@ -697,12 +697,18 @@ export default function Cascade() {
     setPendingUpgrades([]);
     const nextRound = round + 1;
     setRound(nextRound);
-    setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft));
+    /* Daily boards must be identical for every player on a given date.
+       Without a per-round seed here, only round 1 was deterministic —
+       round 2 onward silently fell back to Math.random, so "today's
+       daily challenge" was actually a different board for everyone
+       past the first round. */
+    const nextSeed = isDaily ? dateToSeed() + nextRound : null;
+    setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed));
     Snd.upgrade();
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily]);
 
   const retry = useCallback(() => {
-    const seed = isDaily ? dateToSeed() : null;
+    const seed = isDaily ? dateToSeed() + round : null;
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
   }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
 
@@ -752,7 +758,10 @@ export default function Cascade() {
     }
     recordGameStart();
     if (daily) {
-      const seed = dateToSeed();
+      /* Round 1's seed follows the same dateToSeed() + round convention
+         used in chooseUpgrade/retry, so every daily round (not just the
+         first) is reproducible from date + round alone. */
+      const seed = dateToSeed() + 1;
       /* Save "in_progress" state before starting */
       const st = saveDailyState({
         status: "in_progress",

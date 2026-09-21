@@ -18,10 +18,10 @@ export default function HomeScreen({
   const today = new Date();
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
-    d.setDate(d.getDate() - i);
+    d.setUTCDate(d.getUTCDate() - i);
     days.push({
       key: dailyKey(d),
-      label: ["S","M","T","W","T","F","S"][d.getDay()],
+      label: ["S","M","T","W","T","F","S"][d.getUTCDay()],
       done: !!dailyResults[dailyKey(d)],
       isToday: i === 0,
     });
