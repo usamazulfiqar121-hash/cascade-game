@@ -47,7 +47,8 @@ function TabButton({ label, active, onClick, renderIcon }) {
     >
       <div style={{
         ...S.tabIconWrap,
-        background: active ? "rgba(76, 141, 255, 0.12)" : "transparent",
+        background: active ? `${D.accent}1F` : "transparent",
+        transform: active ? "scale(1.08)" : "scale(1)",
       }}>
         {renderIcon(active)}
       </div>
@@ -73,7 +74,7 @@ const S = {
     background: "var(--nav-bg)",
     backdropFilter: "blur(32px) saturate(180%)",
     WebkitBackdropFilter: "blur(32px) saturate(180%)",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
+    border: `1px solid ${D.glassBorder}`,
     borderRadius: 28,
     padding: "10px 12px",
     boxShadow: "0 20px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
@@ -83,7 +84,7 @@ const S = {
     position: "absolute",
     inset: -2,
     borderRadius: 28,
-    background: "radial-gradient(80% 100% at 50% 100%, rgba(76, 141, 255, 0.15) 0%, transparent 70%)",
+    background: `radial-gradient(80% 100% at 50% 100%, ${D.accent}26 0%, transparent 70%)`,
     pointerEvents: "none",
     zIndex: -1,
   },
@@ -113,7 +114,7 @@ const S = {
     width: 36, height: 36,
     borderRadius: 12,
     display: "flex", alignItems: "center", justifyContent: "center",
-    transition: `background ${D.tQuick}`,
+    transition: `background ${D.tQuick}, transform ${D.tSpring}`,
   },
   tabLabel: {
     fontSize: 10,

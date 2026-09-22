@@ -78,14 +78,14 @@ function Row({ icon, label, sub, right, onClick, danger, disabled }) {
       style={{
         ...S.row,
         cursor: disabled ? "default" : "pointer",
-        background: danger ? "rgba(255, 92, 122, 0.05)" : "rgba(255, 255, 255, 0.02)",
-        borderColor: danger ? "rgba(255, 92, 122, 0.15)" : "rgba(255, 255, 255, 0.05)",
+        background: danger ? `${D.danger}0D` : `${D.textSub}05`,
+        borderColor: danger ? `${D.danger}26` : `${D.textSub}0D`,
       }}
     >
       <div style={{
         ...S.rowIcon,
-        background: danger ? "rgba(255, 92, 122, 0.10)" : "rgba(255, 255, 255, 0.05)",
-        borderColor: danger ? "rgba(255, 92, 122, 0.20)" : "rgba(255, 255, 255, 0.06)",
+        background: danger ? `${D.danger}1A` : `${D.textSub}0D`,
+        borderColor: danger ? `${D.danger}33` : `${D.textSub}0F`,
       }}>{icon}</div>
       <div style={S.rowBody}>
         <div style={{ ...S.rowLabel, color: danger ? D.danger : D.text }}>{label}</div>
@@ -106,8 +106,8 @@ function ThemeRow({ theme, onSetTheme }) {
     <div style={S.row}>
       <div style={{
         ...S.rowIcon,
-        background: "rgba(255, 255, 255, 0.05)",
-        borderColor: "rgba(255, 255, 255, 0.06)",
+        background: `${D.textSub}0D`,
+        borderColor: `${D.textSub}0F`,
       }}>
         <ThemeIcon theme={theme} />
       </div>
@@ -128,6 +128,7 @@ function ThemeRow({ theme, onSetTheme }) {
                 ...S.segmentBtn,
                 background: active ? D.accent : "transparent",
                 boxShadow: active ? `0 2px 8px ${D.accentSoft}` : "none",
+                transform: active ? "scale(1.05)" : "scale(1)",
               }}
               aria-label={opt.label}
             >
@@ -181,7 +182,7 @@ function Toggle({ on }) {
   return (
     <span style={{
       ...S.toggle,
-      background: on ? D.accent : "rgba(255, 255, 255, 0.08)",
+      background: on ? D.accent : `${D.textSub}33`,
       boxShadow: on ? `0 0 12px ${D.accent}55` : "none",
     }}>
       <span style={{
@@ -303,7 +304,7 @@ const S = {
   themeSegment: {
     display: "flex", alignItems: "center", gap: 2,
     padding: 3, borderRadius: 10,
-    background: "rgba(122, 133, 168, 0.10)",
+    background: `${D.textSub}1A`,
     border: "1px solid var(--glass-border)",
   },
   segmentBtn: {
@@ -314,7 +315,7 @@ const S = {
     appearance: "none", WebkitAppearance: "none",
     padding: 0, outline: "none",
     WebkitTapHighlightColor: "transparent",
-    transition: `background ${D.tQuick}, box-shadow ${D.tQuick}`,
+    transition: `background ${D.tQuick}, box-shadow ${D.tQuick}, transform ${D.tSpring}`,
   },
   chev: {
     fontSize: 22, fontWeight: 300, color: "var(--text-dim)",
@@ -334,6 +335,6 @@ const S = {
     width: 18, height: 18, borderRadius: "50%",
     background: "#fff",
     boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
-    transition: `transform ${D.tQuick}`,
+    transition: `transform ${D.tSpring}`,
   },
 };

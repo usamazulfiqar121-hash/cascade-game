@@ -14,8 +14,8 @@ export default function StreakBadge({ streak = 0, complete = false, size = "md" 
   const s = sizes[size] || sizes.md;
 
   const accent = complete ? D.go : D.gold;
-  const soft = complete ? "rgba(34, 197, 138, 0.16)" : "rgba(255, 194, 75, 0.16)";
-  const border = complete ? "rgba(34, 197, 138, 0.35)" : "rgba(255, 194, 75, 0.35)";
+  const soft = complete ? `${D.go}29` : `${D.gold}29`;
+  const border = complete ? `${D.go}59` : `${D.gold}59`;
 
   return (
     <div style={{
