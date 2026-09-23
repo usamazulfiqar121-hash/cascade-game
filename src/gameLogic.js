@@ -202,10 +202,6 @@ export function saveDailyState(state) {
   } catch { return state; }
 }
 
-export function clearDailyState() {
-  try { localStorage.removeItem(DAILY_STATE_KEY); } catch {}
-}
-
 /* Milliseconds until next UTC midnight */
 export function msUntilNextDaily() {
   const now = new Date();

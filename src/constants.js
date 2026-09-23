@@ -36,12 +36,6 @@ export const D = {
   accentGrad: "var(--accent-grad)",
   accentGlow: "var(--accent-glow)",
   accentSoft: "var(--accent-soft)",
-  /* Daily mode — premium amber palette */
-  dailyGrad: "linear-gradient(135deg, #FFD86B 0%, #FFC24B 50%, #E8A02A 100%)",
-  dailyShimmer: "linear-gradient(120deg, #FFD86B 0%, #FFF2C4 25%, #FFC24B 50%, #FFF2C4 75%, #FFD86B 100%)",
-  dailyGlow: "0 12px 40px rgba(255, 194, 75, 0.45)",
-  dailySoft: "rgba(255, 194, 75, 0.35)",
-  dailyBorder: "rgba(255, 194, 75, 0.5)",
   gold: "var(--gold)",
   goldGlow: "var(--gold-glow)",
   go: "var(--go)",
@@ -66,8 +60,6 @@ export const D = {
 /* Storage keys */
 export const BEST_KEY = "cascade:best";
 export const ACH_KEY = "cascade:achievements";
-export const DAILY_KEY = "cascade:dailyResults";
-export const PLAYED_KEY = "cascade:hasPlayedOnce";
 
 /* Achievements */
 export const ACHIEVEMENTS = [
