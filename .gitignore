@@ -10,3 +10,4 @@ ios/
 *.bak3
 *.bak*
 .vercel
+.env*
