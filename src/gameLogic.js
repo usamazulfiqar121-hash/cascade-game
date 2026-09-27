@@ -224,10 +224,23 @@ export function applyAutoSort(tubes, count, rng = Math.random) {
   return result;
 }
 
-/* ─── Level generator ─── */
-export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null) {
+/* ─── Level generator ───
+   Recovery levels ("hills, not stairs"): after a round that took a retry
+   (struggled=true, set by the caller) or barely cleared (prevMovesLeft <= 1),
+   the next level steps back down a color/tube instead of continuing to climb
+   — one easier round, then the normal ramp resumes from there.
+   Normal runs only: seed !== null means this is a daily-challenge board,
+   which must be identical for every player on a given date. Both recovery
+   signals (retried, moves left) are this player's own performance, so
+   letting them change colorCount would make the "same board for everyone"
+   guarantee false starting round 2. */
+export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false) {
   const rng = seed !== null ? mulberry32(seed) : Math.random;
-  const colorCount = Math.min(2 + Math.floor((round - 1) / 2), 7);
+  const isDailyLevel = seed !== null;
+  const closeCall = !isDailyLevel && round > 1 && prevMovesLeft >= 0 && prevMovesLeft <= 1;
+  const recovery = !isDailyLevel && (struggled || closeCall);
+  const baseColorCount = Math.min(2 + Math.floor((round - 1) / 2), 7);
+  const colorCount = recovery ? Math.max(2, baseColorCount - 1) : baseColorCount;
   const balls = [];
   for (let c = 0; c < colorCount; c++) for (let i = 0; i < MAX_HEIGHT; i++) balls.push(c);
 

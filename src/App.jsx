@@ -118,6 +118,10 @@ export default function Cascade() {
      upgrade-choice screen instead of silently discarded (research: seeing a
      near-miss is part of what keeps variable-reward systems compelling). */
   const [jackpotNearMiss, setJackpotNearMiss] = useState(false);
+  /* True once this round has needed at least one retry — read (and reset)
+     when the NEXT round's level is generated, so that round steps back down
+     in difficulty instead of continuing to climb ("hills, not stairs"). */
+  const [retriedThisRound, setRetriedThisRound] = useState(false);
   const [level, setLevel] = useState(() => generateLevel(1, [], 0));
   const [tubes, setTubes] = useState(level.tubes);
   const [moves, setMoves] = useState(0);
@@ -563,13 +567,15 @@ export default function Cascade() {
        daily challenge" was actually a different board for everyone
        past the first round. */
     const nextSeed = isDaily ? dateToSeed() + nextRound : null;
-    setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed));
+    setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound));
+    setRetriedThisRound(false);
     Snd.upgrade();
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound]);
 
   const retry = useCallback(() => {
     const seed = isDaily ? dateToSeed() + round : null;
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
+    setRetriedThisRound(true);
   }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
 
   const restartRun = useCallback(() => {
@@ -579,6 +585,7 @@ export default function Cascade() {
     setShareImage(null);
     setShared(false);
     setIsDaily(false);
+    setRetriedThisRound(false);
     setLevel(generateLevel(1, [], 0));
   }, []);
 
@@ -633,6 +640,7 @@ export default function Cascade() {
       setRound(1);
       setRunUpgrades([]);
       setLastRoundMovesLeft(0);
+      setRetriedThisRound(false);
       setShareImage(null);
       setShared(false);
       setDailyRun({ rounds: [], totalMoves: 0 });
