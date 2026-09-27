@@ -12,7 +12,7 @@ import {
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
 import { buildEmojiGrid, buildShareCard } from "./shareCard";
-import { Snd, buzz, setVibe } from "./sound";
+import { Snd, Haptic, setVibe } from "./sound";
 import Particles from "./Particles";
 import Tube from "./Tube";
 import UpgradeCard from "./UpgradeCard";
@@ -357,7 +357,7 @@ export default function Cascade() {
         setHasPlayedOnce(true);
         try { localStorage.setItem("cascade:hasPlayedOnce", "1"); } catch {}
       }
-      buzz(8);
+      Haptic.light();
 
       // Bonus + combo tier — computed before the particle burst below so a
       // bigger combo can make that same burst bigger, not just score more.
@@ -394,8 +394,8 @@ export default function Cascade() {
       if (bonus > 0) {
         setBonusMoves(newBonus);
         setTimeout(() => {
-          if (tier >= 3) Snd.mega();
-          else if (tier >= 2) Snd.combo();
+          if (tier >= 3) { Snd.mega(); Haptic.heavy(); }
+          else if (tier >= 2) { Snd.combo(); Haptic.medium(); }
           else Snd.bonus();
         }, 120);
         /* Fire a floating "+N" so the player can actually see the bonus
@@ -466,7 +466,7 @@ export default function Cascade() {
           }
           setPhase("upgrade");
           Snd.clear();
-          buzz(30);
+          Haptic.success();
         }, 250);
         /* Achievement triggers — fired after the transition is queued */
         unlockAch("first_clear");
@@ -497,12 +497,12 @@ export default function Cascade() {
 
           setPhase("gameover");
           Snd.fail();
-          buzz(60);
+          Haptic.error();
         }, 250);
       }
     } else {
       setShake((s) => s + 1);
-      buzz(15);
+      Haptic.warning();
       setSelected(null);
       setComboCount(0);
     }
@@ -580,7 +580,7 @@ export default function Cascade() {
           setHint({ from, to, key: Date.now() });
           setHintLeft((h) => h - 1);
           Snd.select();
-          buzz(12);
+          Haptic.light();
           setTimeout(() => setHint(null), 1600);
           return;
         }
@@ -601,7 +601,7 @@ export default function Cascade() {
     setSelected(null);
     setUndoLeft((u) => u - 1);
     Snd.select();
-    buzz(10);
+    Haptic.light();
   }, [undoLeft, snapshots, phase]);
 
   const chooseUpgrade = useCallback((upgrade) => {
