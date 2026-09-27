@@ -73,6 +73,18 @@ export function isSolved(tubes) {
   return tubes.every((t) => t.length === 0 || (t.length === MAX_HEIGHT && t.every((c) => c === t[0])));
 }
 
+/* ─── Near-miss detection (fail-state framing) ─── */
+export function isOneMoveFromSolved(tubes) {
+  for (let i = 0; i < tubes.length; i++) {
+    for (let j = 0; j < tubes.length; j++) {
+      if (!canPour(tubes, i, j)) continue;
+      const next = pour(tubes, i, j);
+      if (next && isSolved(next)) return true;
+    }
+  }
+  return false;
+}
+
 /* ─── Shuffle (accepts optional RNG for seeding) ─── */
 export function shuffle(a, rng = Math.random) {
   const arr = [...a];
@@ -142,6 +154,21 @@ export function reconcileStreakShield(results) {
   const updated = [...shielded, yestKey];
   try { localStorage.setItem(SHIELD_KEY, JSON.stringify(updated)); } catch {}
   return updated;
+}
+
+/* ─── Best streak ever (for the share-card comparison line) ─── */
+export const BEST_STREAK_KEY = "cascade:bestStreak";
+
+export function loadBestStreak() {
+  try { return parseInt(localStorage.getItem(BEST_STREAK_KEY), 10) || 0; }
+  catch { return 0; }
+}
+
+export function updateBestStreak(streak) {
+  const prev = loadBestStreak();
+  if (streak <= prev) return prev;
+  try { localStorage.setItem(BEST_STREAK_KEY, String(streak)); } catch {}
+  return streak;
 }
 
 /* ─── Auto-sort (roguelike upgrade effect) ───

@@ -16,7 +16,7 @@ export function estimateRank(moves, rounds) {
   return { label: "Top 80%" };
 }
 
-export function buildEmojiGrid(rounds, totalMoves, streak) {
+export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak) {
   const today = new Date().toISOString().slice(0, 10);
   const lines = ["CASCADE Daily " + today, ""];
   (rounds || []).forEach((r) => {
@@ -28,7 +28,19 @@ export function buildEmojiGrid(rounds, totalMoves, streak) {
   });
   lines.push("");
   lines.push("Total: " + totalMoves + " moves");
-  if (streak > 0) lines.push("Streak: " + streak);
+
+  const rank = estimateRank(totalMoves, (rounds || []).length);
+  if (rank.label !== "Complete") lines.push("Rank: " + rank.label + " today");
+
+  if (streak > 0) {
+    lines.push("Streak: " + streak);
+    if (bestStreak > streak) {
+      lines.push((bestStreak - streak) + " from your best of " + bestStreak);
+    } else if (bestStreak > 0) {
+      lines.push("\uD83D\uDD25 Best streak!");
+    }
+  }
+
   lines.push("");
   lines.push("cascade-main-rho.vercel.app");
   return lines.join("\n");

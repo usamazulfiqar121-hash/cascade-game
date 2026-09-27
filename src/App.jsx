@@ -4,6 +4,7 @@ import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
   shuffle, mulberry32, dailyKey, dateToSeed, computeStreak,
+  reconcileStreakShield, isOneMoveFromSolved, updateBestStreak,
   applyAutoSort, generateLevel,
   loadDailyState, saveDailyState,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
@@ -134,6 +135,8 @@ export default function Cascade() {
      Perfect Clear). On a loss, "moves left" was still reporting the number
      from the previous clear — three or four — when the real value is 0. */
   const [finalMovesLeft, setFinalMovesLeft] = useState(0);
+  const [nearMiss, setNearMiss] = useState(false);
+  const [bestStreak, setBestStreak] = useState(0);
   const [particles, setParticles] = useState([]);
   const [bonusPops, setBonusPops] = useState([]);
   const [best, setBest] = useState(0);
@@ -304,6 +307,7 @@ export default function Cascade() {
 
   useEffect(() => {
     const streak = computeStreak(dailyResults, shieldedDates);
+    setBestStreak(updateBestStreak(streak));
     if (streak >= 7) unlockAch("streak_7");
     if (streak >= 30) unlockAch("streak_30");
     if (streak >= 100) unlockAch("streak_100");
@@ -446,6 +450,7 @@ export default function Cascade() {
         if (round + 1 >= 50) unlockAch("round_50");
         if (newCombo >= 10) unlockAch("combo_10");
       } else if (newMovesLeft <= 0) {
+        setNearMiss(isOneMoveFromSolved(next));
         setTimeout(() => {
           // Save best if this is a new best
           if (round > best) {
@@ -690,7 +695,7 @@ export default function Cascade() {
     try {
       const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
       const streak = computeStreak(dr, shieldedDates);
-      const text = buildEmojiGrid(dailyRun.rounds, dailyRun.totalMoves, streak);
+      const text = buildEmojiGrid(dailyRun.rounds, dailyRun.totalMoves, streak, bestStreak);
       if (navigator.share) {
         await navigator.share({ title: "Cascade Daily", text });
       } else if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -700,7 +705,7 @@ export default function Cascade() {
     } catch (err) {
       if (err && err.name !== "AbortError") console.warn("Share failed:", err);
     }
-  }, [dailyRun, showToast, shieldedDates]);
+  }, [dailyRun, showToast, shieldedDates, bestStreak]);
 
   const generateShare = useCallback(() => {
     try {
@@ -980,6 +985,9 @@ export default function Cascade() {
                 <div style={S.ovBigLabel}>ROUNDS SURVIVED</div>
                 {round >= best && round > 1 && (
                   <div style={S.ovNewBest}>✨ New Personal Best</div>
+                )}
+                {nearMiss && (
+                  <div style={S.ovNewBest}>😮 1 move away!</div>
                 )}
 
                 {/* Stats grid */}
