@@ -160,20 +160,60 @@ export const Snd = (() => {
   };
 })();
 
-
 /* ─── Adaptive Background Music ─── */
+/* A real recorded ambient track (public/music.mp3), looped seamlessly
+   in code rather than a naive `loop = true`, and reacting to what's
+   happening the same way this used to (before it was a synthesized
+   pad — see git history): brightens as moves run low (setTension, the
+   exact movesLeft<=3 threshold App.jsx already uses to turn the moves
+   counter red — one deadline, one number, same idea notifications.js
+   applies to its own reminder timing), a brief lift on combo/mega/
+   clear/upgrade (pulse), and ducks under the upgrade/game-over
+   overlays (duck) rather than competing with them.
+
+   Why not just loop=true: this track, like every AI-generated ambient
+   track we tried, was mixed like a song with an ending — it fades
+   down toward silence over roughly its last 20-30 seconds, not
+   authored as a seamless bed. Looping it as-is would mean a few
+   seconds of near-silence followed by an abrupt jump back to full
+   volume each time around. Trimming the file wouldn't fix that either
+   — the fade is a slow arc across a large chunk of the track, not a
+   short flourish at the very end, so there's no single clean cut
+   point. Instead this schedules a SECOND copy of the same buffer to
+   start a few seconds (CROSSFADE) before the first copy's natural
+   end, fading the new copy in while the old one fades out — the new
+   copy is always loud, full-volume material, so it masks whatever
+   state the old copy's tail is in by the time it becomes audible as a
+   problem. This works regardless of the file's own internal dynamics,
+   which is why no manual editing of the source file was needed.
+
+   Deliberately its own AudioContext, not sharing Snd's, for the same
+   reason as before: Snd's graph is shipped and verified, this stays
+   additive. Two AudioContexts on one page is normal and inexpensive.
+
+   The mix levels below (BASE_LEVEL/TENSE_LEVEL) are still a starting
+   guess, not a verified-good balance — this can't be heard in the
+   build sandbox. Retune by ear on a real device before treating them
+   as settled. */
 export const Music = (() => {
   let ctx = null, master = null, musicBus = null, musicOn = true;
-  let padGain = null, padFilter = null, padVoices = [], playing = false;
-  let tension = 0;
+  let padFilter = null, playing = false;
+  let tension = 0;   // 0 = calm, 1 = urgent — set by setTension()
   let ducked = false;
+  let buffer = null, bufferLoadPromise = null;
+  let activeNodes = [];   // { node, endAt } — anything with .stop(), pending teardown
+  let loopTimer = null;
+  let runToken = 0;       // bumped on every stop() so a start() that's still loading
+                          // when stop() is called can't resurrect playback afterward
 
   const BASE_LEVEL = 0.14;
   const TENSE_LEVEL = 0.19;
   const DUCK_MULT = 0.35;
   const CALM_CUTOFF = 900;
   const TENSE_CUTOFF = 2600;
-  const CHORD = [130.81, 164.81, 196.0, 261.63];
+  const CROSSFADE = 3.5;      // seconds of overlap between consecutive loop plays
+  const MUSIC_URL = "/music.mp3";   // public/music.mp3 — served at the root, same
+                                     // convention as index.html's /favicon.png
 
   function ensure() {
     if (ctx) {
@@ -208,35 +248,72 @@ export const Music = (() => {
     g.exponentialRampToValueAtTime(Math.max(level, 0.0001), t + dur);
   }
 
+  /* Fetched and decoded once, then cached module-wide — every later
+     start() (leaving Home and coming back, say) reuses the same
+     decoded buffer instead of re-fetching. */
+  function loadBuffer(c) {
+    if (buffer) return Promise.resolve(buffer);
+    if (bufferLoadPromise) return bufferLoadPromise;
+    bufferLoadPromise = fetch(MUSIC_URL)
+      .then((r) => r.arrayBuffer())
+      .then((ab) => c.decodeAudioData(ab))
+      .then((buf) => { buffer = buf; return buf; })
+      .catch(() => null);
+    return bufferLoadPromise;
+  }
+
+  /* Plays one full copy of the track starting at absolute AudioContext
+     time `at`. Its own gain envelope fades in over CROSSFADE as it
+     begins (so it never pops in at full volume under the previous
+     copy's tail) and fades out over CROSSFADE right before its own
+     natural end — belt-and-braces alongside the file's own fade, in
+     case that fade doesn't reach true silence. Runs through padFilter,
+     the same shared brightness control setTension()/pulse() use, so
+     tension/pulses apply no matter which copy(ies) are overlapping. */
+  function playSegment(c, at, dur) {
+    const src = c.createBufferSource();
+    src.buffer = buffer;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(1, at + CROSSFADE);
+    const fadeOutStart = Math.max(at + dur - CROSSFADE, at + CROSSFADE);
+    g.gain.setValueAtTime(1, fadeOutStart);
+    g.gain.linearRampToValueAtTime(0.0001, at + dur);
+    src.connect(g);
+    g.connect(padFilter);
+    src.start(at);
+    src.stop(at + dur + 0.1);
+    activeNodes.push({ node: src, endAt: at + dur });
+  }
+
+  function queueNext(c, myToken, startedAt, dur) {
+    const nextStart = startedAt + dur - CROSSFADE;
+    const fireInMs = Math.max(0, (nextStart - c.currentTime - 1) * 1000);
+    loopTimer = setTimeout(() => {
+      if (!playing || myToken !== runToken) return;
+      playSegment(c, nextStart, dur);
+      queueNext(c, myToken, nextStart, dur);
+    }, fireInMs);
+  }
+
   function start() {
     if (playing) return;
     const c = ensure();
     if (!c) return;
     playing = true;
+    const myToken = runToken;
 
-    padGain = c.createGain();
-    padGain.gain.value = 1;
     padFilter = c.createBiquadFilter();
     padFilter.type = "lowpass";
     padFilter.Q.value = 0.6;
     padFilter.frequency.setValueAtTime(CALM_CUTOFF + (TENSE_CUTOFF - CALM_CUTOFF) * tension, c.currentTime);
-    padGain.connect(padFilter);
     padFilter.connect(musicBus);
 
-    padVoices = CHORD.map((freq, i) => {
-      const o = c.createOscillator();
-      o.type = i === 0 ? "triangle" : "sine";
-      o.frequency.value = freq;
-      const lfo = c.createOscillator();
-      lfo.frequency.value = 0.06 + i * 0.017;
-      const lfoGain = c.createGain();
-      lfoGain.gain.value = 3;
-      lfo.connect(lfoGain);
-      lfoGain.connect(o.detune);
-      lfo.start();
-      o.connect(padGain);
-      o.start();
-      return { osc: o, lfo };
+    loadBuffer(c).then((buf) => {
+      if (!playing || myToken !== runToken || !buf) return;
+      const now = c.currentTime + 0.05;
+      playSegment(c, now, buf.duration);
+      queueNext(c, myToken, now, buf.duration);
     });
 
     rampBusTo(targetLevel(), 2.2);
@@ -245,23 +322,27 @@ export const Music = (() => {
   function stop() {
     if (!playing || !ctx) return;
     playing = false;
+    runToken++;   // invalidates any in-flight load/schedule from this run
+    if (loopTimer) { clearTimeout(loopTimer); loopTimer = null; }
     const t = ctx.currentTime;
     musicBus.gain.cancelScheduledValues(t);
     musicBus.gain.setValueAtTime(Math.max(musicBus.gain.value, 0.0001), t);
     musicBus.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
-    const voicesToStop = padVoices;
-    padVoices = [];
+    const nodesToStop = activeNodes;
+    activeNodes = [];
+    /* Let the fade-out actually finish before tearing the sources
+       down — stopping them immediately would just chop the tail off. */
     setTimeout(() => {
-      voicesToStop.forEach(({ osc, lfo }) => {
-        try { osc.stop(); } catch {}
-        try { lfo.stop(); } catch {}
-      });
+      nodesToStop.forEach(({ node }) => { try { node.stop(); } catch {} });
     }, 1100);
   }
 
+  /* urgent: true once movesLeft <= 3 for the current round, false
+     otherwise — see the file-header note on why this reuses that
+     exact threshold rather than inventing its own. */
   function setTension(urgent) {
     tension = urgent ? 1 : 0;
-    if (!playing || !ctx) return;
+    if (!playing || !ctx || !padFilter) return;
     const t = ctx.currentTime;
     padFilter.frequency.cancelScheduledValues(t);
     padFilter.frequency.setValueAtTime(padFilter.frequency.value, t);
@@ -269,12 +350,18 @@ export const Music = (() => {
     rampBusTo(targetLevel(), 0.6);
   }
 
+  /* on: true while an overlay (upgrade picker, game-over) is showing —
+     the music steps back under it instead of competing with it. */
   function duck(on) {
     ducked = on;
     if (!playing) return;
     rampBusTo(targetLevel(), 0.35);
   }
 
+  /* One-shot brightening for a big moment (combo/mega/clear/upgrade).
+     Doesn't touch playback at all — just opens the shared filter
+     briefly so the music visibly "reacts", then settles back to
+     wherever setTension currently has it. */
   function pulse(kind = "combo") {
     if (!playing || !ctx || !padFilter) return;
     const t = ctx.currentTime;
