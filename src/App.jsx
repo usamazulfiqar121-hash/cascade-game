@@ -158,6 +158,8 @@ export default function Cascade() {
   const [showAchievements, setShowAchievements] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [vibeOn, setVibeOn] = useState(true);
+  const [colorBlindOn, setColorBlindOn] = useState(false);
+  const [reduceMotionOn, setReduceMotionOn] = useState(false);
 
   const movesLeft = level.moveLimit + bonusMoves - moves;
 
@@ -170,6 +172,10 @@ export default function Cascade() {
       if (s === "0") { setSoundOn(false); Snd.setSfx(false); }
       const vb = localStorage.getItem("cascade:vibeOn");
       if (vb === "0") { setVibeOn(false); }
+      const cb = localStorage.getItem("cascade:colorBlind");
+      if (cb === "1") { setColorBlindOn(true); }
+      const rm = localStorage.getItem("cascade:reduceMotion");
+      if (rm === "1") { setReduceMotionOn(true); }
       /* Tutorial has its own key so it never shows twice — even if the player
          never loses (so best stays 0), and even across app reinstalls. */
       const t = localStorage.getItem("cascade:tutorialSeen");
@@ -208,6 +214,10 @@ export default function Cascade() {
   }, []);
 
   useEffect(() => { setVibe(vibeOn); }, [vibeOn]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-reduce-motion", reduceMotionOn ? "1" : "0");
+  }, [reduceMotionOn]);
 
   /* ═══ THEME ═══ */
 
@@ -977,7 +987,7 @@ export default function Cascade() {
       <div style={{ ...S.board, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
         <div style={S.tubesRow}>
           {tubes.map((balls, i) => (
-            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} />
+            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} />
           ))}
         </div>
       </div>
@@ -1191,6 +1201,18 @@ export default function Cascade() {
             setVibeOn(next);
             setVibe(next);
             try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
+          }}
+          colorBlindOn={colorBlindOn}
+          onToggleColorBlind={() => {
+            const next = !colorBlindOn;
+            setColorBlindOn(next);
+            try { localStorage.setItem("cascade:colorBlind", next ? "1" : "0"); } catch {}
+          }}
+          reduceMotionOn={reduceMotionOn}
+          onToggleReduceMotion={() => {
+            const next = !reduceMotionOn;
+            setReduceMotionOn(next);
+            try { localStorage.setItem("cascade:reduceMotion", next ? "1" : "0"); } catch {}
           }}
           onReset={() => {
             setConfirmDialog({

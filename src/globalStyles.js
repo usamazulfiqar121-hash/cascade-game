@@ -336,6 +336,13 @@ button:active:not(:disabled) { transform: scale(0.97); }
     transition-duration: 0.01ms !important;
   }
 }
+:root[data-reduce-motion="1"] *,
+:root[data-reduce-motion="1"] *::before,
+:root[data-reduce-motion="1"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */
 .glass {

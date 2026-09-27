@@ -3,6 +3,8 @@ import { D } from "../constants";
 export default function SettingsScreen({
   soundOn, vibeOn,
   onToggleSound, onToggleVibe,
+  colorBlindOn, onToggleColorBlind,
+  reduceMotionOn, onToggleReduceMotion,
   onReset, onClose,
   isDaily = false,
   onExitDaily,
@@ -40,6 +42,22 @@ export default function SettingsScreen({
             onClick={onToggleVibe}
           />
           <ThemeRow theme={theme} onSetTheme={onSetTheme} />
+
+          <Section label="ACCESSIBILITY" />
+          <Row
+            icon={<ColorBlindIcon on={colorBlindOn} />}
+            label="Color-Blind Mode"
+            sub="Show a number on every ball"
+            right={<Toggle on={colorBlindOn} />}
+            onClick={onToggleColorBlind}
+          />
+          <Row
+            icon={<ReduceMotionIcon on={reduceMotionOn} />}
+            label="Reduce Motion"
+            sub="Minimize animations everywhere"
+            right={<Toggle on={reduceMotionOn} />}
+            onClick={onToggleReduceMotion}
+          />
 
           {isDaily && (
             <>
@@ -214,6 +232,28 @@ function VibeIcon({ on }) {
         <path d="M4 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
         <path d="M20 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       </>}
+    </svg>
+  );
+}
+
+function ColorBlindIcon({ on }) {
+  const c = on ? D.accent : D.textSub;
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="900" fill={c}>1</text>
+    </svg>
+  );
+}
+
+function ReduceMotionIcon({ on }) {
+  const c = on ? D.accent : D.textSub;
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <circle cx="7" cy="17" r="2.5" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <path d="M9.5 15.5L15 8" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+      <path d="M14 8H18V12" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      {on && <path d="M4 4L20 20" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>}
     </svg>
   );
 }

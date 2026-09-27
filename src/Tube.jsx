@@ -7,6 +7,7 @@ import { COLORS, MAX_HEIGHT } from "./constants";
 export default function Tube({
   balls, selected, onClick, disabled,
   hintFrom, hintTo, solved, scale = 1,
+  colorBlind = false,
 }) {
   /* State priority: selected > solved > hintFrom > hintTo > idle */
   const state = selected
@@ -31,6 +32,7 @@ export default function Tube({
     ballRadius: 19 * scale,
     highlightTop: 4 * scale,
     highlightH: 6 * scale,
+    labelSize: 13 * scale,
   };
 
   return (
@@ -69,6 +71,14 @@ export default function Tube({
           }}
         >
           <span style={{ ...S.ballHighlight, top: dims.highlightTop, height: dims.highlightH }} />
+          {colorBlind && (
+            <span
+              aria-hidden="true"
+              style={{ ...S.ballLabel, fontSize: dims.labelSize, lineHeight: `${dims.ballH}px` }}
+            >
+              {colorIdx + 1}
+            </span>
+          )}
         </div>
       ))}
     </button>
@@ -137,5 +147,17 @@ const S = {
     background: "rgba(255, 255, 255, 0.35)",
     filter: "blur(1px)",
     pointerEvents: "none",
+  },
+  ballLabel: {
+    position: "absolute",
+    inset: 0,
+    textAlign: "center",
+    fontFamily: "'Nunito', sans-serif",
+    fontWeight: 900,
+    color: "#fff",
+    WebkitTextStroke: "2px rgba(0, 0, 0, 0.55)",
+    paintOrder: "stroke fill",
+    pointerEvents: "none",
+    userSelect: "none",
   },
 };
