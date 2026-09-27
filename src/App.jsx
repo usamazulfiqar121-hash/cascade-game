@@ -342,24 +342,13 @@ export default function Cascade() {
     setTimeout(() => setParticles((p) => p.filter((q) => q.id !== id)), 600);
   }, []);
 
-  const onTubeClick = useCallback((idx, e) => {
-    if (phase !== "playing") return;
-    Snd.unlock();
-
-    if (selected === null) {
-      if (tubes[idx].length === 0) return;
-      Snd.select();
-      setSelected(idx);
-      return;
-    }
-    if (selected === idx) { setSelected(null); return; }
-
-    if (canPour(tubes, selected, idx)) {
+  const attemptPour = useCallback((fromIdx, toIdx, e) => {
+    if (canPour(tubes, fromIdx, toIdx)) {
       /* Snapshot BEFORE the pour lands, so undo has something to restore. */
       setSnapshots((s) => [...s, { tubes: tubes.map((t) => [...t]), moves, bonusMoves, comboCount }]);
-      const beforeLen = tubes[idx].length;
-      const next = pour(tubes, selected, idx);
-      const movedCount = next[idx].length - beforeLen;
+      const beforeLen = tubes[toIdx].length;
+      const next = pour(tubes, fromIdx, toIdx);
+      const movedCount = next[toIdx].length - beforeLen;
       const newCombo = comboCount + 1;
       setTubes(next);
       setSelected(null);
@@ -389,9 +378,9 @@ export default function Cascade() {
       if (e) {
         const rect = e.currentTarget.getBoundingClientRect();
         const px = rect.left + rect.width / 2, py = rect.top + rect.height / 2;
-        const color = COLORS[next[idx][next[idx].length - 1]] || T.accent;
+        const color = COLORS[next[toIdx][next[toIdx].length - 1]] || T.accent;
         const burstCount = tier >= 3 ? 16 : tier >= 2 ? 10 : 6;
-        const destJustSolved = isTubeSolved(next[idx]) && !isTubeSolved(tubes[idx]);
+        const destJustSolved = isTubeSolved(next[toIdx]) && !isTubeSolved(tubes[toIdx]);
         if (destJustSolved) setTimeout(() => spawnParticles(px, py, color, burstCount), 120);
         else spawnParticles(px, py, color, burstCount);
       }
@@ -517,7 +506,68 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, selected, phase, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState]);
+
+  const onTubeClick = useCallback((idx, e) => {
+    if (phase !== "playing") return;
+    Snd.unlock();
+    if (selected === null) {
+      if (tubes[idx].length === 0) return;
+      Snd.select();
+      setSelected(idx);
+      return;
+    }
+    if (selected === idx) { setSelected(null); return; }
+    attemptPour(selected, idx, e);
+  }, [phase, selected, tubes, attemptPour]);
+
+  const DRAG_THRESHOLD = 10;
+  const dragSourceRef = useRef(null);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const draggingRef = useRef(false);
+
+  const onTubePointerDown = useCallback((idx, e) => {
+    if (phase !== "playing") return;
+    if (tubes[idx].length === 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    dragSourceRef.current = idx;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    draggingRef.current = false;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  }, [phase, tubes]);
+
+  const onTubePointerMove = useCallback((e) => {
+    if (dragSourceRef.current === null || draggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      draggingRef.current = true;
+      Snd.select();
+      setSelected(dragSourceRef.current);
+    }
+  }, []);
+
+  const onTubePointerUp = useCallback((e) => {
+    const source = dragSourceRef.current;
+    const wasDragging = draggingRef.current;
+    dragSourceRef.current = null;
+    draggingRef.current = false;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    if (!wasDragging || source === null) return;
+    if (phase !== "playing") { setSelected(null); return; }
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const targetEl = el && el.closest ? el.closest("[data-tube-idx]") : null;
+    const targetIdx = targetEl ? parseInt(targetEl.dataset.tubeIdx, 10) : NaN;
+    if (Number.isNaN(targetIdx) || targetIdx === source) { setSelected(null); return; }
+    attemptPour(source, targetIdx, { currentTarget: targetEl });
+  }, [phase, attemptPour]);
+
+  const onTubePointerCancel = useCallback((e) => {
+    dragSourceRef.current = null;
+    draggingRef.current = false;
+    setSelected(null);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+  }, []);
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
@@ -987,7 +1037,7 @@ export default function Cascade() {
       <div style={{ ...S.board, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
         <div style={S.tubesRow}>
           {tubes.map((balls, i) => (
-            <Tube key={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} />
+            <Tube key={i} idx={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} onPointerDown={(e) => onTubePointerDown(i, e)} onPointerMove={onTubePointerMove} onPointerUp={onTubePointerUp} onPointerCancel={onTubePointerCancel} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} />
           ))}
         </div>
       </div>

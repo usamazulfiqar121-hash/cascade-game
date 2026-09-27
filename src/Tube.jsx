@@ -5,9 +5,10 @@
 import { COLORS, MAX_HEIGHT } from "./constants";
 
 export default function Tube({
-  balls, selected, onClick, disabled,
+  idx, balls, selected, onClick, disabled,
   hintFrom, hintTo, solved, scale = 1,
   colorBlind = false,
+  onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
 }) {
   /* State priority: selected > solved > hintFrom > hintTo > idle */
   const state = selected
@@ -38,9 +39,14 @@ export default function Tube({
   return (
     <button
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       disabled={disabled}
       className="tube-btn"
       data-state={state}
+      data-tube-idx={idx}
       aria-label={`Tube${selected ? ", selected" : ""}${solved ? ", solved" : ""}`}
       style={{
         ...S.tube,
@@ -49,6 +55,7 @@ export default function Tube({
         padding: dims.padding,
         borderRadius: dims.borderRadius,
         opacity: disabled ? 0.45 : 1,
+        touchAction: "none",
       }}
     >
       {/* Inner glass highlight */}
