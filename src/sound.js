@@ -56,6 +56,10 @@ export const Snd = (() => {
     pour: (n = 1) => { if (sfxOn) tone(400 + n * 80, { type: "sine", dur: 0.12, peak: 0.2, glide: 1.3 }); },
     select: () => { if (sfxOn) tone(600, { type: "sine", dur: 0.06, peak: 0.12 }); },
     bonus: () => { if (sfxOn) { tone(880, { type: "sine", dur: 0.1, peak: 0.15 }); tone(1174, { type: "sine", dur: 0.1, peak: 0.12, delay: 0.06 }); } },
+    /* Combo/mega bonus tiers — same bonus moment as bonus() above, but a
+       bigger combo should sound bigger too, not just add the same ping. */
+    combo: () => { if (!sfxOn) return; [740, 988, 1245].forEach((f, i) => tone(f, { type: "sine", dur: 0.09, peak: 0.16, delay: i * 0.045 })); },
+    mega: () => { if (!sfxOn) return; [523.25, 659.25, 880, 1318.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.14, peak: 0.2, delay: i * 0.055 })); },
     clear: () => { if (!sfxOn) return; [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.35, peak: 0.18, delay: i * 0.07 })); },
     upgrade: () => { if (!sfxOn) return; [523.25, 783.99, 1046.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.4, peak: 0.18, delay: i * 0.08 })); },
     fail: () => { if (!sfxOn) return; [392, 311.13, 261.63].forEach((f, i) => tone(f, { type: "triangle", dur: 0.35, peak: 0.2, delay: i * 0.11 })); },

@@ -143,6 +143,17 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 .cascade-particle { animation: cascadeParticle 600ms cubic-bezier(.2,.8,.3,1) forwards; }
 
+/* Ball landing in a tube — ease-out (fast start, soft landing) instead of a
+   linear/instant snap, so a pour reads as weightier. Fires once per ball on
+   mount (a fresh pour, or a level's starting layout), not on every re-render,
+   since React only (re)mounts balls whose key actually changed. Reuses the
+   app's D.tQuick easing curve for consistency with the rest of the UI. */
+@keyframes ballDrop {
+  0% { transform: translateY(-14px) scale(0.85); opacity: 0.4; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.cascade-ball { animation: ballDrop 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
 /* ═══════════ TUBE STATES ═══════════ */
 .tube-btn[data-state="selected"] {
   transform: translateY(-10px);
@@ -278,6 +289,12 @@ button:active:not(:disabled) { transform: scale(0.97); }
 @keyframes dailyBadgeGlow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255,194,75,0.4); }
   50% { box-shadow: 0 0 0 4px rgba(255,194,75,0.1); }
+}
+/* Countdown to daily reset, last hour only — a slow blink reads as "running
+   out" without being distracting for the other 23 hours of the day. */
+@keyframes dailyUrgentPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 /* Daily utility classes — applied via className */

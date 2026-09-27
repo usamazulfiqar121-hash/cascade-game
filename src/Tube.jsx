@@ -59,6 +59,7 @@ export default function Tube({
       {balls.map((colorIdx, i) => (
         <div
           key={i}
+          className="cascade-ball"
           style={{
             ...S.ball,
             height: dims.ballH,

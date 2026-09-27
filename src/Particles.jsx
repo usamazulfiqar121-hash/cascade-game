@@ -6,8 +6,8 @@ export default function Particles({ bursts }) {
     <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 50 }}>
       {bursts.map((b) => (
         <div key={b.id} style={{ position: "absolute", left: b.x, top: b.y }}>
-          {Array.from({ length: 6 }).map((_, i) => {
-            const angle = (i / 6) * Math.PI * 2 + b.seed;
+          {Array.from({ length: b.count || 6 }).map((_, i) => {
+            const angle = (i / (b.count || 6)) * Math.PI * 2 + b.seed;
             return (
               <div key={i} className="cascade-particle" style={{
                 position: "absolute",

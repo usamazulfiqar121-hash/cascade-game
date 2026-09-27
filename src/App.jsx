@@ -305,6 +305,10 @@ export default function Cascade() {
     }
   }, []);
 
+  /* Streak milestones — same unlock/toast path as any other achievement.
+     Re-checked whenever dailyResults or shieldedDates changes (i.e. right
+     after completing today's daily, or once on load); unlockAch's own
+     localStorage check makes repeat calls at the same streak a no-op. */
   useEffect(() => {
     const streak = computeStreak(dailyResults, shieldedDates);
     setBestStreak(updateBestStreak(streak));
@@ -313,17 +317,10 @@ export default function Cascade() {
     if (streak >= 100) unlockAch("streak_100");
   }, [dailyResults, shieldedDates, unlockAch]);
 
-  useEffect(() => {
-    const streak = computeStreak(dailyResults, shieldedDates);
-    if (streak >= 7) unlockAch("streak_7");
-    if (streak >= 30) unlockAch("streak_30");
-    if (streak >= 100) unlockAch("streak_100");
-  }, [dailyResults, shieldedDates, unlockAch]);
-
-  const spawnParticles = useCallback((x, y, color) => {
+  const spawnParticles = useCallback((x, y, color, count = 6) => {
     const id = Date.now() + Math.random();
     const seed = Math.random() * Math.PI;
-    setParticles((p) => [...p, { id, x, y, color, seed }]);
+    setParticles((p) => [...p, { id, x, y, color, seed, count }]);
     setTimeout(() => setParticles((p) => p.filter((q) => q.id !== id)), 600);
   }, []);
 
@@ -355,19 +352,31 @@ export default function Cascade() {
       }
       buzz(8);
 
-      // Particle burst at destination
+      // Bonus + combo tier — computed before the particle burst below so a
+      // bigger combo can make that same burst bigger, not just score more.
+      // tier: 0 = plain pour, 1 = lucky roll, 2 = combo bonus, 3 = mega bonus.
+      let bonus = 0, tier = 0;
+      const luckyChance = getLuckyChance(runUpgrades);
+      if (luckyChance > 0 && Math.random() < luckyChance) { bonus += 1; tier = Math.max(tier, 1); }
+      const comboEvery = getComboEvery(runUpgrades);
+      if (comboEvery && newCombo % comboEvery === 0) { bonus += 1; tier = Math.max(tier, 2); }
+      const megaEvery = getMegaEvery(runUpgrades);
+      if (megaEvery && newCombo % megaEvery === 0) { bonus += 2; tier = Math.max(tier, 3); }
+
+      // Particle burst at destination — on a fresh tube-solve, give the
+      // checkmark glow a ~120ms beat to register before the burst plays
+      // (research: a brief "hold frame" makes a win land as a win). A
+      // combo/mega-tier pour also gets a bigger burst, so it reads as a
+      // bigger moment, not just a bigger score.
       if (e) {
         const rect = e.currentTarget.getBoundingClientRect();
-        spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, COLORS[next[idx][next[idx].length - 1]] || T.accent);
+        const px = rect.left + rect.width / 2, py = rect.top + rect.height / 2;
+        const color = COLORS[next[idx][next[idx].length - 1]] || T.accent;
+        const burstCount = tier >= 3 ? 16 : tier >= 2 ? 10 : 6;
+        const destJustSolved = isTubeSolved(next[idx]) && !isTubeSolved(tubes[idx]);
+        if (destJustSolved) setTimeout(() => spawnParticles(px, py, color, burstCount), 120);
+        else spawnParticles(px, py, color, burstCount);
       }
-
-      let bonus = 0;
-      const luckyChance = getLuckyChance(runUpgrades);
-      if (luckyChance > 0 && Math.random() < luckyChance) bonus += 1;
-      const comboEvery = getComboEvery(runUpgrades);
-      if (comboEvery && newCombo % comboEvery === 0) bonus += 1;
-      const megaEvery = getMegaEvery(runUpgrades);
-      if (megaEvery && newCombo % megaEvery === 0) bonus += 2;
 
       setComboCount(newCombo);
       const newMovesUsed = moves + 1;
@@ -377,7 +386,11 @@ export default function Cascade() {
       setMoves(newMovesUsed);
       if (bonus > 0) {
         setBonusMoves(newBonus);
-        setTimeout(() => Snd.bonus(), 120);
+        setTimeout(() => {
+          if (tier >= 3) Snd.mega();
+          else if (tier >= 2) Snd.combo();
+          else Snd.bonus();
+        }, 120);
         /* Fire a floating "+N" so the player can actually see the bonus
            they just earned — before this the extra moves were invisible
            and the only signal was the sound. */
@@ -1039,9 +1052,15 @@ export default function Cascade() {
                       <div style={{
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 16, fontWeight: 800,
-                        color: T.gold, marginTop: 4,
+                        /* Last-hour urgency — loss-aversion pressure applies
+                           most right before the reset, not evenly all day. */
+                        color: dailyCountdown > 0 && dailyCountdown < 3600000 ? T.danger : T.gold,
+                        marginTop: 4,
                         fontVariantNumeric: "tabular-nums",
                         letterSpacing: "-0.02em",
+                        animation: dailyCountdown > 0 && dailyCountdown < 3600000
+                          ? "dailyUrgentPulse 1000ms ease-in-out infinite"
+                          : "none",
                       }}>
                         {formatCountdown(dailyCountdown)}
                       </div>
