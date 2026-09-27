@@ -5,11 +5,12 @@
 import { D } from "./constants";
 import BottomNav from "./components/BottomNav";
 import StreakBadge from "./components/StreakBadge";
+import FriendCompare from "./components/FriendCompare";
 
 export default function HomeScreen({
   onPlay, onDaily, onSettings, onAwards,
   dailyResults, shieldedDates = [], computeStreak, dailyKey,
-  hasPlayedOnce, achievements, ACHIEVEMENTS,
+  hasPlayedOnce, achievements, ACHIEVEMENTS, todayRounds,
 }) {
   const todayDone = !!dailyResults[dailyKey()];
   const streak = computeStreak(dailyResults, shieldedDates);
@@ -112,6 +113,16 @@ export default function HomeScreen({
               {todayDone ? "Come back tomorrow" : "Tap to play today's puzzle"}
             </div>
           </button>
+        )}
+
+        {/* A sibling block, not nested in the button above — a button
+            can't legally contain another button or an input, and
+            FriendCompare has both. Only shown once today's run is
+            over, since comparing needs a score to compare with. */}
+        {hasPlayedOnce && todayDone && (
+          <div className="fade-up" style={{ width: "100%", animationDelay: "260ms" }}>
+            <FriendCompare rounds={todayRounds} dateKey={dailyKey()} />
+          </div>
         )}
       </div>
 

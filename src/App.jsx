@@ -22,6 +22,7 @@ import AchievementsScreen from "./AchievementsScreen";
 import Tutorial from "./Tutorial";
 import SettingsScreen from "./screens/SettingsScreen";
 import DailyBoard from "./components/DailyBoard";
+import FriendCompare from "./components/FriendCompare";
 
 
 
@@ -77,6 +78,14 @@ export default function Cascade() {
   const [toast, setToast] = useState(null);
   const [dailyRun, setDailyRun] = useState({ rounds: [], totalMoves: 0 });
   const [confirmDialog, setConfirmDialog] = useState(null);
+  /* Today's rounds-cleared count, good across a same-day app restart —
+     dailyRun resets to empty on reload (session-only React state), but
+     dailyState is persisted and loadDailyState() already only returns
+     it when its dateKey matches today, so falling back to dailyRun is
+     just belt-and-braces for the same-session case before the very
+     first setDailyState() commits. Shared by DailyBoard and
+     FriendCompare so both read the exact same "today" number. */
+  const todayRounds = dailyState?.rounds ?? dailyRun.rounds.length;
   const toastTimerRef = useRef(null);
 
   /* ═══ DAILY MODE — INITIALIZATION ═══ */
@@ -449,6 +458,7 @@ export default function Cascade() {
             completedAt: Date.now(),
             movesUsed: newMovesUsed,
             movesLeft: remainingAtClear,
+            rounds: round,
           });
           setDailyState(st);
           cancelDailyReminder();
@@ -516,6 +526,7 @@ export default function Cascade() {
               status: "failed",
               failedAt: Date.now(),
               movesUsed: newMovesUsed,
+              rounds: Math.max(0, round - 1),
             });
             setDailyState(st);
             cancelDailyReminder();
@@ -875,6 +886,7 @@ export default function Cascade() {
           computeStreak={computeStreak}
           dailyKey={dailyKey}
           hasPlayedOnce={hasPlayedOnce}
+          todayRounds={todayRounds}
         />
       )}
 
@@ -1135,7 +1147,8 @@ export default function Cascade() {
 
                 {isDaily ? (
                   <>
-                    <DailyBoard rounds={dailyRun.rounds.length} dateSeed={dateToSeed()} />
+                    <DailyBoard rounds={todayRounds} dateSeed={dateToSeed()} />
+                    <FriendCompare rounds={todayRounds} dateKey={dailyKey()} />
                     <div style={{
                       textAlign: "center",
                       padding: "16px 20px",
