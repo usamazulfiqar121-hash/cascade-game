@@ -1,8 +1,8 @@
 import { D } from "../constants";
 
 export default function SettingsScreen({
-  soundOn, vibeOn,
-  onToggleSound, onToggleVibe,
+  soundOn, vibeOn, musicOn,
+  onToggleSound, onToggleVibe, onToggleMusic,
   colorBlindOn, onToggleColorBlind,
   reduceMotionOn, onToggleReduceMotion,
   onReset, onClose,
@@ -40,6 +40,13 @@ export default function SettingsScreen({
             sub="Haptic feedback"
             right={<Toggle on={vibeOn} />}
             onClick={onToggleVibe}
+          />
+          <Row
+            icon={<MusicIcon on={musicOn} />}
+            label="Music"
+            sub="Adaptive background music"
+            right={<Toggle on={musicOn} />}
+            onClick={onToggleMusic}
           />
           <ThemeRow theme={theme} onSetTheme={onSetTheme} />
 
@@ -232,6 +239,17 @@ function VibeIcon({ on }) {
         <path d="M4 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
         <path d="M20 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       </>}
+    </svg>
+  );
+}
+
+function MusicIcon({ on }) {
+  const c = on ? D.accent : D.textSub;
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <circle cx="7" cy="18" r="3" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <circle cx="17" cy="16" r="3" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <path d="M10 18V6.5L20 4.5V16" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

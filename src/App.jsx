@@ -12,7 +12,7 @@ import {
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
 import { buildEmojiGrid, buildShareCard } from "./shareCard";
-import { Snd, Haptic, setVibe } from "./sound";
+import { Snd, Haptic, setVibe, Music } from "./sound";
 import { initNotifications, scheduleDailyReminder, cancelDailyReminder } from "./notifications";
 import Particles from "./Particles";
 import Tube from "./Tube";
@@ -168,6 +168,7 @@ export default function Cascade() {
   const [showAchievements, setShowAchievements] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [vibeOn, setVibeOn] = useState(true);
+  const [musicOn, setMusicOn] = useState(true);
   const [colorBlindOn, setColorBlindOn] = useState(false);
   const [reduceMotionOn, setReduceMotionOn] = useState(false);
 
@@ -182,6 +183,8 @@ export default function Cascade() {
       if (s === "0") { setSoundOn(false); Snd.setSfx(false); }
       const vb = localStorage.getItem("cascade:vibeOn");
       if (vb === "0") { setVibeOn(false); }
+      const mu = localStorage.getItem("cascade:musicOn");
+      if (mu === "0") { setMusicOn(false); Music.setEnabled(false); }
       const cb = localStorage.getItem("cascade:colorBlind");
       if (cb === "1") { setColorBlindOn(true); }
       const rm = localStorage.getItem("cascade:reduceMotion");
@@ -224,6 +227,15 @@ export default function Cascade() {
   }, []);
 
   useEffect(() => { setVibe(vibeOn); }, [vibeOn]);
+  useEffect(() => { Music.setEnabled(musicOn); }, [musicOn]);
+
+  useEffect(() => {
+    if (screen === "game") Music.start(); else Music.stop();
+  }, [screen]);
+
+  useEffect(() => { Music.setTension(movesLeft <= 3); }, [movesLeft]);
+
+  useEffect(() => { Music.duck(phase !== "playing"); }, [phase]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-reduce-motion", reduceMotionOn ? "1" : "0");
@@ -404,8 +416,8 @@ export default function Cascade() {
       if (bonus > 0) {
         setBonusMoves(newBonus);
         setTimeout(() => {
-          if (tier >= 3) { Snd.mega(); Haptic.heavy(); }
-          else if (tier >= 2) { Snd.combo(); Haptic.medium(); }
+          if (tier >= 3) { Snd.mega(); Haptic.heavy(); Music.pulse("mega"); }
+          else if (tier >= 2) { Snd.combo(); Haptic.medium(); Music.pulse("combo"); }
           else Snd.bonus();
         }, 120);
         /* Fire a floating "+N" so the player can actually see the bonus
@@ -478,6 +490,7 @@ export default function Cascade() {
           setPhase("upgrade");
           Snd.clear();
           Haptic.success();
+          Music.pulse("clear");
         }, 250);
         /* Achievement triggers — fired after the transition is queued */
         unlockAch("first_clear");
@@ -642,6 +655,7 @@ export default function Cascade() {
     setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound));
     setRetriedThisRound(false);
     Snd.upgrade();
+    Music.pulse("upgrade");
   }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound]);
 
   const retry = useCallback(() => {
@@ -1265,6 +1279,13 @@ export default function Cascade() {
             setVibeOn(next);
             setVibe(next);
             try { localStorage.setItem("cascade:vibeOn", next ? "1" : "0"); } catch {}
+          }}
+          musicOn={musicOn}
+          onToggleMusic={() => {
+            const next = !musicOn;
+            setMusicOn(next);
+            Music.setEnabled(next);
+            try { localStorage.setItem("cascade:musicOn", next ? "1" : "0"); } catch {}
           }}
           colorBlindOn={colorBlindOn}
           onToggleColorBlind={() => {

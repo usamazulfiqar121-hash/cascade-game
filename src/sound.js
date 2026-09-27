@@ -159,3 +159,141 @@ export const Snd = (() => {
     setSfx: (v) => { sfxOn = v; },
   };
 })();
+
+
+/* ─── Adaptive Background Music ─── */
+export const Music = (() => {
+  let ctx = null, master = null, musicBus = null, musicOn = true;
+  let padGain = null, padFilter = null, padVoices = [], playing = false;
+  let tension = 0;
+  let ducked = false;
+
+  const BASE_LEVEL = 0.14;
+  const TENSE_LEVEL = 0.19;
+  const DUCK_MULT = 0.35;
+  const CALM_CUTOFF = 900;
+  const TENSE_CUTOFF = 2600;
+  const CHORD = [130.81, 164.81, 196.0, 261.63];
+
+  function ensure() {
+    if (ctx) {
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      return ctx;
+    }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = musicOn ? 1 : 0;
+      master.connect(ctx.destination);
+      musicBus = ctx.createGain();
+      musicBus.gain.value = 0.0001;
+      musicBus.connect(master);
+    } catch { ctx = null; }
+    return ctx;
+  }
+
+  function targetLevel() {
+    const base = BASE_LEVEL + (TENSE_LEVEL - BASE_LEVEL) * tension;
+    return ducked ? base * DUCK_MULT : base;
+  }
+
+  function rampBusTo(level, dur) {
+    if (!ctx || !musicBus) return;
+    const t = ctx.currentTime;
+    const g = musicBus.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(Math.max(g.value, 0.0001), t);
+    g.exponentialRampToValueAtTime(Math.max(level, 0.0001), t + dur);
+  }
+
+  function start() {
+    if (playing) return;
+    const c = ensure();
+    if (!c) return;
+    playing = true;
+
+    padGain = c.createGain();
+    padGain.gain.value = 1;
+    padFilter = c.createBiquadFilter();
+    padFilter.type = "lowpass";
+    padFilter.Q.value = 0.6;
+    padFilter.frequency.setValueAtTime(CALM_CUTOFF + (TENSE_CUTOFF - CALM_CUTOFF) * tension, c.currentTime);
+    padGain.connect(padFilter);
+    padFilter.connect(musicBus);
+
+    padVoices = CHORD.map((freq, i) => {
+      const o = c.createOscillator();
+      o.type = i === 0 ? "triangle" : "sine";
+      o.frequency.value = freq;
+      const lfo = c.createOscillator();
+      lfo.frequency.value = 0.06 + i * 0.017;
+      const lfoGain = c.createGain();
+      lfoGain.gain.value = 3;
+      lfo.connect(lfoGain);
+      lfoGain.connect(o.detune);
+      lfo.start();
+      o.connect(padGain);
+      o.start();
+      return { osc: o, lfo };
+    });
+
+    rampBusTo(targetLevel(), 2.2);
+  }
+
+  function stop() {
+    if (!playing || !ctx) return;
+    playing = false;
+    const t = ctx.currentTime;
+    musicBus.gain.cancelScheduledValues(t);
+    musicBus.gain.setValueAtTime(Math.max(musicBus.gain.value, 0.0001), t);
+    musicBus.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+    const voicesToStop = padVoices;
+    padVoices = [];
+    setTimeout(() => {
+      voicesToStop.forEach(({ osc, lfo }) => {
+        try { osc.stop(); } catch {}
+        try { lfo.stop(); } catch {}
+      });
+    }, 1100);
+  }
+
+  function setTension(urgent) {
+    tension = urgent ? 1 : 0;
+    if (!playing || !ctx) return;
+    const t = ctx.currentTime;
+    padFilter.frequency.cancelScheduledValues(t);
+    padFilter.frequency.setValueAtTime(padFilter.frequency.value, t);
+    padFilter.frequency.linearRampToValueAtTime(CALM_CUTOFF + (TENSE_CUTOFF - CALM_CUTOFF) * tension, t + 0.6);
+    rampBusTo(targetLevel(), 0.6);
+  }
+
+  function duck(on) {
+    ducked = on;
+    if (!playing) return;
+    rampBusTo(targetLevel(), 0.35);
+  }
+
+  function pulse(kind = "combo") {
+    if (!playing || !ctx || !padFilter) return;
+    const t = ctx.currentTime;
+    const peak = kind === "mega" ? TENSE_CUTOFF + 800 : kind === "clear" ? TENSE_CUTOFF + 400 : TENSE_CUTOFF;
+    const settle = CALM_CUTOFF + (TENSE_CUTOFF - CALM_CUTOFF) * tension;
+    padFilter.frequency.cancelScheduledValues(t);
+    padFilter.frequency.setValueAtTime(padFilter.frequency.value, t);
+    padFilter.frequency.linearRampToValueAtTime(peak, t + 0.08);
+    padFilter.frequency.linearRampToValueAtTime(settle, t + 0.7);
+  }
+
+  function setEnabled(v) {
+    musicOn = v;
+    if (!ctx || !master) return;
+    const t = ctx.currentTime;
+    master.gain.cancelScheduledValues(t);
+    master.gain.setValueAtTime(master.gain.value, t);
+    master.gain.linearRampToValueAtTime(v ? 1 : 0, t + 0.3);
+  }
+
+  return { start, stop, setTension, duck, pulse, setEnabled };
+})();
