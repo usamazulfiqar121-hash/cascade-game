@@ -252,6 +252,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 .fade-up { animation: fadeUp 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.screen-transition { animation: fadeIn 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 @keyframes toastIn {
   0% { opacity: 0; transform: translateY(-24px) scale(0.94); }

@@ -14,6 +14,11 @@ export const S = {
     WebkitTapHighlightColor: "transparent",
     transition: "background 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1)",
   },
+  gameRoot: {
+    position: "fixed", inset: 0,
+    display: "flex", flexDirection: "column",
+    overflow: "hidden",
+  },
   hud: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
     padding: "calc(env(safe-area-inset-top, 0px) + 14px) 20px 10px",

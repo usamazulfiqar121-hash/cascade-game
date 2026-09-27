@@ -32,7 +32,7 @@ export default function HomeScreen({
   const dailySoft = todayDone ? `${D.go}47` : `${D.gold}38`;
 
   return (
-    <div style={S.homeRoot}>
+    <div className="screen-transition" style={S.homeRoot}>
       <div style={S.homeAmbient} aria-hidden="true" />
 
       <div style={S.homeContent}>

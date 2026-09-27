@@ -13,6 +13,7 @@ import { S } from "./theme";
 import { CSS } from "./globalStyles";
 import { buildEmojiGrid, buildShareCard } from "./shareCard";
 import { Snd, Haptic, setVibe } from "./sound";
+import { initNotifications, scheduleDailyReminder, cancelDailyReminder } from "./notifications";
 import Particles from "./Particles";
 import Tube from "./Tube";
 import UpgradeCard from "./UpgradeCard";
@@ -88,6 +89,15 @@ export default function Cascade() {
     try {
       const ds = loadDailyState();
       if (ds) setDailyState(ds);
+      (async () => {
+        const granted = await initNotifications();
+        if (!granted) return;
+        if (ds && (ds.status === "completed" || ds.status === "failed")) {
+          cancelDailyReminder();
+        } else {
+          scheduleDailyReminder();
+        }
+      })();
     } catch {}
   }, []);
 
@@ -428,6 +438,7 @@ export default function Cascade() {
             movesLeft: remainingAtClear,
           });
           setDailyState(st);
+          cancelDailyReminder();
           /* Save streak day */
           try {
             const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
@@ -493,6 +504,7 @@ export default function Cascade() {
               movesUsed: newMovesUsed,
             });
             setDailyState(st);
+            cancelDailyReminder();
           }
 
           setPhase("gameover");
@@ -852,7 +864,8 @@ export default function Cascade() {
       )}
 
       {/* GAME — hidden when on home */}
-      {screen === "game" && (<>
+      {screen === "game" && (
+      <div className="screen-transition" style={S.gameRoot}>
       <Particles bursts={particles} />
 
       {/* Achievement toast — slides down from top */}
@@ -1175,7 +1188,8 @@ export default function Cascade() {
           </div>
         </div>
       )}
-      </>)}
+      </div>
+      )}
 
       {/* In-app toast */}
       {toast && (
