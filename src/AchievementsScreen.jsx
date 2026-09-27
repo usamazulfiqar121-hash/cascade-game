@@ -8,6 +8,8 @@ export default function AchievementsScreen({
   achievements,
   stats = { gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 },
   best = 0,
+  streak = 0,
+  bestStreak = 0,
   onClose,
   onBack,
 }) {
@@ -42,6 +44,16 @@ export default function AchievementsScreen({
           <div style={S.heroLabel}>BEST ROUND</div>
           <div style={S.heroNum}>{best}</div>
           <div style={S.heroSub}>Personal record</div>
+        </div>
+
+        {/* Streak — the daily habit's own numbers get their own row,
+            not folded into STATS below, since the game already invests
+            a lot elsewhere (shields, reminders, share-card callouts) in
+            the daily streak specifically. */}
+        <div style={S.sectionLabel}>STREAK</div>
+        <div style={S.statsGrid}>
+          <StatCard label="Current Streak" value={streak} />
+          <StatCard label="Best Streak" value={bestStreak} />
         </div>
 
         {/* Stats grid */}

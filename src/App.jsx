@@ -509,6 +509,14 @@ export default function Cascade() {
         if (round + 1 >= 25) unlockAch("round_25");
         if (round + 1 >= 50) unlockAch("round_50");
         if (newCombo >= 10) unlockAch("combo_10");
+        /* undoLeft starts at 2 for a non-daily run and only ever counts
+           down (never resets mid-run), so still being at 2 after
+           clearing round 5 means undo was never touched — matches
+           "Clear 5 rounds without undo" exactly, no separate tracking
+           state needed. Daily runs start at undoLeft=0 and can't use
+           undo at all, so they're correctly excluded rather than
+           trivially qualifying. */
+        if (!isDaily && undoLeft === 2 && round >= 5) unlockAch("no_undo_5");
       } else if (newMovesLeft <= 0) {
         setNearMiss(isOneMoveFromSolved(next));
         setTimeout(() => {
@@ -543,7 +551,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft]);
 
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing") return;
@@ -648,7 +656,11 @@ export default function Cascade() {
     if (pendingUpgrades.length === 0) return;
     const newUpgrades = [...runUpgrades, upgrade.id];
     setRunUpgrades(newUpgrades);
-    if (upgrade.rarity === 4) unlockAch("legendary");
+    /* >= 4, not === 4: Jackpot (rarity 5) is rarer and strictly better
+       than Legendary, so it should qualify for "take a Legendary
+       upgrade" too — a strict equality check meant the single best
+       possible pull in the game was the one pull that DIDN'T count. */
+    if (upgrade.rarity >= 4) unlockAch("legendary");
     if (newUpgrades.length >= 10) unlockAch("upgrades_10");
     /* Reset the combo indicator here as well as in the level effect — the
        effect runs a tick later, and for that one frame the old combo badge
@@ -1357,6 +1369,8 @@ export default function Cascade() {
           achievements={achievements}
           stats={stats}
           best={best}
+          streak={computeStreak(dailyResults, shieldedDates)}
+          bestStreak={bestStreak}
           onClose={() => popNav()}
         />
       )}
