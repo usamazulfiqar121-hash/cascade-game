@@ -23,15 +23,36 @@ export function getMegaEvery(ups) {
   return ups.includes("mega") ? 5 : 0;
 }
 
-/* ─── Upgrade pool picker ─── */
+/* ─── Upgrade pool picker ───
+   Jackpot bypasses the normal weighting so its odds stay exactly what's
+   documented here, independent of how the rest of the pool is tuned; a
+   near miss (rolled, but just missed) is surfaced too, rather than hidden —
+   research ties seeing a near-miss to what keeps variable-reward systems
+   compelling. dailyOnly upgrades never appear here — that's the whole point
+   of pickDailyUpgrades having something this pool doesn't. */
+const JACKPOT_ID = "jackpot";
+const JACKPOT_CHANCE = 0.03;
+const JACKPOT_NEAR_MISS_MARGIN = 0.07;
+
 export function pickRandomUpgrades(count) {
+  const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.dailyOnly);
   const weighted = [];
-  UPGRADES.forEach((u) => {
+  pool.forEach((u) => {
     const weight = Math.max(1, 6 - u.rarity * 1.5) | 0;
     for (let i = 0; i < weight; i++) weighted.push(u);
   });
   const picked = [];
   const used = new Set();
+
+  const roll = Math.random();
+  let jackpotNearMiss = false;
+  if (roll < JACKPOT_CHANCE) {
+    const jackpot = UPGRADES.find((u) => u.id === JACKPOT_ID);
+    if (jackpot) { picked.push(jackpot); used.add(jackpot.id); }
+  } else if (roll < JACKPOT_CHANCE + JACKPOT_NEAR_MISS_MARGIN) {
+    jackpotNearMiss = true;
+  }
+
   let guard = 0;
   while (picked.length < count && guard < 200) {
     const u = weighted[(Math.random() * weighted.length) | 0];
@@ -39,7 +60,7 @@ export function pickRandomUpgrades(count) {
     used.add(u.id);
     picked.push(u);
   }
-  return picked;
+  return { upgrades: picked, jackpotNearMiss };
 }
 
 /* ─── Tube predicates ─── */
@@ -280,11 +301,15 @@ export function formatCountdown(ms) {
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
-/* Deterministic 3 upgrades for daily — same for everyone on given date */
+/* Deterministic 3 upgrades for daily — same for everyone on given date.
+   dailyOnly upgrades (e.g. "dawn") are eligible here and nowhere else —
+   the whole point of the daily habit having its own payoff. Jackpot stays
+   exclusive to pickRandomUpgrades's explicit roll, so it's excluded here. */
 export function pickDailyUpgrades(dateSeed, count = 3) {
   const rng = mulberry32(dateSeed);
+  const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID);
   const weighted = [];
-  UPGRADES.forEach((u) => {
+  pool.forEach((u) => {
     const weight = Math.max(1, 6 - u.rarity * 1.5) | 0;
     for (let i = 0; i < weight; i++) weighted.push(u);
   });

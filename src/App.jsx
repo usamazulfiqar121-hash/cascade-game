@@ -114,6 +114,10 @@ export default function Cascade() {
   const [shieldedDates, setShieldedDates] = useState([]);
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
+  /* True when a Jackpot roll just missed but landed close — surfaced on the
+     upgrade-choice screen instead of silently discarded (research: seeing a
+     near-miss is part of what keeps variable-reward systems compelling). */
+  const [jackpotNearMiss, setJackpotNearMiss] = useState(false);
   const [level, setLevel] = useState(() => generateLevel(1, [], 0));
   const [tubes, setTubes] = useState(level.tubes);
   const [moves, setMoves] = useState(0);
@@ -449,9 +453,14 @@ export default function Cascade() {
           /* Daily upgrade choices must be identical for every player too —
              pickRandomUpgrades() alone used Math.random even in daily mode,
              so two players clearing the same round saw different 3 cards. */
-          setPendingUpgrades(
-            isDaily ? pickDailyUpgrades(dateToSeed() + round + 1) : pickRandomUpgrades(3)
-          );
+          if (isDaily) {
+            setPendingUpgrades(pickDailyUpgrades(dateToSeed() + round + 1));
+            setJackpotNearMiss(false);
+          } else {
+            const { upgrades, jackpotNearMiss } = pickRandomUpgrades(3);
+            setPendingUpgrades(upgrades);
+            setJackpotNearMiss(jackpotNearMiss);
+          }
           setPhase("upgrade");
           Snd.clear();
           buzz(30);
@@ -545,6 +554,7 @@ export default function Cascade() {
        would still be on screen while the new board was being built. */
     setComboCount(0);
     setPendingUpgrades([]);
+    setJackpotNearMiss(false);
     const nextRound = round + 1;
     setRound(nextRound);
     /* Daily boards must be identical for every player on a given date.
@@ -974,7 +984,15 @@ export default function Cascade() {
         <div style={S.overlay}>
           <div style={{ ...S.ovCard, maxWidth: 360 }}>
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
-            <div style={{ ...S.ovSub, marginBottom: 20 }}>Choose an upgrade</div>
+            <div style={{ ...S.ovSub, marginBottom: jackpotNearMiss ? 8 : 20 }}>Choose an upgrade</div>
+            {jackpotNearMiss && (
+              <div style={{
+                fontSize: 12, fontWeight: 800, textAlign: "center",
+                color: RARITY[5].color, marginBottom: 12,
+              }}>
+                ✨ A Jackpot almost dropped!
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {pendingUpgrades.map((u) => (
                 <UpgradeCard key={u.id} upgrade={u} onPick={() => chooseUpgrade(u)} />

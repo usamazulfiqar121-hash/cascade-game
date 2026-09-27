@@ -76,21 +76,31 @@ export const ACHIEVEMENTS = [
   { id: "streak_100", name: "Century Streak", desc: "100-day daily streak", icon: "💯" },
 ];
 
-/* Rarity tiers */
+/* Rarity tiers. 5 (Jackpot) sits above Legendary — a distinct color so the
+   rare roll in pickRandomUpgrades is instantly recognizable as a step up,
+   not just another Legendary. */
 export const RARITY = {
   1: { name: "Common", color: "#8592BC" },
   2: { name: "Uncommon", color: "#22C58A" },
   3: { name: "Rare", color: "#4C8DFF" },
   4: { name: "Legendary", color: "#FFC24B" },
+  5: { name: "Jackpot", color: "#FF3DAF" },
 };
 
-/* Roguelike upgrades pool */
+/* Roguelike upgrades pool.
+   "start" was 10 — only +2 over Rare's m8 (8), barely distinguishable from
+   the tier below despite being Legendary. Widened to make the top tier feel
+   materially different, not just differently colored (research: rarity
+   should vary the actual outcome, not just its presentation).
+   "jackpot" and "dawn" are pulled from this pool by id in pickRandomUpgrades/
+   pickDailyUpgrades respectively — see the JACKPOT_CHANCE roll there and the
+   dailyOnly flag below. */
 export const UPGRADES = [
   { id: "m2", name: "+2 Moves", desc: "+2 moves every round", icon: "🏃", rarity: 1, value: 2 },
   { id: "m3", name: "+3 Moves", desc: "+3 moves every round", icon: "⚡", rarity: 1, value: 3 },
   { id: "m5", name: "+5 Moves", desc: "+5 moves every round", icon: "🔥", rarity: 2, value: 5 },
   { id: "m8", name: "+8 Moves", desc: "+8 moves every round", icon: "💎", rarity: 3, value: 8 },
-  { id: "start", name: "Head Start", desc: "+10 moves every round", icon: "🚀", rarity: 4, value: 10 },
+  { id: "start", name: "Head Start", desc: "+16 moves every round", icon: "🚀", rarity: 4, value: 16 },
   { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1 },
   { id: "lucky2", name: "Super Lucky", desc: "35% chance per pour: +1 move", icon: "🌟", rarity: 3 },
   { id: "combo3", name: "Combo Master", desc: "Every 3rd pour gives +1 move", icon: "🎯", rarity: 2 },
@@ -99,4 +109,11 @@ export const UPGRADES = [
   { id: "clear", name: "Perfect Clear", desc: "Finish with 5+ moves left: +3 next round", icon: "✨", rarity: 2 },
   { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently", icon: "🔧", rarity: 3 },
   { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round", icon: "🎁", rarity: 4 },
+  /* Rare, high-impact roll — bypasses normal weighting entirely; see
+     JACKPOT_CHANCE in gameLogic.js. Never offered on a plain draw. */
+  { id: "jackpot", name: "Jackpot!", desc: "+20 moves every round", icon: "🎰", rarity: 5, value: 20 },
+  /* Daily-challenge exclusive — never offered by pickRandomUpgrades, so the
+     daily habit has a payoff normal runs can't get, not just the same pool
+     seeded differently. */
+  { id: "dawn", name: "Dawn Bonus", desc: "+6 moves every round — today only", icon: "🌅", rarity: 3, value: 6, dailyOnly: true },
 ];
