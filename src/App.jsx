@@ -309,6 +309,13 @@ export default function Cascade() {
     if (streak >= 100) unlockAch("streak_100");
   }, [dailyResults, shieldedDates, unlockAch]);
 
+  useEffect(() => {
+    const streak = computeStreak(dailyResults, shieldedDates);
+    if (streak >= 7) unlockAch("streak_7");
+    if (streak >= 30) unlockAch("streak_30");
+    if (streak >= 100) unlockAch("streak_100");
+  }, [dailyResults, shieldedDates, unlockAch]);
+
   const spawnParticles = useCallback((x, y, color) => {
     const id = Date.now() + Math.random();
     const seed = Math.random() * Math.PI;
