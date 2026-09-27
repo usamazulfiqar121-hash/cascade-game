@@ -10,50 +10,6 @@ export function buzz(ms) {
   try { navigator?.vibrate?.(ms); } catch {}
 }
 
-let hapticsPlugin = null;
-let hapticsLoadAttempted = false;
-
-async function getHapticsPlugin() {
-  if (hapticsPlugin || hapticsLoadAttempted) return hapticsPlugin;
-  hapticsLoadAttempted = true;
-  try {
-    const mod = await import("@capacitor/haptics");
-    hapticsPlugin = mod.Haptics || null;
-  } catch {
-    hapticsPlugin = null;
-  }
-  return hapticsPlugin;
-}
-
-function impact(style, fallback) {
-  if (!VIBE_ON) return;
-  getHapticsPlugin()
-    .then((plugin) => {
-      if (plugin) plugin.impact({ style }).catch(() => buzz(fallback));
-      else buzz(fallback);
-    })
-    .catch(() => buzz(fallback));
-}
-
-function notification(type, fallback) {
-  if (!VIBE_ON) return;
-  getHapticsPlugin()
-    .then((plugin) => {
-      if (plugin) plugin.notification({ type }).catch(() => buzz(fallback));
-      else buzz(fallback);
-    })
-    .catch(() => buzz(fallback));
-}
-
-export const Haptic = {
-  light: () => impact("LIGHT", 8),
-  medium: () => impact("MEDIUM", 20),
-  heavy: () => impact("HEAVY", 40),
-  success: () => notification("SUCCESS", 30),
-  warning: () => notification("WARNING", [10, 40, 10]),
-  error: () => notification("ERROR", 60),
-};
-
 /* ─── Web Audio SFX ─── */
 export const Snd = (() => {
   let ctx = null, sfxBus = null, sfxOn = true;
