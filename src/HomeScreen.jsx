@@ -8,11 +8,11 @@ import StreakBadge from "./components/StreakBadge";
 
 export default function HomeScreen({
   onPlay, onDaily, onSettings, onAwards,
-  dailyResults, computeStreak, dailyKey,
+  dailyResults, shieldedDates = [], computeStreak, dailyKey,
   hasPlayedOnce, achievements, ACHIEVEMENTS,
 }) {
   const todayDone = !!dailyResults[dailyKey()];
-  const streak = computeStreak(dailyResults);
+  const streak = computeStreak(dailyResults, shieldedDates);
 
   const days = [];
   const today = new Date();
@@ -22,7 +22,7 @@ export default function HomeScreen({
     days.push({
       key: dailyKey(d),
       label: ["S","M","T","W","T","F","S"][d.getUTCDay()],
-      done: !!dailyResults[dailyKey(d)],
+      done: !!dailyResults[dailyKey(d)] || shieldedDates.includes(dailyKey(d)),
       isToday: i === 0,
     });
   }

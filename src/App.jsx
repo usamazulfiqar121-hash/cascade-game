@@ -110,6 +110,7 @@ export default function Cascade() {
   const [screen, setScreen] = useState("home");   // "home" | "game"
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [dailyResults, setDailyResults] = useState({});
+  const [shieldedDates, setShieldedDates] = useState([]);
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
   const [level, setLevel] = useState(() => generateLevel(1, [], 0));
@@ -167,7 +168,9 @@ export default function Cascade() {
       } catch {}
       try {
         const dr = localStorage.getItem("cascade:dailyResults");
-        if (dr) setDailyResults(JSON.parse(dr));
+        const parsedDr = dr ? JSON.parse(dr) : {};
+        if (dr) setDailyResults(parsedDr);
+        setShieldedDates(reconcileStreakShield(parsedDr));
       } catch {}
       try {
         if (localStorage.getItem("cascade:hasPlayedOnce") === "1") setHasPlayedOnce(true);
@@ -298,6 +301,13 @@ export default function Cascade() {
       setTimeout(() => setAchToast(null), 2600);
     }
   }, []);
+
+  useEffect(() => {
+    const streak = computeStreak(dailyResults, shieldedDates);
+    if (streak >= 7) unlockAch("streak_7");
+    if (streak >= 30) unlockAch("streak_30");
+    if (streak >= 100) unlockAch("streak_100");
+  }, [dailyResults, shieldedDates, unlockAch]);
 
   const spawnParticles = useCallback((x, y, color) => {
     const id = Date.now() + Math.random();
@@ -672,7 +682,7 @@ export default function Cascade() {
   const shareDaily = useCallback(async () => {
     try {
       const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
-      const streak = computeStreak(dr);
+      const streak = computeStreak(dr, shieldedDates);
       const text = buildEmojiGrid(dailyRun.rounds, dailyRun.totalMoves, streak);
       if (navigator.share) {
         await navigator.share({ title: "Cascade Daily", text });
@@ -683,7 +693,7 @@ export default function Cascade() {
     } catch (err) {
       if (err && err.name !== "AbortError") console.warn("Share failed:", err);
     }
-  }, [dailyRun, showToast]);
+  }, [dailyRun, showToast, shieldedDates]);
 
   const generateShare = useCallback(() => {
     try {
@@ -731,6 +741,7 @@ export default function Cascade() {
           onDaily={() => { startNewGame(true); pushNav("game"); }}
           onSettings={() => { setShowSettings(true); pushNav("settings"); }}
           dailyResults={dailyResults}
+          shieldedDates={shieldedDates}
           computeStreak={computeStreak}
           dailyKey={dailyKey}
           hasPlayedOnce={hasPlayedOnce}

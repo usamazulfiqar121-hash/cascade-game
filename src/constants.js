@@ -71,6 +71,9 @@ export const ACHIEVEMENTS = [
   { id: "upgrades_10", name: "Collector", desc: "Hold 10 upgrades in one run", icon: "🎁" },
   { id: "combo_10", name: "Chain Master", desc: "Hit a 10× combo", icon: "🔥" },
   { id: "no_undo_5", name: "Purist", desc: "Clear 5 rounds without undo", icon: "🛡" },
+  { id: "streak_7", name: "Week Streak", desc: "7-day daily streak", icon: "📅" },
+  { id: "streak_30", name: "Month Streak", desc: "30-day daily streak", icon: "🌙" },
+  { id: "streak_100", name: "Century Streak", desc: "100-day daily streak", icon: "💯" },
 ];
 
 /* Rarity tiers */

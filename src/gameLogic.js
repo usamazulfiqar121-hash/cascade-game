@@ -101,7 +101,7 @@ export function dateToSeed(date = new Date()) {
   return parseInt(dailyKey(date).replace(/-/g, ""), 10);
 }
 
-export function computeStreak(results) {
+export function computeStreak(results, shieldedDates = []) {
   let streak = 0;
   const today = new Date();
   const todayDone = !!results[dailyKey(today)];
@@ -109,10 +109,39 @@ export function computeStreak(results) {
   for (let i = start; i < 365; i++) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - i);
-    if (results[dailyKey(d)]) streak++;
+    const key = dailyKey(d);
+    if (results[key] || shieldedDates.includes(key)) streak++;
     else break;
   }
   return streak;
+}
+
+export const SHIELD_KEY = "cascade:streakShield";
+
+export function loadShieldedDates() {
+  try {
+    const raw = localStorage.getItem(SHIELD_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+export function reconcileStreakShield(results) {
+  const shielded = loadShieldedDates();
+  const today = new Date();
+  const yest = new Date(today);
+  yest.setUTCDate(yest.getUTCDate() - 1);
+  const yestKey = dailyKey(yest);
+  if (results[yestKey] || shielded.includes(yestKey)) return shielded;
+  const dayBefore = new Date(today);
+  dayBefore.setUTCDate(dayBefore.getUTCDate() - 2);
+  const dbKey = dailyKey(dayBefore);
+  if (!results[dbKey] && !shielded.includes(dbKey)) return shielded;
+  const monthKey = yestKey.slice(0, 7);
+  if (shielded.some((k) => k.slice(0, 7) === monthKey)) return shielded;
+  const updated = [...shielded, yestKey];
+  try { localStorage.setItem(SHIELD_KEY, JSON.stringify(updated)); } catch {}
+  return updated;
 }
 
 /* ─── Auto-sort (roguelike upgrade effect) ───
