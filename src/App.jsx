@@ -21,6 +21,7 @@ import HomeScreen from "./HomeScreen";
 import AchievementsScreen from "./AchievementsScreen";
 import Tutorial from "./Tutorial";
 import SettingsScreen from "./screens/SettingsScreen";
+import DailyBoard from "./components/DailyBoard";
 
 
 
@@ -1134,6 +1135,7 @@ export default function Cascade() {
 
                 {isDaily ? (
                   <>
+                    <DailyBoard rounds={dailyRun.rounds.length} dateSeed={dateToSeed()} />
                     <div style={{
                       textAlign: "center",
                       padding: "16px 20px",
