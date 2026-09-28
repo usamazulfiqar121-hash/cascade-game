@@ -96,7 +96,16 @@ export const S = {
   settingRow: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`, border: `1px solid ${T.edge}`, borderRadius: 14, padding: "14px 16px", cursor: "pointer", fontFamily: "'Nunito', sans-serif", color: T.ink },
   settingLabel: { fontWeight: 800, fontSize: 14 },
   togglePill: { fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: "#fff", padding: "4px 10px", borderRadius: 999 },
-  tutOverlay: { position: "fixed", inset: 0, background: "rgba(10,15,31,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)", zIndex: 100 },
+  /* Was a flat rgba(10,15,31,0.95) — dark's own scrim color, hardcoded
+     regardless of data-theme, unlike every other overlay in this file
+     (see S.overlay just above, which already uses var(--overlay-bg)).
+     A light-theme player got a near-opaque navy backdrop behind a white
+     card — the exact bug already fixed twice elsewhere this session
+     (index.css, globalStyles.js), just missed here. Also added the
+     -webkit- prefix S.overlay already carries: without it, backdrop-filter
+     silently no-ops on WebKit (Capacitor iOS's webview), leaving a flat
+     scrim with no blur at all on that platform. */
+  tutOverlay: { position: "fixed", inset: 0, background: "var(--overlay-bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", zIndex: 100 },
   tutCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 28, padding: 28, maxWidth: 380, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" },
   tutHeader: { textAlign: "center", marginBottom: 24 },
   tutIconCircle: { width: 64, height: 64, borderRadius: 20, background: `color-mix(in srgb, ${T.accent} 13.3%, transparent)`, border: `2px solid color-mix(in srgb, ${T.accent} 33.3%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" },

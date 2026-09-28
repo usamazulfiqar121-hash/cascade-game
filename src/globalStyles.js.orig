@@ -154,28 +154,6 @@ button:active:not(:disabled) { transform: scale(0.97); }
   100% { opacity: 1; transform: scale(1); }
 }
 .tutIconPop { animation: tutIconPop 420ms cubic-bezier(.34,1.56,.64,1) 60ms both; }
-/* Reveal-moment entrance for the two "how did I do" cards (round-cleared
-   upgrade pick, run-over summary) — same shape as tutIn but with the
-   app's own spring overshoot (D.tSpring's curve) instead of a flat
-   ease-out, since these are wins/results worth a little bounce rather
-   than a neutral UI panel appearing. */
-@keyframes popIn {
-  0% { opacity: 0; transform: scale(0.88) translateY(16px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
-}
-.popIn { animation: popIn 380ms cubic-bezier(.34,1.56,.64,1) both; }
-/* Generic "this value just changed" pop — a badge or counter whose number
-   moved gets a brief spring-scale instead of the new value silently
-   replacing the old one. Reuses tutIconPop's exact keyframe/curve; named
-   for its general purpose since it's no longer tutorial-specific. */
-.value-pop { animation: tutIconPop 360ms cubic-bezier(.34,1.56,.64,1) both; }
-/* Solved tube's checkmark — was a static ::after with no entrance at all,
-   the one state-change in the whole board with zero "juice" on it. */
-@keyframes checkPop {
-  0% { opacity: 0; transform: scale(0.3); }
-  60% { opacity: 1; transform: scale(1.25); }
-  100% { opacity: 1; transform: scale(1); }
-}
 @keyframes bonusPopAnim {
   0% { opacity: 0; transform: translateY(10px) scale(0.6); }
   25% { opacity: 1; transform: translateY(-4px) scale(1.15); }
@@ -226,12 +204,6 @@ button:active:not(:disabled) { transform: scale(0.97); }
   font-weight: 900;
   color: var(--go);
   text-shadow: 0 0 6px var(--go-soft);
-  /* inline-block (not the default inline) so the scale transform below is
-     applied predictably on WebKit — a plain inline element's transform
-     support is inconsistent across older WebKit builds (Capacitor's
-     bundled webview among them), inline-block isn't. */
-  display: inline-block;
-  animation: checkPop 320ms cubic-bezier(.34,1.56,.64,1) both;
 }
 .tube-btn[data-state="hintFrom"] {
   border-color: var(--go);

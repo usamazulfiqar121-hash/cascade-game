@@ -1,11 +1,28 @@
 /* ═══════════ STREAK BADGE ═══════════
    Custom shape pill. Rounded-square, animated on value change.
-   Complete state = green ✓, pending = gold 🔥. */
+   Complete state = green ✓, pending = gold 🔥.
 
+   "Animated on value change" described the intent, not the code — there
+   was no animation here at all, so the streak number (or the fire→check
+   swap once today's daily is done) just silently replaced itself. Watches
+   its own props and plays a brief spring pop whenever either one changes. */
+
+import { useEffect, useRef, useState } from "react";
 import { D } from "../constants";
 import { FireIcon, CheckIcon } from "../icons";
 
 export default function StreakBadge({ streak = 0, complete = false, size = "md" }) {
+  const [pop, setPop] = useState(false);
+  const prev = useRef({ streak, complete });
+
+  useEffect(() => {
+    if (prev.current.streak === streak && prev.current.complete === complete) return;
+    prev.current = { streak, complete };
+    setPop(true);
+    const t = setTimeout(() => setPop(false), 360);
+    return () => clearTimeout(t);
+  }, [streak, complete]);
+
   const sizes = {
     sm: { padding: "3px 8px", gap: 4, font: 11, icon: 12 },
     md: { padding: "4px 10px", gap: 5, font: 12, icon: 14 },
@@ -18,7 +35,7 @@ export default function StreakBadge({ streak = 0, complete = false, size = "md" 
   const border = complete ? `color-mix(in srgb, ${D.go} 34.9%, transparent)` : `color-mix(in srgb, ${D.gold} 34.9%, transparent)`;
 
   return (
-    <div style={{
+    <div className={pop ? "value-pop" : undefined} style={{
       display: "flex",
       alignItems: "center",
       gap: s.gap,

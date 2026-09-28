@@ -11,6 +11,7 @@ export default function SettingsScreen({
   theme = "dark",
   onSetTheme,
   onBack,
+  onShowTutorial,
 }) {
   const handleBack = onBack || onClose;
   return (
@@ -74,6 +75,18 @@ export default function SettingsScreen({
                 label="Exit Daily Mode"
                 sub="Return to normal play"
                 onClick={onExitDaily}
+              />
+            </>
+          )}
+
+          {onShowTutorial && (
+            <>
+              <Section label="HELP" />
+              <Row
+                icon={<HelpIcon />}
+                label="How to Play"
+                sub="Rules and tips"
+                onClick={onShowTutorial}
               />
             </>
           )}
@@ -272,6 +285,17 @@ function ReduceMotionIcon({ on }) {
       <path d="M9.5 15.5L15 8" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       <path d="M14 8H18V12" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
       {on && <path d="M4 4L20 20" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>}
+    </svg>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke={D.accent} strokeWidth="1.8"/>
+      <path d="M9.5 9.3C9.5 7.9 10.6 6.8 12 6.8C13.4 6.8 14.5 7.9 14.5 9.2C14.5 10.4 13.7 10.9 12.9 11.4C12.3 11.8 12 12.3 12 13.1"
+        stroke={D.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="12" cy="16.4" r="1.1" fill={D.accent}/>
     </svg>
   );
 }
