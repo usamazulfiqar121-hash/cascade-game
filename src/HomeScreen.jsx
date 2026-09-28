@@ -3,9 +3,24 @@
    v3: bottom navigation + custom StreakBadge. */
 
 import { D } from "./constants";
+import { isTubeSolved } from "./gameLogic";
 import BottomNav from "./components/BottomNav";
 import StreakBadge from "./components/StreakBadge";
 import FriendCompare from "./components/FriendCompare";
+import Tube from "./Tube";
+
+/* The home screen used to be a title and a Play button on an otherwise
+   empty gradient -- nothing on it said what kind of game this even is
+   before you tapped in. This is a small, fixed puzzle snapshot (not live
+   gameplay -- the same four tubes every launch, so it reads as a
+   deliberate little illustration rather than noise that looks different
+   each time) rendered with the real Tube component, so it's pixel-for-
+   pixel the same glass-and-ball look the actual board uses: one tube
+   already solved (the goal), one scrambled, one half-filled, one empty
+   workspace tube -- readable at a glance as "sort the colors" even to
+   someone who has never opened the app before. */
+const HERO_TUBES = [[2, 0, 2, 0], [1, 1, 1, 1], [3, 3], []];
+const HERO_SCALE = 0.8;
 
 export default function HomeScreen({
   onPlay, onDaily, onSettings, onAwards,
@@ -37,11 +52,47 @@ export default function HomeScreen({
       <div style={S.homeAmbient} aria-hidden="true" />
 
       <div style={S.homeContent}>
+        {/* Hero + tagline only show before a player's first game -- once
+            hasPlayedOnce flips, the daily card below takes over that same
+            vertical space, and someone who has already played doesn't need
+            a "here's what this game is" pitch anymore. Keeping both gated
+            the same way as the daily card also means the two blocks are
+            never on screen together, so the small-screen height budget
+            this content has to fit in doesn't change from before this
+            hero existed. */}
+        {!hasPlayedOnce && (
+          /* Decorative only: aria-hidden and pointer-events: none take it
+             out of the tab order and the a11y tree entirely rather than
+             leaving four unlabeled, do-nothing buttons for a screen
+             reader to announce. */
+          <div className="fade-up" style={{ ...S.hero, animationDelay: "0ms" }} aria-hidden="true">
+            {HERO_TUBES.map((balls, i) => (
+              <div
+                key={i}
+                className="heroFloat"
+                style={{ animationDelay: `${i * 340}ms`, animationDuration: `${3000 + (i % 3) * 380}ms` }}
+              >
+                <Tube idx={i} balls={balls} solved={isTubeSolved(balls)} scale={HERO_SCALE} />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Title */}
         <div className="fade-up" style={{ ...S.titleBlock, animationDelay: "60ms" }}>
           <div style={S.title}>CASCADE</div>
           <div style={S.subtitle}>ROGUELIKE SORT</div>
         </div>
+
+        {/* One line spelling out the actual rule the hero above only shows
+            in pictures -- there's a move limit, and color is the whole
+            game. Sits in what used to be dead air between the title and
+            the button. */}
+        {!hasPlayedOnce && (
+          <div className="fade-up" style={{ ...S.tagline, animationDelay: "100ms" }}>
+            Sort every color into its own tube before you run out of moves.
+          </div>
+        )}
 
         {/* Play — primary CTA */}
         <button
@@ -144,7 +195,15 @@ const S = {
     display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center",
     background: "var(--bg-0)",
-    overflow: "hidden",
+    /* auto, not hidden: hero+tagline (first-time) or the daily card +
+       friend-compare (returning) are sized to comfortably fit even a
+       small phone in either state, verified down to a 320x568 viewport --
+       but "comfortably fits everything we tested" isn't the same
+       guarantee as "can never overflow" (a larger system font size, a
+       split-screen window), and hidden would silently swallow the Play
+       button itself if that ever happened. Scrolling is the fallback of
+       last resort, not the plan. */
+    overflow: "auto",
   },
   homeAmbient: {
     position: "absolute", inset: 0,
@@ -165,6 +224,13 @@ const S = {
     maxWidth: 360,
   },
 
+  hero: {
+    display: "flex", justifyContent: "center", alignItems: "flex-end",
+    gap: 10,
+    pointerEvents: "none",
+    marginTop: 4,
+  },
+
   titleBlock: { textAlign: "center", marginTop: 12, marginBottom: 4 },
   title: {
     fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
@@ -176,6 +242,14 @@ const S = {
     fontSize: 10, fontWeight: 800,
     color: D.textSub, letterSpacing: "0.32em",
     marginTop: 14,
+  },
+
+  tagline: {
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: 13.5, fontWeight: 600,
+    color: D.textSub, textAlign: "center",
+    lineHeight: 1.4, maxWidth: 280,
+    marginTop: -4, marginBottom: 4,
   },
 
   playBtn: {

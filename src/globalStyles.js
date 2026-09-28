@@ -322,6 +322,17 @@ button:active:not(:disabled) { transform: scale(0.97); }
   50%      { transform: translateY(-3px) scale(1.02); box-shadow: 0 0 0 6px transparent; }
 }
 
+/* Home screen's hero tubes (HomeScreen.jsx) -- a slow, gentle bob so the
+   little illustration reads as alive rather than a pasted-in screenshot.
+   Each tube gets its own animation-delay/-duration inline (a shared name
+   here, individual timing there) so the four drift out of phase with each
+   other instead of bobbing in robotic unison. */
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+.heroFloat { animation: heroFloat 3400ms ease-in-out infinite; }
+
 @keyframes slideInRight {
   from { transform: translateX(100%); opacity: 0; }
   to   { transform: translateX(0);   opacity: 1; }
