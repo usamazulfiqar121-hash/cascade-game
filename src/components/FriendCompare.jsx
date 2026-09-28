@@ -20,6 +20,21 @@ import {
   compareToFriend,
 } from "../friendCompare";
 
+/* Rotates to point up when the panel is open — an SVG, not a text
+   glyph (▾/⌄/›), for the same reason the in-game icons were moved off
+   emoji/text glyphs earlier: those render inconsistently across
+   fonts/platforms, where currentColor + a fixed viewBox doesn't. */
+function ChevronIcon({ open }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 24 24" fill="none"
+      style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 200ms ease", flexShrink: 0 }}
+    >
+      <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function FriendCompare({ rounds, dateKey }) {
   const [open, setOpen] = useState(false);
   const [friends, setFriends] = useState(() => loadFriends());
@@ -72,7 +87,12 @@ export default function FriendCompare({ rounds, dateKey }) {
   return (
     <div style={s.wrap}>
       <button style={s.toggle} onClick={() => setOpen((o) => !o)}>
-        👥 Compare Friends{friends.length > 0 ? ` (${friends.length})` : ""}
+        <span style={s.toggleIcon}>👥</span>
+        <span style={s.toggleText}>
+          Compare Friends
+          {friends.length > 0 && <span style={s.toggleCount}> · {friends.length}</span>}
+        </span>
+        <ChevronIcon open={open} />
       </button>
 
       {open && (
@@ -166,19 +186,38 @@ export default function FriendCompare({ rounds, dateKey }) {
 
 const s = {
   wrap: { width: "100%" },
+  /* Was a bare transparent-text button — the only unstyled element on
+     a screen where everything else (Play, the Daily card, the bottom
+     nav) is a proper glass/pill surface, so it read as a leftover
+     placeholder floating under the Daily card rather than a designed
+     part of the screen. Glass pill + icon + chevron brings it in line
+     with the rest of the card language instead of a lone gray label. */
   toggle: {
-    display: "block",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     width: "100%",
-    background: "transparent",
-    color: T.muted,
-    border: "none",
-    padding: 12,
+    background: "var(--glass)",
+    backdropFilter: "blur(16px) saturate(150%)",
+    WebkitBackdropFilter: "blur(16px) saturate(150%)",
+    border: `1px solid ${T.edge}`,
+    borderRadius: 14,
+    padding: "13px 16px",
+    color: T.ink,
     fontFamily: "'Nunito', sans-serif",
     fontWeight: 800,
     fontSize: 13,
     cursor: "pointer",
     marginTop: 6,
+    appearance: "none",
+    WebkitAppearance: "none",
+    outline: "none",
+    WebkitTapHighlightColor: "transparent",
   },
+  toggleIcon: { fontSize: 14, lineHeight: 1 },
+  toggleText: { flex: "0 1 auto" },
+  toggleCount: { color: T.accent, fontWeight: 900 },
   panel: {
     background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
     border: `1px solid ${T.edge}`,
