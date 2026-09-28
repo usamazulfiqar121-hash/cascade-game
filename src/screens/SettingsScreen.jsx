@@ -222,7 +222,7 @@ function SoundIcon({ on }) {
   const c = on ? D.accent : D.textSub;
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M11 5L6 9H3V15H6L11 19V5Z" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8" strokeLinejoin="round"/>
+      <path d="M11 5L6 9H3V15H6L11 19V5Z" fill={on ? `color-mix(in srgb, ${c} 13.3%, transparent)` : "none"} stroke={c} strokeWidth="1.8" strokeLinejoin="round"/>
       <path d="M15 9C15.5 9.5 16 10.7 16 12C16 13.3 15.5 14.5 15 15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       {on && <path d="M18 6C19.2 7.2 20 9.5 20 12C20 14.5 19.2 16.8 18 18" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>}
     </svg>
@@ -233,7 +233,7 @@ function VibeIcon({ on }) {
   const c = on ? D.accent : D.textSub;
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <rect x="7" y="3" width="10" height="18" rx="2.5" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <rect x="7" y="3" width="10" height="18" rx="2.5" fill={on ? `color-mix(in srgb, ${c} 13.3%, transparent)` : "none"} stroke={c} strokeWidth="1.8"/>
       <path d="M11 18H13" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       {on && <>
         <path d="M4 9V15" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
@@ -247,8 +247,8 @@ function MusicIcon({ on }) {
   const c = on ? D.accent : D.textSub;
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <circle cx="7" cy="18" r="3" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
-      <circle cx="17" cy="16" r="3" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <circle cx="7" cy="18" r="3" fill={on ? `color-mix(in srgb, ${c} 13.3%, transparent)` : "none"} stroke={c} strokeWidth="1.8"/>
+      <circle cx="17" cy="16" r="3" fill={on ? `color-mix(in srgb, ${c} 13.3%, transparent)` : "none"} stroke={c} strokeWidth="1.8"/>
       <path d="M10 18V6.5L20 4.5V16" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
@@ -258,7 +258,7 @@ function ColorBlindIcon({ on }) {
   const c = on ? D.accent : D.textSub;
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="9" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <circle cx="12" cy="12" r="9" fill={on ? `color-mix(in srgb, ${c} 13.3%, transparent)` : "none"} stroke={c} strokeWidth="1.8"/>
       <text x="12" y="16" textAnchor="middle" fontSize="10" fontWeight="900" fill={c}>1</text>
     </svg>
   );
@@ -268,7 +268,7 @@ function ReduceMotionIcon({ on }) {
   const c = on ? D.accent : D.textSub;
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <circle cx="7" cy="17" r="2.5" fill={on ? `${c}22` : "none"} stroke={c} strokeWidth="1.8"/>
+      <circle cx="7" cy="17" r="2.5" fill={on ? `color-mix(in srgb, ${c} 13.3%, transparent)` : "none"} stroke={c} strokeWidth="1.8"/>
       <path d="M9.5 15.5L15 8" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
       <path d="M14 8H18V12" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
       {on && <path d="M4 4L20 20" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>}

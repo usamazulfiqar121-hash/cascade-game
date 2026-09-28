@@ -1465,7 +1465,13 @@ export default function Cascade() {
           onReset={() => {
             setConfirmDialog({
               title: "Reset All Progress?",
-              message: "This deletes your best score, stats, and tutorial.",
+              /* Was "...best score, stats, and tutorial" — silent on the
+                 daily streak, even though the handler below has always
+                 cleared cascade:dailyResults (what computeStreak reads) too.
+                 A player confirming this had no way to know their streak —
+                 the one thing the game otherwise goes out of its way to
+                 protect, with shields and reminders — was part of the deal. */
+              message: "This deletes your best score, stats, daily streak, and tutorial.",
               confirmLabel: "Reset",
               onConfirm: () => {
                 try {
@@ -1474,11 +1480,23 @@ export default function Cascade() {
                   localStorage.removeItem("cascade:stats");
                   localStorage.removeItem("cascade:dailyResults");
                   localStorage.removeItem("cascade:dailyState");
-                  localStorage.removeItem("cascade:dailyRun");
                   localStorage.removeItem("cascade:hasPlayedOnce");
                 } catch {}
                 setBest(0);
                 setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
+                /* These three used to only be cleared in localStorage, never
+                   in the live React state that actually drives the screen —
+                   so right after confirming "Reset", the Home screen kept
+                   showing the old streak, the old "Daily Complete" status,
+                   and the Daily card itself (hasPlayedOnce gates whether it
+                   renders at all) exactly as before, until a full app
+                   reload happened to re-read storage from scratch. Resetting
+                   them here too means Reset actually looks reset. */
+                setDailyResults({});
+                setDailyState(null);
+                setDailyRun({ rounds: [], totalMoves: 0 });
+                setHasPlayedOnce(false);
+                setTutorialSeen(false);
                 restartRun();
                 popNav();
                 setConfirmDialog(null);
