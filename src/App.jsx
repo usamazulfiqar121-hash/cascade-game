@@ -11,7 +11,7 @@ import {
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
-import { buildEmojiGrid, buildShareCard } from "./shareCard";
+import { buildEmojiGrid, buildShareCard, nativeShareText, nativeShareImage } from "./shareCard";
 import { Snd, Haptic, setVibe, Music } from "./sound";
 import { initNotifications, scheduleDailyReminder, cancelDailyReminder } from "./notifications";
 import Particles from "./Particles";
@@ -863,14 +863,22 @@ export default function Cascade() {
       const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
       const streak = computeStreak(dr, shieldedDates);
       const text = buildEmojiGrid(dailyRun.rounds, dailyRun.totalMoves, streak, bestStreak);
-      if (navigator.share) {
-        await navigator.share({ title: "Cascade Daily", text });
-      } else if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
+      /* nativeShareText handles the WebView-vs-browser branching (native
+         Share plugin on the APK, navigator.share on Chrome, clipboard as
+         last resort) and returns a status string we can act on here. */
+      const result = await nativeShareText({
+        title: "Cascade Daily",
+        text,
+        url: "https://cascade-main-rho.vercel.app",
+      });
+      if (result === "copied") {
         showToast({ icon: "C", color: "var(--accent)", title: "Copied!", message: "Paste to share" });
+      } else if (result === "failed") {
+        showToast({ icon: "!", color: "var(--danger)", title: "Share failed", message: "Try again" });
       }
+      /* "shared" and "cancelled" need no toast. */
     } catch (err) {
-      if (err && err.name !== "AbortError") console.warn("Share failed:", err);
+      console.warn("Share daily failed:", err);
     }
   }, [dailyRun, showToast, shieldedDates, bestStreak]);
 
@@ -885,26 +893,41 @@ export default function Cascade() {
 
   const shareNow = useCallback(async () => {
     if (!shareImage) return;
+    const shareText = `I survived ${round} rounds in Cascade! Can you beat me?`;
+    const shareUrl = "https://cascade-main-rho.vercel.app";
     try {
-      const blob = await (await fetch(shareImage)).blob();
-      const file = new File([blob], "cascade-score.png", { type: "image/png" });
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: "Cascade",
-          text: `I survived ${round} rounds in Cascade! Can you beat me?`,
-        });
+      /* On real Chrome, navigator.canShare({files}) lets us hand the PNG
+         straight to the OS sheet. In the APK's WebView, that API is
+         disabled — so go through Capacitor Share (text + link) there
+         instead of silently doing nothing. Both paths finally call
+         setShared(true) so the button flips to "✓ Shared". */
+      const canShareFiles =
+        typeof navigator !== "undefined" &&
+        navigator.share &&
+        navigator.canShare &&
+        (() => {
+          try {
+            return navigator.canShare({ files: [new File([new Uint8Array(1)], "x.png", { type: "image/png" })] });
+          } catch {
+            return false;
+          }
+        })();
+
+      if (canShareFiles) {
+        const blob = await (await fetch(shareImage)).blob();
+        const file = new File([blob], "cascade-score.png", { type: "image/png" });
+        await navigator.share({ files: [file], title: "Cascade", text: shareText });
         setShared(true);
       } else {
-        // Fallback: download
-        const a = document.createElement("a");
-        a.href = shareImage;
-        a.download = "cascade-score.png";
-        a.click();
-        setShared(true);
+        const result = await nativeShareImage({
+          dataUrl: shareImage,
+          title: "Cascade",
+          text: shareText,
+        });
+        if (result === "shared" || result === "copied") setShared(true);
       }
     } catch (e) {
-      if (e.name !== "AbortError") console.error(e);
+      if (e && e.name !== "AbortError") console.warn("Share card failed:", e);
     }
   }, [shareImage, round]);
 

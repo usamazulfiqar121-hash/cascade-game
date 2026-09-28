@@ -10,19 +10,33 @@ export function buzz(ms) {
   try { navigator?.vibrate?.(ms); } catch {}
 }
 
+/* Haptics plugin loader — caches the PROMISE, not a boolean flag, so
+   concurrent calls during the first import all await the same in-flight
+   load instead of racing past the guard and getting a still-null plugin.
+   Old pattern set hapticsLoadAttempted=true synchronously, so any call
+   between "import started" and "import resolved" got null and fell back
+   to navigator.vibrate() — a no-op in Android WebView without a VIBRATE
+   manifest permission. That's why the first several taps in an APK
+   session felt dead. Also: on failure, reset the promise so a later call
+   retries, instead of permanently disabling haptics after one transient
+   chunk-load error. */
 let hapticsPlugin = null;
-let hapticsLoadAttempted = false;
+let hapticsPromise = null;
 
-async function getHapticsPlugin() {
-  if (hapticsPlugin || hapticsLoadAttempted) return hapticsPlugin;
-  hapticsLoadAttempted = true;
-  try {
-    const mod = await import("@capacitor/haptics");
-    hapticsPlugin = mod.Haptics || null;
-  } catch {
-    hapticsPlugin = null;
+function getHapticsPlugin() {
+  if (hapticsPlugin) return Promise.resolve(hapticsPlugin);
+  if (!hapticsPromise) {
+    hapticsPromise = import("@capacitor/haptics")
+      .then((mod) => {
+        hapticsPlugin = mod.Haptics || null;
+        return hapticsPlugin;
+      })
+      .catch(() => {
+        hapticsPromise = null;
+        return null;
+      });
   }
-  return hapticsPlugin;
+  return hapticsPromise;
 }
 
 function impact(style, fallback) {
@@ -30,7 +44,7 @@ function impact(style, fallback) {
   getHapticsPlugin().then((plugin) => {
     if (plugin) plugin.impact({ style }).catch(() => buzz(fallback));
     else buzz(fallback);
-  }).catch(() => buzz(fallback));
+  });
 }
 
 function notification(type, fallback) {
@@ -38,7 +52,7 @@ function notification(type, fallback) {
   getHapticsPlugin().then((plugin) => {
     if (plugin) plugin.notification({ type }).catch(() => buzz(fallback));
     else buzz(fallback);
-  }).catch(() => buzz(fallback));
+  });
 }
 
 export const Haptic = {

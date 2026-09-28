@@ -5,19 +5,27 @@ import { msUntilNextDaily } from "./gameLogic";
 const DAILY_REMINDER_ID = 1001;
 const REMINDER_LEAD_MS = 60 * 60 * 1000;
 
-let cached = null;
-let loadAttempted = false;
+/* Same loading race as sound.js's haptics loader, same fix: cache the
+   promise, not a boolean flag, and reset the cached promise on failure
+   so a later call retries instead of leaving notifications permanently
+   disabled for the session after one transient load error. */
+let cachedPlugin = null;
+let cachedPromise = null;
 
-async function getPlugin() {
-  if (cached || loadAttempted) return cached;
-  loadAttempted = true;
-  try {
-    const mod = await import("@capacitor/local-notifications");
-    cached = mod.LocalNotifications || null;
-  } catch {
-    cached = null;
+function getPlugin() {
+  if (cachedPlugin) return Promise.resolve(cachedPlugin);
+  if (!cachedPromise) {
+    cachedPromise = import("@capacitor/local-notifications")
+      .then((mod) => {
+        cachedPlugin = mod.LocalNotifications || null;
+        return cachedPlugin;
+      })
+      .catch(() => {
+        cachedPromise = null;
+        return null;
+      });
   }
-  return cached;
+  return cachedPromise;
 }
 
 export async function initNotifications() {

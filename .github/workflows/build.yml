@@ -44,6 +44,38 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      # Adds VIBRATE (for @capacitor/haptics on devices where the OS
+      # still gates vibration behind the manifest) and POST_NOTIFICATIONS
+      # (Android 13+ — @capacitor/local-notifications cannot post anything
+      # without this declared, and the runtime requestPermissions() call
+      # in notifications.js silently returns "denied" on 13+ if the
+      # manifest doesn't declare it at all). cap add android doesn't
+      # generate either, so we inject them here, before the build.
+      - name: Patch AndroidManifest permissions
+        run: |
+          python3 - <<'MANIFEST_EOF'
+          import re, sys
+          p = "android/app/src/main/AndroidManifest.xml"
+          src = open(p).read()
+          perms = [
+            '<uses-permission android:name="android.permission.VIBRATE" />',
+            '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+          ]
+          insert = ""
+          for perm in perms:
+            name = re.search(r'name="([^"]+)"', perm).group(1)
+            if name not in src:
+              insert += "    " + perm + "\n"
+          if insert:
+            src = src.replace("<application", insert + "\n    <application", 1)
+            open(p, "w").write(src)
+            print("Injected:", insert.strip())
+          else:
+            print("Permissions already present")
+          MANIFEST_EOF
+          echo "---MANIFEST---"
+          grep -E "uses-permission" android/app/src/main/AndroidManifest.xml || true
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:

@@ -223,3 +223,80 @@ export function buildShareCard({ round, upgrades, best }) {
   }
 }
 
+
+
+/* ═══════════ NATIVE SHARE ═══════════
+   Android WebView disables navigator.share, so on the APK it just did
+   nothing. @capacitor/share bridges to the native Android share sheet,
+   which is the only path that actually works there. The dynamic import
+   caches the promise (same pattern as sound.js / notifications.js) so
+   concurrent calls during first use all await the same in-flight load,
+   and a transient load failure is retried on the next call instead of
+   permanently disabling share for the session.
+
+   Falls back to navigator.share (Chrome/web), then to clipboard copy
+   (older desktop browsers). Returns a status string so the caller can
+   decide whether to show the "Copied!" toast. */
+let sharePlugin = null;
+let sharePromise = null;
+
+function getSharePlugin() {
+  if (sharePlugin) return Promise.resolve(sharePlugin);
+  if (!sharePromise) {
+    sharePromise = import("@capacitor/share")
+      .then((mod) => {
+        sharePlugin = mod.Share || null;
+        return sharePlugin;
+      })
+      .catch(() => {
+        sharePromise = null;
+        return null;
+      });
+  }
+  return sharePromise;
+}
+
+/* Share plain text. Returns "shared" | "copied" | "cancelled" | "failed". */
+export async function nativeShareText({ title, text, url }) {
+  try {
+    const plugin = await getSharePlugin();
+    if (plugin && plugin.share) {
+      try {
+        await plugin.share({ title, text, url, dialogTitle: title });
+        return "shared";
+      } catch (err) {
+        /* Capacitor Share throws on user cancel too — treat that as
+           cancelled, not failed, so we don't show a scary error toast. */
+        const msg = String(err && err.message || "");
+        if (/cancel/i.test(msg)) return "cancelled";
+        /* Fall through to web fallback below */
+      }
+    }
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+        return "shared";
+      } catch (err) {
+        if (err && err.name === "AbortError") return "cancelled";
+      }
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url ? text + "\n" + url : text);
+      return "copied";
+    }
+    return "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+/* Share a PNG data-URL. On the web we can hand a File to navigator.share;
+   Capacitor Share takes a filesystem URL instead, which means writing the
+   bytes out first — that's a bigger change than this pass covers, so for
+   now this falls back to nativeShareText() with the accompanying message.
+   Share cards still work perfectly on web/Chrome; the APK gets the text
+   link, which is the same promise the button already makes. */
+export async function nativeShareImage({ dataUrl, title, text }) {
+  if (!dataUrl) return "failed";
+  return nativeShareText({ title, text });
+}
