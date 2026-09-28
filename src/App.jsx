@@ -796,6 +796,43 @@ export default function Cascade() {
     navStateRef.current = { showSettings, showAchievements, screen, confirmDialog: !!confirmDialog };
   }, [showSettings, showAchievements, screen, confirmDialog]);
 
+  /* Android hardware back / edge-swipe → same logic as the browser
+     popstate handler above. Capacitor WebView does NOT fire popstate on
+     the system back gesture by default — the @capacitor/app backButton
+     event is the only way to catch it. We translate it into the same
+     "pop one layer or exit" behaviour the popstate handler already
+     implements, so back means the same thing whether it came from an
+     in-app arrow tap, Chrome's hardware back, or an Android edge swipe. */
+  useEffect(() => {
+    let listener = null;
+    (async () => {
+      try {
+        const mod = await import("@capacitor/app");
+        const CapApp = mod.App;
+        if (!CapApp || !CapApp.addListener) return;
+        listener = await CapApp.addListener("backButton", () => {
+          const st = navStateRef.current;
+          const anyLayerOpen =
+            st.confirmDialog || st.showSettings || st.showAchievements || st.screen !== "home";
+          if (anyLayerOpen) {
+            /* Reuse the exact same history machinery: this pushes a
+               popstate the existing handler will pick up and use to
+               close the topmost layer. */
+            try { window.history.back(); } catch {}
+          } else {
+            /* Nothing on top of Home → let the OS close the app, which
+               matches every other Android app's back behaviour. */
+            try { CapApp.exitApp(); } catch {}
+          }
+        });
+      } catch {
+        /* @capacitor/app not present (web build) — browser back already
+           works via popstate there, nothing to install. */
+      }
+    })();
+    return () => { if (listener) try { listener.remove(); } catch {} };
+  }, []);
+
   useEffect(() => {
     const handler = (e) => {
       try {
