@@ -151,6 +151,14 @@ export default function Cascade() {
   const [phase, setPhase] = useState("playing");
   const [comboCount, setComboCount] = useState(0);
   const [undoLeft, setUndoLeft] = useState(2);
+  /* Whole-RUN undo tracking for the "Purist" achievement (no_undo_5),
+     separate from undoLeft — undoLeft is a per-ROUND allowance (reset
+     to 2 every round by the level-change effect below), so it can
+     only ever tell you "did this round use undo", never "did any
+     round in this run". See unlockAch("no_undo_5") below for why that
+     distinction matters. Reset at every run-start point (restartRun,
+     the daily branch of startNewGame), not on every round. */
+  const [undoUsedThisRun, setUndoUsedThisRun] = useState(false);
   /* Full snapshot of the board before each pour. Undo pops the latest one.
      Only the tubes need saving — moves / bonus / combo all revert together
      with the snapshot so the counter stays honest. */
@@ -510,14 +518,16 @@ export default function Cascade() {
         if (round + 1 >= 25) unlockAch("round_25");
         if (round + 1 >= 50) unlockAch("round_50");
         if (newCombo >= 10) unlockAch("combo_10");
-        /* undoLeft starts at 2 for a non-daily run and only ever counts
-           down (never resets mid-run), so still being at 2 after
-           clearing round 5 means undo was never touched — matches
-           "Clear 5 rounds without undo" exactly, no separate tracking
-           state needed. Daily runs start at undoLeft=0 and can't use
-           undo at all, so they're correctly excluded rather than
-           trivially qualifying. */
-        if (!isDaily && undoLeft === 2 && round >= 5) unlockAch("no_undo_5");
+        /* undoUsedThisRun, not undoLeft === 2 — undoLeft resets to 2
+           every round (see the level-change effect above), so it only
+           ever reflects THIS round's usage. Checking undoLeft here
+           used to let "Clear 5 rounds without undo" fire for a run
+           that undid freely in rounds 1-4 and simply happened not to
+           in round 5 — the achievement's own name and description say
+           the whole run, not just the round it unlocks on. Daily runs
+           start at undoLeft=0 and can't use undo at all, so they're
+           correctly excluded rather than trivially qualifying. */
+        if (!isDaily && !undoUsedThisRun && round >= 5) unlockAch("no_undo_5");
       } else if (newMovesLeft <= 0) {
         setNearMiss(isOneMoveFromSolved(next));
         setTimeout(() => {
@@ -552,7 +562,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun]);
 
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing") return;
@@ -658,6 +668,7 @@ export default function Cascade() {
     setComboCount(last.comboCount);
     setSelected(null);
     setUndoLeft((u) => u - 1);
+    setUndoUsedThisRun(true);
     Snd.select();
     Haptic.light();
   }, [undoLeft, snapshots, phase]);
@@ -709,6 +720,7 @@ export default function Cascade() {
     setShared(false);
     setIsDaily(false);
     setRetriedThisRound(false);
+    setUndoUsedThisRun(false);
     setLevel(generateLevel(1, [], 0));
   }, []);
 
@@ -764,6 +776,7 @@ export default function Cascade() {
       setRunUpgrades([]);
       setLastRoundMovesLeft(0);
       setRetriedThisRound(false);
+      setUndoUsedThisRun(false);
       setShareImage(null);
       setShared(false);
       setDailyRun({ rounds: [], totalMoves: 0 });
