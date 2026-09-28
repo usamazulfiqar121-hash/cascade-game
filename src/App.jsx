@@ -1025,14 +1025,33 @@ export default function Cascade() {
                 onConfirm: () => {
                   saveBestRound();
                   restartRun();
-                  setScreen("home");
+                  /* popNav(), not setScreen("home") directly — this "game"
+                     screen was pushed via pushNav when the run started (see
+                     onPlay/onDaily below), and setScreen alone left that
+                     history entry un-consumed, so hardware back afterwards
+                     was one press short of matching what's on screen.
+                     popNav() pops it, same as the daily game-over "← Home"
+                     button and onExitDaily already do — the popstate
+                     handler's own fallback branch flips screen to "home"
+                     from there.
+                     navStateRef is updated here directly, not just via
+                     setConfirmDialog(null) — confirmed with a live-React
+                     repro that the ref-sync effect does NOT flush before
+                     history.back()'s popstate fires in the same tick, so
+                     relying on the effect alone left the ref reporting
+                     confirmDialog:true when popstate arrived, which hit the
+                     hardware-back-while-dialog-open branch instead and
+                     silently swallowed this Exit tap (dialog closed, but
+                     never navigated home). */
+                  navStateRef.current = { ...navStateRef.current, confirmDialog: false };
                   setConfirmDialog(null);
+                  popNav();
                 },
               });
             } else {
               saveBestRound();
               restartRun();
-              setScreen("home");
+              popNav();
             }
           }} aria-label="Home" style={{
             width: 34, height: 34, borderRadius: 12,
