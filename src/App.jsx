@@ -134,6 +134,38 @@ const WRONG_FLASH_KEYFRAMES = [
 
 /* ═══════════  COMPONENTS  ═══════════ */
 
+/* The daily challenge's "next puzzle in HH:MM:SS" label, on the daily
+   game-over overlay. Owns its own once-a-second tick instead of reading it
+   from Cascade's state, so only this small label re-renders every second --
+   not the whole app. It used to be the other way around: Cascade itself
+   held the live countdown in state and ticked it for its entire lifetime,
+   which meant every screen (including just sitting on Home, long before
+   this label is ever mounted) paid for a full top-level re-render once a
+   second, forever, for a number nothing on Home even displays. */
+function DailyResetCountdown() {
+  const [ms, setMs] = useState(msUntilNextDaily);
+  useEffect(() => {
+    const id = setInterval(() => setMs(msUntilNextDaily()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  /* Last-hour urgency — loss-aversion pressure applies most right before
+     the reset, not evenly all day. */
+  const urgent = ms > 0 && ms < 3600000;
+  return (
+    <div style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 16, fontWeight: 800,
+      color: urgent ? T.danger : T.gold,
+      marginTop: 4,
+      fontVariantNumeric: "tabular-nums",
+      letterSpacing: "-0.02em",
+      animation: urgent ? "dailyUrgentPulse 1000ms ease-in-out infinite" : "none",
+    }}>
+      {formatCountdown(ms)}
+    </div>
+  );
+}
+
 /* ═══════════  MAIN  ═══════════ */
 
 export default function Cascade() {
@@ -142,7 +174,6 @@ export default function Cascade() {
   const [stats, setStats] = useState({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
   const [isDaily, setIsDaily] = useState(false);
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
-  const [dailyCountdown, setDailyCountdown] = useState(0);   /* ms until next */
   const [toast, setToast] = useState(null);
   const [dailyRun, setDailyRun] = useState({ rounds: [], totalMoves: 0 });
   const [confirmDialog, setConfirmDialog] = useState(null);
@@ -179,13 +210,21 @@ export default function Cascade() {
     } catch {}
   }, []);
 
-  /* Countdown to next UTC midnight — updates every second */
+  /* Watches for the daily challenge's UTC-midnight rollover so dailyState
+     refreshes the moment a new day's puzzle unlocks. This used to also
+     store the live countdown (ms until next) in App-level state, ticking
+     every second for the app's entire lifetime -- which re-rendered this
+     whole component (HUD, board, every tube, every overlay) once a
+     second regardless of what screen was even showing, since a top-level
+     state update can't be scoped to the one small "next puzzle in..."
+     label that actually displays it (and that label is only mounted at
+     all on the daily game-over overlay). See DailyResetCountdown below --
+     it now owns that per-second tick itself, so only it re-renders. This
+     effect only needs to notice the rollover, not display it, so it
+     computes ms locally without ever putting it in state. */
   useEffect(() => {
     const tick = () => {
-      const ms = msUntilNextDaily();
-      setDailyCountdown(ms);
-      /* Day rolled over — refresh state */
-      if (ms <= 1000) {
+      if (msUntilNextDaily() <= 1000) {
         try {
           const fresh = loadDailyState();
           setDailyState(fresh);
@@ -1640,21 +1679,7 @@ export default function Cascade() {
                       }}>
                         Next puzzle in
                       </div>
-                      <div style={{
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: 16, fontWeight: 800,
-                        /* Last-hour urgency — loss-aversion pressure applies
-                           most right before the reset, not evenly all day. */
-                        color: dailyCountdown > 0 && dailyCountdown < 3600000 ? T.danger : T.gold,
-                        marginTop: 4,
-                        fontVariantNumeric: "tabular-nums",
-                        letterSpacing: "-0.02em",
-                        animation: dailyCountdown > 0 && dailyCountdown < 3600000
-                          ? "dailyUrgentPulse 1000ms ease-in-out infinite"
-                          : "none",
-                      }}>
-                        {formatCountdown(dailyCountdown)}
-                      </div>
+                      <DailyResetCountdown />
                     </div>
                     <button style={{ ...S.ghost, color: T.accent }} onClick={shareDaily}>📋 Share Result</button>
                     <button style={S.ghost} onClick={() => { popNav(); setIsDaily(false); }}>← Home</button>
