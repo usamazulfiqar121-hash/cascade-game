@@ -275,8 +275,22 @@ button:active:not(:disabled) { transform: scale(0.97); }
   75%  { transform: translateY(0) scale(1.02, 0.98); }
   100% { opacity: 1; transform: translateY(0) scale(1, 1); }
 }
-.cascade-ball { transform-origin: 50% 100%; animation: ballDrop 300ms linear backwards; }
+.cascade-ball {
+  transform-origin: 50% 100%;
+  animation: ballDrop 300ms linear backwards;
+  /* Promote up front rather than making the browser discover mid-animation
+     that this needs its own compositor layer -- every pour mounts several
+     of these, and that discovery cost (Chrome calls it "Layerize") was
+     measurably one of the bigger line items in a pour's frame budget. */
+  will-change: transform, opacity;
+}
 .cascade-ball.landing { animation: ballLand 260ms linear backwards; }
+/* Reduce Motion: see prefersReducedMotion()/skipAnim in Tube.jsx. The ball
+   renders with no animation at all -- appears at rest immediately -- rather
+   than relying on the blanket animation-duration:0.01ms rule further down,
+   which still pays for the layer + paint on every ball, just compressed to
+   a fraction of a millisecond instead of skipped. */
+.cascade-ball.no-anim { animation: none; will-change: auto; }
 
 /* ═══════════ TUBE STATES ═══════════ */
 /* The lifted balls carry the "picked up" motion now (Tube.jsx), so the
@@ -489,6 +503,32 @@ button:active:not(:disabled) { transform: scale(0.97); }
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
+}
+
+/* The two rules above only squash duration -- the animation/transition
+   still runs its full style-recalc + paint + (re)layerize pipeline, just
+   compressed into a sliver of a frame, so it doesn't actually cut a
+   throttled device's work the way "reduce motion" implies it should. For
+   .cascade-ball that's handled in Tube.jsx/JS (see .no-anim above) because
+   it needs a JS-side decision (skip the flight sync too); these two are
+   pure CSS so they're fixed the same way right here: drop the animation/
+   transition entirely and keep a static equivalent of whatever visual
+   state it was providing, instead of just fast-forwarding through it. */
+@media (prefers-reduced-motion: reduce) {
+  .tube-btn[data-state="hintFrom"] {
+    animation: none;
+    box-shadow: 0 0 0 4px var(--go-soft);
+  }
+  .tube-btn {
+    transition: none !important;
+  }
+}
+:root[data-reduce-motion="1"] .tube-btn[data-state="hintFrom"] {
+  animation: none;
+  box-shadow: 0 0 0 4px var(--go-soft);
+}
+:root[data-reduce-motion="1"] .tube-btn {
+  transition: none !important;
 }
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */

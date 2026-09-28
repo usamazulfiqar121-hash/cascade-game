@@ -12,6 +12,27 @@
 import { useState } from "react";
 import { COLORS, MAX_HEIGHT } from "./constants";
 
+/* Reduce Motion (the in-app toggle, mirrored onto <html data-reduce-motion>
+   by App.jsx, OR the OS-level setting) is supposed to make the game lighter
+   to run, not just visually calmer. But the global CSS rule it relies on
+   (globalStyles.js) only squashes animation-duration down to 0.01ms -- it
+   never removes the animation itself. A squashed-to-instant animation still
+   makes the browser promote the element to its own compositor layer, run a
+   style recalc, and paint it; on a throttled/low-end device that per-ball
+   layer-and-paint cost is the same whether it happens over 300ms or 0.01ms,
+   so every pour was paying it regardless of this setting -- which is
+   exactly why turning Reduce Motion on didn't make the lag go away.
+   Read once per ball (not subscribed to changes): a ball's entrance effect
+   is decided the instant it mounts, same as landAt below. */
+export function prefersReducedMotion() {
+  try {
+    if (document.documentElement.getAttribute("data-reduce-motion") === "1") return true;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
 /* Every size is derived from one place, shared with FlyingBalls so a
    flying ball is pixel-identical to a real one and lands exactly where
    the real one will sit. */
@@ -108,10 +129,17 @@ function Ball({ colorIdx, d, colorBlind, lift, liftDelay, landAt }) {
   const [landDelay] = useState(() =>
     landAt == null ? null : Math.max(0, Math.round(landAt - performance.now())),
   );
-  const landing = landDelay !== null;
+  /* Under Reduce Motion, skip the entrance keyframe (ballDrop/ballLand)
+     entirely instead of letting the global CSS rule squash it to 0.01ms --
+     see prefersReducedMotion() above for why that override alone doesn't
+     actually cut the work. The ball just renders in its resting state
+     immediately, which is also the correct reduced-motion behavior (appear,
+     don't animate in). */
+  const [skipAnim] = useState(prefersReducedMotion);
+  const landing = !skipAnim && landDelay !== null;
   return (
     <div
-      className={landing ? "cascade-ball landing" : "cascade-ball"}
+      className={skipAnim ? "cascade-ball no-anim" : landing ? "cascade-ball landing" : "cascade-ball"}
       style={{
         ...BALL_STYLE_BASE,
         width: "88%",
