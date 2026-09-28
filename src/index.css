@@ -1,5 +1,22 @@
+/* Boot-time background, active before React (and the themed <style>
+   block main.jsx/App.jsx inject at render time) exist at all. main.jsx
+   sets data-theme on <html> as its very first statement, specifically
+   so the correct theme is already resolved before anything paints —
+   but that only works if every rule that can paint before React mounts
+   actually looks at data-theme. This one didn't: it was a flat
+   `#0A0F1F` (dark's own --bg-1) with no condition on it, so it painted
+   dark for a light/system-light user on the very first frame — the
+   exact "dark flash on launch" bug two earlier commits already fixed
+   the *timing* half of, undone here by a rule that never checked the
+   attribute at all. Values below mirror --bg-1 in globalStyles.js
+   (kept in sync manually — this file loads as a real stylesheet before
+   that block exists, so it can't reference the variable directly). */
+:root[data-theme="light"] { --boot-bg: #FFFFFF; }
+:root[data-theme="dark"],
+:root:not([data-theme]) { --boot-bg: #0A0F1F; }
+
 html, body, #root {
-  background: #0A0F1F;
+  background: var(--boot-bg);
   margin: 0;
   padding: 0;
   height: 100%;

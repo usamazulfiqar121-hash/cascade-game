@@ -105,7 +105,14 @@ html, body {
 .achSlide { animation: achSlideIn 400ms cubic-bezier(.16,1.1,.3,1); }
 
 html, body, #root {
-  background: #0A0F1F;
+  /* Was a flat #0A0F1F (dark's own --bg-1) regardless of theme — inert
+     today only because S.root's own themed div (var(--bg-grad)) always
+     fully covers #root once React has mounted, but wrong on its own
+     terms and one layout hiccup away from showing through as a
+     permanent dark patch for light-theme users. var(--bg-1) is already
+     defined above in this same injected stylesheet, so this now tracks
+     the theme instead of only ever matching dark's. */
+  background: var(--bg-1);
   margin: 0;
   padding: 0;
   overflow: hidden;

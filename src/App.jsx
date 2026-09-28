@@ -347,6 +347,29 @@ export default function Cascade() {
     return () => clearTimeout(t);
   }, [shake]);
 
+  /* achToast shows one achievement at a time, but unlockAch can be called
+     several times in the same synchronous tick — e.g. clearing round 10
+     on a 10x combo fires both round_10 and combo_10 together, and a
+     10th upgrade that's also Legendary fires upgrades_10 and legendary
+     together. Two setAchToast(meta) calls in one tick used to just
+     overwrite each other (React never paints the first one — only the
+     last value survives the batch), and the bare `setTimeout(() =>
+     setAchToast(null), 2600)` had no idea whether the toast it was
+     about to clear was even still the one it was scheduled for, so it
+     could also cut a newer toast's display short. Net effect: whenever
+     a player was good enough to earn two unlocks at once — arguably the
+     moment most worth celebrating — they'd reliably see only one toast,
+     or a truncated one. A small queue instead shows every unlock, each
+     for its own full 2600ms, in the order they were earned. */
+  const achToastQueueRef = useRef([]);
+  const achToastTimerRef = useRef(null);
+
+  const showNextAchToast = useCallback(() => {
+    const next = achToastQueueRef.current.shift();
+    setAchToast(next || null);
+    achToastTimerRef.current = next ? setTimeout(showNextAchToast, 2600) : null;
+  }, []);
+
   const unlockAch = useCallback((id) => {
     /* Read from localStorage first — early return prevents repeat toasts */
     let current = [];
@@ -359,10 +382,10 @@ export default function Cascade() {
 
     const meta = ACHIEVEMENTS.find((a) => a.id === id);
     if (meta) {
-      setAchToast(meta);
-      setTimeout(() => setAchToast(null), 2600);
+      achToastQueueRef.current.push(meta);
+      if (!achToastTimerRef.current) showNextAchToast();
     }
-  }, []);
+  }, [showNextAchToast]);
 
   /* Streak milestones — same unlock/toast path as any other achievement.
      Re-checked whenever dailyResults or shieldedDates changes (i.e. right
