@@ -103,14 +103,14 @@ function Row({ icon, label, sub, right, onClick, danger, disabled }) {
       style={{
         ...S.row,
         cursor: disabled ? "default" : "pointer",
-        background: danger ? `${D.danger}0D` : `${D.textSub}05`,
-        borderColor: danger ? `${D.danger}26` : `${D.textSub}0D`,
+        background: danger ? `color-mix(in srgb, ${D.danger} 5.1%, transparent)` : `color-mix(in srgb, ${D.textSub} 2%, transparent)`,
+        borderColor: danger ? `color-mix(in srgb, ${D.danger} 14.9%, transparent)` : `color-mix(in srgb, ${D.textSub} 5.1%, transparent)`,
       }}
     >
       <div style={{
         ...S.rowIcon,
-        background: danger ? `${D.danger}1A` : `${D.textSub}0D`,
-        borderColor: danger ? `${D.danger}33` : `${D.textSub}0F`,
+        background: danger ? `color-mix(in srgb, ${D.danger} 10.2%, transparent)` : `color-mix(in srgb, ${D.textSub} 5.1%, transparent)`,
+        borderColor: danger ? `color-mix(in srgb, ${D.danger} 20%, transparent)` : `color-mix(in srgb, ${D.textSub} 5.9%, transparent)`,
       }}>{icon}</div>
       <div style={S.rowBody}>
         <div style={{ ...S.rowLabel, color: danger ? D.danger : D.text }}>{label}</div>
@@ -131,8 +131,8 @@ function ThemeRow({ theme, onSetTheme }) {
     <div style={S.row}>
       <div style={{
         ...S.rowIcon,
-        background: `${D.textSub}0D`,
-        borderColor: `${D.textSub}0F`,
+        background: `color-mix(in srgb, ${D.textSub} 5.1%, transparent)`,
+        borderColor: `color-mix(in srgb, ${D.textSub} 5.9%, transparent)`,
       }}>
         <ThemeIcon theme={theme} />
       </div>
@@ -207,8 +207,8 @@ function Toggle({ on }) {
   return (
     <span style={{
       ...S.toggle,
-      background: on ? D.accent : `${D.textSub}33`,
-      boxShadow: on ? `0 0 12px ${D.accent}55` : "none",
+      background: on ? D.accent : `color-mix(in srgb, ${D.textSub} 20%, transparent)`,
+      boxShadow: on ? `0 0 12px color-mix(in srgb, ${D.accent} 33.3%, transparent)` : "none",
     }}>
       <span style={{
         ...S.toggleKnob,
@@ -291,7 +291,7 @@ function TrashIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
       <path d="M4 7H20" stroke={D.danger} strokeWidth="1.8" strokeLinecap="round"/>
       <path d="M9 7V5C9 4.45 9.45 4 10 4H14C14.55 4 15 4.45 15 5V7" stroke={D.danger} strokeWidth="1.8" strokeLinecap="round"/>
-      <path d="M6 7L7 19C7.05 19.55 7.5 20 8 20H16C16.5 20 16.95 19.55 17 19L18 7" fill={`${D.danger}11`} stroke={D.danger} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M6 7L7 19C7.05 19.55 7.5 20 8 20H16C16.5 20 16.95 19.55 17 19L18 7" fill={`color-mix(in srgb, ${D.danger} 6.7%, transparent)`} stroke={D.danger} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M10 11V16M14 11V16" stroke={D.danger} strokeWidth="1.8" strokeLinecap="round"/>
     </svg>
   );
@@ -362,7 +362,7 @@ const S = {
   themeSegment: {
     display: "flex", alignItems: "center", gap: 2,
     padding: 3, borderRadius: 10,
-    background: `${D.textSub}1A`,
+    background: `color-mix(in srgb, ${D.textSub} 10.2%, transparent)`,
     border: "1px solid var(--glass-border)",
   },
   segmentBtn: {

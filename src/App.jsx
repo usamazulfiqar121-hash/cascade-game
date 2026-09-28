@@ -943,14 +943,14 @@ export default function Cascade() {
           <div style={{
             display: "flex", alignItems: "center", gap: 12,
             background: T.card,
-            border: `1.5px solid ${T.gold}66`,
+            border: `1.5px solid color-mix(in srgb, ${T.gold} 40%, transparent)`,
             borderRadius: 16,
             padding: "12px 18px",
-            boxShadow: `0 12px 40px ${T.gold}44, 0 4px 12px rgba(0,0,0,0.4)`,
+            boxShadow: `0 12px 40px color-mix(in srgb, ${T.gold} 26.7%, transparent), 0 4px 12px rgba(0,0,0,0.4)`,
           }}>
             <div style={{
               width: 40, height: 40, borderRadius: 12,
-              background: `${T.gold}22`,
+              background: `color-mix(in srgb, ${T.gold} 13.3%, transparent)`,
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 22,
             }}>{achToast.icon}</div>
@@ -971,7 +971,7 @@ export default function Cascade() {
           position: "fixed", right: 16, bottom: 92,
           width: 54, height: 54, borderRadius: 18,
           background: T.card,
-          border: "1.5px solid " + (hintLeft > 0 && phase === "playing" ? T.go + "66" : T.line),
+          border: "1.5px solid " + (hintLeft > 0 && phase === "playing" ? `color-mix(in srgb, ${T.go} 40%, transparent)` : T.line),
           color: hintLeft > 0 && phase === "playing" ? T.go : T.muted,
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           cursor: hintLeft > 0 && phase === "playing" ? "pointer" : "default",
@@ -997,11 +997,11 @@ export default function Cascade() {
           bottom: 92,
           width: 54, height: 54, borderRadius: 18,
           background: T.card,
-          border: `1.5px solid ${undoLeft > 0 && snapshots.length > 0 ? T.accent + "66" : T.line}`,
+          border: `1.5px solid ${undoLeft > 0 && snapshots.length > 0 ? `color-mix(in srgb, ${T.accent} 40%, transparent)` : T.line}`,
           color: undoLeft > 0 && snapshots.length > 0 ? T.accent : T.muted,
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           cursor: undoLeft > 0 && snapshots.length > 0 ? "pointer" : "default",
-          boxShadow: undoLeft > 0 && snapshots.length > 0 ? `0 6px 20px ${T.accent}33` : "none",
+          boxShadow: undoLeft > 0 && snapshots.length > 0 ? `0 6px 20px color-mix(in srgb, ${T.accent} 20%, transparent)` : "none",
           opacity: undoLeft <= 0 || snapshots.length === 0 ? 0.4 : 1,
           fontFamily: "'Nunito', sans-serif",
           zIndex: 30,
@@ -1022,7 +1022,7 @@ export default function Cascade() {
             fontWeight: 900,
             fontSize: 28,
             color: T.gold,
-            textShadow: `0 2px 12px ${T.gold}88, 0 0 4px rgba(0,0,0,0.8)`,
+            textShadow: `0 2px 12px color-mix(in srgb, ${T.gold} 53.3%, transparent), 0 0 4px rgba(0,0,0,0.8)`,
             letterSpacing: "-0.02em",
           }}>{b.text}</div>
         ))}

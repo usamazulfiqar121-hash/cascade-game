@@ -50,7 +50,7 @@ function TabButton({ label, active, onClick, renderIcon }) {
     >
       <div style={{
         ...S.tabIconWrap,
-        background: active ? `${D.accent}1F` : "transparent",
+        background: active ? `color-mix(in srgb, ${D.accent} 12.2%, transparent)` : "transparent",
         transform: active ? "scale(1.08)" : "scale(1)",
       }}>
         {renderIcon(active)}
@@ -87,7 +87,7 @@ const S = {
     position: "absolute",
     inset: -2,
     borderRadius: 28,
-    background: `radial-gradient(80% 100% at 50% 100%, ${D.accent}26 0%, transparent 70%)`,
+    background: `radial-gradient(80% 100% at 50% 100%, color-mix(in srgb, ${D.accent} 14.9%, transparent) 0%, transparent 70%)`,
     pointerEvents: "none",
     zIndex: -1,
   },

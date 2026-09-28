@@ -30,7 +30,7 @@ export default function HomeScreen({
 
   /* Unified state color family */
   const dailyAccent = todayDone ? D.go : D.gold;
-  const dailySoft = todayDone ? `${D.go}47` : `${D.gold}38`;
+  const dailySoft = todayDone ? `color-mix(in srgb, ${D.go} 27.8%, transparent)` : `color-mix(in srgb, ${D.gold} 22%, transparent)`;
 
   return (
     <div className="screen-transition" style={S.homeRoot}>
@@ -84,7 +84,7 @@ export default function HomeScreen({
                   <div key={d.key} style={S.dayCol}>
                     <div style={{
                       ...S.dayLabel,
-                      color: labelActive ? D.text : `${D.textSub}8C`,
+                      color: labelActive ? D.text : `color-mix(in srgb, ${D.textSub} 54.9%, transparent)`,
                     }}>{d.label}</div>
                     <div style={{
                       ...S.dayDot,
@@ -92,12 +92,12 @@ export default function HomeScreen({
                       borderColor: dotFilled
                         ? D.go
                         : dotToday
-                        ? `${D.gold}B3`
+                        ? `color-mix(in srgb, ${D.gold} 70.2%, transparent)`
                         : D.glassBorder,
                       boxShadow: dotFilled
-                        ? `0 0 10px ${D.go}59`
+                        ? `0 0 10px color-mix(in srgb, ${D.go} 34.9%, transparent)`
                         : dotToday
-                        ? `0 0 0 4px ${D.gold}1A`
+                        ? `0 0 0 4px color-mix(in srgb, ${D.gold} 10.2%, transparent)`
                         : "none",
                     }} />
                   </div>
@@ -187,7 +187,7 @@ const S = {
     background: D.accentGrad,
     color: "#fff",
     cursor: "pointer",
-    boxShadow: `0 8px 20px ${D.accent}47, inset 0 1px 0 rgba(255,255,255,0.18)`,
+    boxShadow: `0 8px 20px color-mix(in srgb, ${D.accent} 27.8%, transparent), inset 0 1px 0 rgba(255,255,255,0.18)`,
     appearance: "none", WebkitAppearance: "none",
     padding: 0, outline: "none",
     WebkitTapHighlightColor: "transparent",
@@ -210,7 +210,7 @@ const S = {
     background: "var(--glass)",
     backdropFilter: "blur(20px) saturate(160%)",
     WebkitBackdropFilter: "blur(20px) saturate(160%)",
-    border: `1px solid ${D.gold}38`,
+    border: `1px solid color-mix(in srgb, ${D.gold} 22%, transparent)`,
     borderRadius: 18,
     padding: "18px 20px 18px",
     cursor: "pointer",

@@ -180,7 +180,7 @@ const s = {
     marginTop: 6,
   },
   panel: {
-    background: `${T.bg}80`,
+    background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
     border: `1px solid ${T.edge}`,
     borderRadius: 14,
     padding: "14px 14px",
@@ -195,7 +195,7 @@ const s = {
     width: "100%",
     background: "transparent",
     color: T.accent,
-    border: `1px solid ${T.accent}55`,
+    border: `1px solid color-mix(in srgb, ${T.accent} 33.3%, transparent)`,
     borderRadius: 10,
     padding: "10px 12px",
     fontFamily: "'Nunito', sans-serif",
@@ -206,7 +206,7 @@ const s = {
   addRow: { display: "flex", flexDirection: "column", gap: 8 },
   input: {
     width: "100%",
-    background: `${T.bg}B0`,
+    background: `color-mix(in srgb, ${T.bg} 69%, transparent)`,
     border: `1px solid ${T.edge}`,
     borderRadius: 10,
     padding: "10px 12px",

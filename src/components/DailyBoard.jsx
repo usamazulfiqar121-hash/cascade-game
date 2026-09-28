@@ -56,7 +56,7 @@ function Row({ entry }) {
 
 const s = {
   card: {
-    background: `${T.bg}80`,
+    background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
     border: `1px solid ${T.edge}`,
     borderRadius: 14,
     padding: "14px 16px",
@@ -78,7 +78,7 @@ const s = {
     padding: "4px 2px",
   },
   rowPlayer: {
-    background: `${T.gold}14`,
+    background: `color-mix(in srgb, ${T.gold} 7.8%, transparent)`,
     borderRadius: 8,
     padding: "5px 8px",
   },
