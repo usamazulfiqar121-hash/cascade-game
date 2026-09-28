@@ -558,7 +558,19 @@ export default function Cascade() {
       const beforeLen = tubes[toIdx].length;
       const next = pour(tubes, fromIdx, toIdx);
       const movedCount = next[toIdx].length - beforeLen;
-      const newCombo = comboCount + 1;
+      /* canPour only ever allows two shapes of legal pour: onto a matching
+         color (beforeLen > 0 — this always consolidates two runs into one,
+         real progress) or into a tube that was completely empty (beforeLen
+         === 0 — nothing to merge with, just a relocation). The combo used
+         to count both the same, which meant shuttling one ball between two
+         tubes it's emptying and re-emptying — always "pouring into empty"
+         in both directions — built combo for free, and with a comboEvery/
+         megaEvery upgrade equipped, farmed unlimited bonus moves the exact
+         same way. Only a meaningful (consolidating) pour extends the
+         streak now; a parking move into an empty tube is still a fine,
+         sometimes-necessary play, it just doesn't build or pay out combo. */
+      const meaningful = beforeLen > 0;
+      const newCombo = meaningful ? comboCount + 1 : comboCount;
 
       /* ── Pour visuals ──
          Measured from the DOM BEFORE setTubes, while the source balls are
@@ -627,10 +639,16 @@ export default function Cascade() {
       let bonus = 0, tier = 0;
       const luckyChance = getLuckyChance(runUpgrades);
       if (luckyChance > 0 && Math.random() < luckyChance) { bonus += 1; tier = Math.max(tier, 1); }
+      /* Gated on `meaningful`, not just checked against newCombo: a parking
+         move leaves newCombo unchanged, and if that unchanged value already
+         happened to be a multiple of comboEvery/megaEvery (from the pour
+         that actually earned it), re-running the modulo check on every
+         later no-op pour would hand out the same bonus again and again for
+         free — the exact free-moves exploit this whole change closes. */
       const comboEvery = getComboEvery(runUpgrades);
-      if (comboEvery && newCombo % comboEvery === 0) { bonus += 1; tier = Math.max(tier, 2); }
+      if (meaningful && comboEvery && newCombo % comboEvery === 0) { bonus += 1; tier = Math.max(tier, 2); }
       const megaEvery = getMegaEvery(runUpgrades);
-      if (megaEvery && newCombo % megaEvery === 0) { bonus += 2; tier = Math.max(tier, 3); }
+      if (meaningful && megaEvery && newCombo % megaEvery === 0) { bonus += 2; tier = Math.max(tier, 3); }
 
       // Particle burst where the last ball actually comes to rest, at the
       // moment it does — it used to fire from the tube's geometric center
