@@ -5,7 +5,7 @@ import {
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
   shuffle, mulberry32, dailyKey, dateToSeed, computeStreak,
   reconcileStreakShield, isOneMoveFromSolved, updateBestStreak,
-  applyAutoSort, generateLevel,
+  applyAutoSort, generateLevel, findHint,
   loadDailyState, saveDailyState,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
 } from "./gameLogic";
@@ -658,20 +658,16 @@ export default function Cascade() {
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
     if (phase !== "playing") return;
-    for (let from = 0; from < tubes.length; from++) {
-      if (tubes[from].length === 0) continue;
-      if (tubes[from].length === MAX_HEIGHT && tubes[from].every((c) => c === tubes[from][0])) continue;
-      for (let to = 0; to < tubes.length; to++) {
-        if (canPour(tubes, from, to)) {
-          setHint({ from, to, key: Date.now() });
-          setHintLeft((h) => h - 1);
-          Snd.select();
-          Haptic.light();
-          setTimeout(() => setHint(null), 1600);
-          return;
-        }
-      }
-    }
+    /* findHint (gameLogic.js) picks a move it can confirm keeps the board
+       winnable, not just any legal move — see its own comment for why
+       that distinction matters. */
+    const move = findHint(tubes);
+    if (!move) return;
+    setHint({ from: move.from, to: move.to, key: Date.now() });
+    setHintLeft((h) => h - 1);
+    Snd.select();
+    Haptic.light();
+    setTimeout(() => setHint(null), 1600);
   }, [hintLeft, phase, tubes]);
 
   const undo = useCallback(() => {
@@ -810,6 +806,22 @@ export default function Cascade() {
         seed,
       });
       setDailyState(st);
+      /* The mount effect schedules a "Today's Cascade is waiting... play
+         today's challenge" reminder for later today whenever there's no
+         dailyState yet — correct at the time, since it only fires when
+         the player genuinely hasn't played. But it's a one-shot decision
+         made once at launch: nothing ever revisits it, so opening the app
+         before playing, then actually playing (clearing rounds, still
+         in_progress) and backing out without failing, left that reminder
+         armed. Hours later it fires anyway, telling the player their
+         streak is at risk and to go play a challenge they already
+         started — the exact kind of factually-wrong push notification
+         that trains people to ignore (or disable) a game's notifications.
+         Cancelling it the moment they actually start covers that; the
+         existing cancel on failure (below, in the moves-exhausted branch)
+         still runs too, harmlessly, since a cancelled reminder can't be
+         cancelled twice. */
+      cancelDailyReminder();
       setIsDaily(true);
       setRound(1);
       setRunUpgrades([]);
