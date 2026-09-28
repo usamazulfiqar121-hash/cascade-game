@@ -104,7 +104,25 @@ export function generateDailyBoard(dateSeed, playerRounds) {
     ...bots,
     { name: "You", rounds: Math.max(0, playerRounds || 0), isPlayer: true },
   ];
-  entries.sort((a, b) => b.rounds - a.rounds || (a.isPlayer ? -1 : 1));
+  /* The tie-break used to be `a.isPlayer ? -1 : 1` — invalid as a
+     comparator: for two tied BOTS (neither one isPlayer), that returns
+     1 in both directions (cmp(A,B) and cmp(B,A) both say "greater"),
+     which breaks the antisymmetry Array.prototype.sort requires. Two
+     tied bots were never actually reported as equal, so the ES2019
+     stable-sort guarantee didn't apply to them — their relative order
+     became whatever a given JS engine's sort happens to do with an
+     invalid comparator, not something derived from any rule here.
+     That's a real problem for a board whose whole premise (see file
+     header) is "every player sees the same board" — two players on
+     different engine/WebView versions could see tied bots in a
+     different order for the exact same dateSeed. Returning 0 for a
+     bot-vs-bot tie correctly reports them as equal, so the guaranteed-
+     stable sort preserves their original (deterministic, seeded draw)
+     order on any spec-conforming engine — same input, same output,
+     everywhere. Player-vs-bot ties are unaffected: -1/+1 there was
+     already consistent in both directions (verified), so "ties go to
+     the player" still holds exactly as before. */
+  entries.sort((a, b) => b.rounds - a.rounds || (a.isPlayer ? -1 : b.isPlayer ? 1 : 0));
 
   return entries.map((e, i) => ({ ...e, rank: i + 1 }));
 }

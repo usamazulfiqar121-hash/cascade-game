@@ -643,7 +643,19 @@ export default function Cascade() {
     setTubes(last.tubes);
     setMoves(last.moves);
     setBonusMoves(last.bonusMoves);
-    setComboCount(last.combo);
+    /* last.comboCount, not last.combo — the snapshot (a few lines up,
+       where it's pushed) stores the field as `comboCount`; there's no
+       `combo` field on it, so this was reading undefined every time.
+       setComboCount(undefined) doesn't just drop the combo badge for
+       this round — the NEXT pour computes newCombo = comboCount + 1,
+       and undefined + 1 is NaN, which then propagates pour after pour
+       (NaN + 1 is still NaN). Every NaN % x === 0 and NaN >= n check
+       is false, so any run using combo2/combo3/mega upgrades silently
+       stopped paying out their bonus moves for the rest of that round
+       after a single Undo — no error, the combo badge just quietly
+       never reappears until the round ends and chooseUpgrade's own
+       setComboCount(0) resets it. */
+    setComboCount(last.comboCount);
     setSelected(null);
     setUndoLeft((u) => u - 1);
     Snd.select();
