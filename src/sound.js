@@ -55,13 +55,22 @@ function notification(type, fallback) {
   });
 }
 
+/* Escalated one step above the plugin's "intended" style names: on
+   Samsung (confirmed via on-device testing) LIGHT impact is effectively
+   imperceptible, MEDIUM is what LIGHT should feel like on a Pixel, and
+   HEAVY reads as a proper tap. Using the literal LIGHT/MEDIUM here
+   means every pour/tap that was supposed to tick felt like nothing on
+   the target device — the plugin fires correctly, the OS just maps it
+   too soft. Fallback vibrate ms bumped the same way, since some older
+   WebViews route to navigator.vibrate() and had the same too-short-to-
+   feel problem. */
 export const Haptic = {
-  light: () => impact("LIGHT", 8),
-  medium: () => impact("MEDIUM", 20),
-  heavy: () => impact("HEAVY", 40),
+  light:   () => impact("MEDIUM", 15),
+  medium:  () => impact("HEAVY",  25),
+  heavy:   () => impact("HEAVY",  40),
   success: () => notification("SUCCESS", 30),
   warning: () => notification("WARNING", [10, 40, 10]),
-  error: () => notification("ERROR", 60),
+  error:   () => notification("ERROR",   60),
 };
 
 /* ─── Web Audio SFX ─── */
