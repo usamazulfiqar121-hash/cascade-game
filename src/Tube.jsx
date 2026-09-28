@@ -129,17 +129,23 @@ function Ball({ colorIdx, d, colorBlind, lift, liftDelay, landAt }) {
   const [landDelay] = useState(() =>
     landAt == null ? null : Math.max(0, Math.round(landAt - performance.now())),
   );
-  /* Under Reduce Motion, skip the entrance keyframe (ballDrop/ballLand)
-     entirely instead of letting the global CSS rule squash it to 0.01ms --
-     see prefersReducedMotion() above for why that override alone doesn't
-     actually cut the work. The ball just renders in its resting state
-     immediately, which is also the correct reduced-motion behavior (appear,
-     don't animate in). */
+  /* Under Reduce Motion, skip the expensive entrance keyframe (ballDrop/
+     ballLand) entirely instead of letting the global CSS rule squash it to
+     0.01ms -- see prefersReducedMotion() above for why that override alone
+     doesn't actually cut the work. But swap in a short, cheap fade/scale
+     (.reduced-in, globalStyles.js) rather than nothing at all: a ball (and
+     the pick-up/settle transform-transition below) that hard-cuts from one
+     state to another with zero visual continuity reads as broken/stuttery,
+     not calm -- players described this as "laggy" even though it measured
+     faster, not slower, than full motion. Reduced means simplified, not
+     eliminated: ~120ms, one stage, no bounce -- far lighter than ballDrop/
+     ballLand's four-stage squash-and-rebound, but enough for the eye to
+     track that something moved. */
   const [skipAnim] = useState(prefersReducedMotion);
   const landing = !skipAnim && landDelay !== null;
   return (
     <div
-      className={skipAnim ? "cascade-ball no-anim" : landing ? "cascade-ball landing" : "cascade-ball"}
+      className={skipAnim ? "cascade-ball reduced-in" : landing ? "cascade-ball landing" : "cascade-ball"}
       style={{
         ...BALL_STYLE_BASE,
         width: "88%",

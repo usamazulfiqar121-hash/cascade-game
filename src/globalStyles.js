@@ -285,12 +285,6 @@ button:active:not(:disabled) { transform: scale(0.97); }
   will-change: transform, opacity;
 }
 .cascade-ball.landing { animation: ballLand 260ms linear backwards; }
-/* Reduce Motion: see prefersReducedMotion()/skipAnim in Tube.jsx. The ball
-   renders with no animation at all -- appears at rest immediately -- rather
-   than relying on the blanket animation-duration:0.01ms rule further down,
-   which still pays for the layer + paint on every ball, just compressed to
-   a fraction of a millisecond instead of skipped. */
-.cascade-ball.no-anim { animation: none; will-change: auto; }
 
 /* ═══════════ TUBE STATES ═══════════ */
 /* The lifted balls carry the "picked up" motion now (Tube.jsx), so the
@@ -529,6 +523,41 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 :root[data-reduce-motion="1"] .tube-btn {
   transition: none !important;
+}
+
+/* Reduce Motion, take 2 -- the ball. Tube.jsx's skipAnim used to render
+   .no-anim here: animation:none, a hard, zero-duration cut for the ball's
+   entrance AND (via the blanket rule above) its pick-up/settle transform-
+   transition. That's the cheapest possible option and correctly avoids
+   ballDrop/ballLand's real cost (Bug A), but a ball that simply IS at its
+   destination with no visual continuity at all reads as broken or
+   stuttery -- exactly what got reported as "laggy" even though it
+   measured faster than full motion, not slower. Reduced motion means
+   simplified, not eliminated. .reduced-in swaps in a short, cheap,
+   single-stage fade/scale (no bounce, no squash) and gives the pick-up/
+   settle transition a real, brief duration instead of 0.01ms -- both need
+   their own !important longhands here, at the same specificity as the
+   blanket rule above but later in the stylesheet, to actually win instead
+   of being squashed back down to instant. */
+@keyframes ballSettleReduced {
+  0%   { opacity: 0; transform: scale(0.94); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cascade-ball.reduced-in {
+    animation: ballSettleReduced 120ms ease-out backwards;
+    animation-duration: 120ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 130ms !important;
+    transition-timing-function: ease !important;
+  }
+}
+:root[data-reduce-motion="1"] .cascade-ball.reduced-in {
+  animation: ballSettleReduced 120ms ease-out backwards;
+  animation-duration: 120ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 130ms !important;
+  transition-timing-function: ease !important;
 }
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */
