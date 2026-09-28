@@ -130,7 +130,6 @@ export default function HomeScreen({
       <BottomNav
         activeTab="home"
         onTabChange={() => {}}
-        onPlay={onPlay}
         onAwards={onAwards}
         onSettings={onSettings}
       />

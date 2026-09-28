@@ -1,11 +1,14 @@
 /* ═══════════ BOTTOM NAVIGATION ═══════════
-   Floating glass bar with custom SVG icons.
-   Center FAB = Play. 4 items, thumb-zone optimized. */
+   Floating glass bar with custom SVG icons. 3 items, thumb-zone
+   optimized. (A center Play FAB was here once — removed in cd710f0
+   once Play got its own big button on Home, so onPlay/PlayIcon/
+   centerFab below aren't dead weight left for someone else to trip
+   over wondering what wires into them.) */
 
 import { D } from "../constants";
 import { HomeIcon, TrophyIcon, SettingsIcon } from "../icons";
 
-export default function BottomNav({ activeTab, onTabChange, onPlay, onAwards, onSettings }) {
+export default function BottomNav({ activeTab, onTabChange, onAwards, onSettings }) {
   return (
     <div style={S.navWrap}>
       <div style={S.navGlass}>
@@ -120,22 +123,5 @@ const S = {
     fontSize: 10,
     letterSpacing: "0.02em",
     transition: `color ${D.tQuick}`,
-  },
-  centerFab: {
-    width: 56, height: 56,
-    borderRadius: 999,
-    background: D.accentGrad,
-    border: "2px solid var(--nav-border)",
-    cursor: "pointer",
-    appearance: "none",
-    WebkitAppearance: "none",
-    outline: "none",
-    padding: 0,
-    margin: "0 4px",
-    boxShadow: "0 8px 24px rgba(76, 141, 255, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.2)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    WebkitTapHighlightColor: "transparent",
   },
 };

@@ -12,15 +12,6 @@ export function HomeIcon({ size = 24, active = false }) {
   );
 }
 
-export function PlayIcon({ size = 24, active = false, white = false }) {
-  const c = white ? "#FFFFFF" : (active ? "#4C8DFF" : "#7A85A8");
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M8 5.5L18.5 12L8 18.5V5.5Z" fill={c} stroke={c} strokeWidth="1.8" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
 export function TrophyIcon({ size = 24, active = false }) {
   const c = active ? "#FFC24B" : "#7A85A8";
   return (
