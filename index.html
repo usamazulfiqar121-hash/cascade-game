@@ -2,7 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.png" />
+    <!-- type was "image/svg+xml" while href points at favicon.png, which
+         is genuinely a PNG (confirmed via file-signature inspection, not
+         just the extension) — the declared type just didn't match what
+         gets served. Harmless today since there's only one icon
+         candidate and browsers generally sniff the real bytes anyway,
+         but wrong metadata all the same, and would matter the moment a
+         second <link rel="icon"> is ever added for browsers to choose
+         between by declared type. -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cascade-main</title>
   </head>
