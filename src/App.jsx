@@ -23,6 +23,7 @@ import Tutorial from "./Tutorial";
 import SettingsScreen from "./screens/SettingsScreen";
 import DailyBoard from "./components/DailyBoard";
 import FriendCompare from "./components/FriendCompare";
+import { HomeIcon, SettingsIcon, HintIcon, UndoIcon } from "./icons";
 
 
 
@@ -954,7 +955,7 @@ export default function Cascade() {
           zIndex: 30,
         }}
       >
-        <span style={{ fontSize: 20, lineHeight: 1 }}>💡</span>
+        <HintIcon size={20} />
         <span style={{ fontSize: 10, fontWeight: 900, marginTop: 2 }}>{hintLeft}</span>
       </button>
       )}
@@ -982,7 +983,7 @@ export default function Cascade() {
           transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
         }}
       >
-        <span style={{ fontSize: 20, lineHeight: 1 }}>↶</span>
+        <UndoIcon size={20} />
         <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.05em", marginTop: 2 }}>
           {undoLeft}
         </span>
@@ -1054,19 +1055,24 @@ export default function Cascade() {
               popNav();
             }
           }} aria-label="Home" style={{
-            width: 34, height: 34, borderRadius: 12,
+            /* 40×40, not 34×34 — matches the Back button used on the
+               Settings/Profile screens (S.backBtn there) instead of
+               being the one smaller icon-only tap target in the app;
+               a house glyph (HomeIcon) also says "go home" on sight,
+               where the old "←" text character didn't. */
+            width: 40, height: 40, borderRadius: 12,
             background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
-            color: T.muted, cursor: "pointer",
+            cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, flexShrink: 0,
-          }}>←</button>
+            flexShrink: 0,
+          }}><HomeIcon size={20} /></button>
           <button onClick={() => { setShowSettings(true); pushNav("settings"); }} aria-label="Settings" style={{
-            width: 34, height: 34, borderRadius: 12,
+            width: 40, height: 40, borderRadius: 12,
             background: T.tubeBg, border: `1px solid ${T.tubeEdge}`,
-            color: T.muted, cursor: "pointer",
+            cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, flexShrink: 0,
-          }}>⚙️</button>
+            flexShrink: 0,
+          }}><SettingsIcon size={20} /></button>
         </div>
       </div>
 
