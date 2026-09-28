@@ -78,6 +78,64 @@ export default function SettingsScreen({
             </>
           )}
 
+          {/* ═══════════ TEMPORARY HAPTIC DEBUG ═══════════
+             Diagnose why haptics feel absent on the APK.
+             Test 1: fire Haptics.impact directly via plugin — if it works,
+             our app wiring is broken; if it errors, plugin failed to load.
+             Test 2: fire navigator.vibrate directly — if that works, OS
+             and WebView are fine and only the plugin path is broken.
+             Remove this whole section once haptics are confirmed. */}
+          <Section label="HAPTIC DEBUG (TEMP)" />
+          <Row
+            icon={<VibeIcon on={true} />}
+            label="1. Test Haptics Plugin"
+            sub="Fires HEAVY impact, alerts result"
+            onClick={async () => {
+              try {
+                const mod = await import("@capacitor/haptics");
+                if (!mod || !mod.Haptics) {
+                  alert("Plugin missing: mod.Haptics is " + (mod ? typeof mod.Haptics : "no module"));
+                  return;
+                }
+                await mod.Haptics.impact({ style: "HEAVY" });
+                alert("Haptics.impact resolved OK.\n\nDid the phone vibrate?");
+              } catch (e) {
+                alert("Haptics error: " + ((e && e.message) || String(e)));
+              }
+            }}
+          />
+          <Row
+            icon={<VibeIcon on={true} />}
+            label="2. Test navigator.vibrate"
+            sub="Raw WebView API — 500ms pulse"
+            onClick={() => {
+              if (!navigator.vibrate) {
+                alert("navigator.vibrate not present in this WebView");
+                return;
+              }
+              const r = navigator.vibrate(500);
+              alert("navigator.vibrate returned: " + r + "\n\nDid it pulse?");
+            }}
+          />
+          <Row
+            icon={<VibeIcon on={true} />}
+            label="3. Test Haptics.notification"
+            sub="SUCCESS pattern (round-clear feel)"
+            onClick={async () => {
+              try {
+                const mod = await import("@capacitor/haptics");
+                if (!mod || !mod.Haptics) {
+                  alert("Plugin missing");
+                  return;
+                }
+                await mod.Haptics.notification({ type: "SUCCESS" });
+                alert("Haptics.notification resolved OK");
+              } catch (e) {
+                alert("Error: " + ((e && e.message) || String(e)));
+              }
+            }}
+          />
+
           <Section label="DANGER ZONE" />
           <Row
             icon={<TrashIcon />}
