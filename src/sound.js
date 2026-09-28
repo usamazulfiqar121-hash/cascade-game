@@ -40,30 +40,10 @@ function getHapticsPlugin() {
 }
 
 function impact(style, fallback) {
-  /* TEMP DIAGNOSTIC — remove after root cause found. The Settings test
-     button works but the game doesn't, and the ONLY difference is this
-     wrapper (VIBE_ON gate + cached-promise path). Show exactly which
-     side is broken on the very next in-game pour. */
-  try {
-    alert(
-      "IMPACT DEBUG\n" +
-      "style=" + style + "\n" +
-      "VIBE_ON=" + VIBE_ON + "\n" +
-      "pluginLoaded=" + (hapticsPlugin ? "yes" : "no") + "\n" +
-      "promiseStarted=" + (hapticsPromise ? "yes" : "no")
-    );
-  } catch {}
   if (!VIBE_ON) return;
   getHapticsPlugin().then((plugin) => {
-    if (plugin) {
-      plugin.impact({ style }).catch((e) => {
-        try { alert("plugin.impact FAILED: " + (e && e.message)); } catch {}
-        buzz(fallback);
-      });
-    } else {
-      try { alert("plugin is NULL — import failed"); } catch {}
-      buzz(fallback);
-    }
+    if (plugin) plugin.impact({ style }).catch(() => buzz(fallback));
+    else buzz(fallback);
   });
 }
 
