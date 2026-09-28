@@ -452,7 +452,21 @@ export default function Cascade() {
       if (isSolved(next)) {
         const remainingAtClear = newMovesLeft;
         recordRound();
-        /* Daily completion — mark state + increment streak */
+        /* Daily round clear — increment streak. dailyState.status is
+           deliberately NOT touched here. It used to be force-set to
+           "completed" on every round clear, which finalized "today's
+           attempt" the instant round 1 cleared — even though the run
+           keeps going right after (upgrade pick → round 2 → ...). A
+           player who cleared round 1 and then simply backed out to Home
+           (without ever failing) came back to a dailyState stuck at
+           status:"completed", and startNewGame's replay guard below
+           treated that as "today is over," permanently blocking any
+           further attempt for the rest of the day — after doing nothing
+           wrong, just glancing away. The only real end state for this
+           endless run is failure (see the "One attempt only" copy on the
+           true game-over screen), so dailyState stays "in_progress"
+           through every round clear and only becomes terminal in the
+           newMovesLeft <= 0 branch below. */
         if (isDaily) {
           if (round > best) {
             setBest(round);
@@ -462,16 +476,9 @@ export default function Cascade() {
             rounds: [...prev.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
             totalMoves: prev.totalMoves + newMovesUsed,
           }));
-          const st = saveDailyState({
-            status: "completed",
-            completedAt: Date.now(),
-            movesUsed: newMovesUsed,
-            movesLeft: remainingAtClear,
-            rounds: round,
-          });
-          setDailyState(st);
-          cancelDailyReminder();
-          /* Save streak day */
+          /* Save streak day — a deliberately low bar (clearing just round 1
+             keeps the streak alive), separate from whether the run itself
+             is still going. See computeStreak in gameLogic.js. */
           try {
             const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
             if (!dr[dailyKey()]) {
@@ -739,12 +746,21 @@ export default function Cascade() {
   /* Single entry point for starting a new run — increments stats safely.
      Used by Home Play, Home Daily, and Game Over "Start Over". */
   const startNewGame = useCallback((daily = false) => {
-    /* Daily replay prevention — block if already completed/failed today */
+    /* Daily replay prevention — block only once today's attempt is truly
+       over. dailyState (when one exists for today) is authoritative: it
+       distinguishes an ongoing attempt (status "in_progress") from one
+       that's actually finished (status "failed" — the only real end
+       state for this endless run; see the "One attempt only" game-over
+       copy). dailyResults[today] flips true as soon as round 1 clears,
+       purely to credit the STREAK (a deliberately low bar) — it must
+       NOT by itself be read as "today is over," or clearing round 1 and
+       merely returning to Home would permanently lock the player out of
+       the very attempt they're still in the middle of. So the legacy
+       flag is only consulted when there's no dailyState at all for today
+       (a save from before dailyState existed). */
     if (daily) {
-      /* Check BOTH new state machine AND legacy dailyResults */
       const fresh = loadDailyState();
-      const legacyDone = !!dailyResults[dailyKey()];
-      const isCompleted = (fresh && fresh.status === "completed") || legacyDone;
+      const isCompleted = fresh ? fresh.status === "completed" : !!dailyResults[dailyKey()];
       const isFailed = fresh && fresh.status === "failed";
 
       if (isCompleted || isFailed) {
@@ -755,7 +771,7 @@ export default function Cascade() {
           title: isCompleted ? "Already Completed" : "One Attempt Used",
           message: "Come back tomorrow",
         });
-        return;
+        return false;
       }
     }
     recordGameStart();
@@ -785,6 +801,7 @@ export default function Cascade() {
       restartRun();
     }
     setScreen("game");
+    return true;
   }, [recordGameStart, restartRun, dailyResults, showToast]);
 
   /* ═══════════ NAVIGATION — Back button infra ═══════════
@@ -975,9 +992,18 @@ export default function Cascade() {
       {/* HOME — visible when screen === "home" */}
       {screen === "home" && (
         <HomeScreen
-          onPlay={() => { startNewGame(false); pushNav("game"); }}
+          onPlay={() => { if (startNewGame(false)) pushNav("game"); }}
           onAwards={() => { setShowAchievements(true); pushNav("awards"); }}
-          onDaily={() => { startNewGame(true); pushNav("game"); }}
+          onDaily={() => {
+            /* pushNav only when startNewGame actually starts a run — it
+               returns false when today's daily is already used up and it
+               just shows a toast without changing screen. Pushing a
+               "game" history entry unconditionally left a phantom entry
+               on the back-stack whenever that happened: the visible
+               screen stayed "home", but back-navigation now had one more
+               step queued than what's on screen actually accounts for. */
+            if (startNewGame(true)) pushNav("game");
+          }}
           onSettings={() => { setShowSettings(true); pushNav("settings"); }}
           dailyResults={dailyResults}
           shieldedDates={shieldedDates}

@@ -34,11 +34,26 @@ const JACKPOT_ID = "jackpot";
 const JACKPOT_CHANCE = 0.03;
 const JACKPOT_NEAR_MISS_MARGIN = 0.07;
 
+/* Pick weight per rarity tier — must be a strictly decreasing integer per
+   tier, or two tiers become indistinguishable to the draw below (which
+   needs an integer repeat-count, so the weight gets truncated). The
+   previous `Math.max(1, 6 - rarity * 1.5) | 0` looked fine as a formula
+   but both Rare (3) and Legendary (4) truncate to the same weight, 1 —
+   6-4.5=1.5→1 and 6-6=0→max(1,0)=1 — so a specific Legendary upgrade was
+   exactly as likely to be offered as a specific Rare one, contradicting
+   the file's own stated intent that rarity should change the actual odds,
+   not just the color. Same curve, doubled precision, so it no longer
+   collapses: 12-3=9, 12-6=6, 12-9=3, 12-12=0→max(1,0)=1 — each tier is
+   now a clean, distinct step down from the one before it. */
+function rarityWeight(rarity) {
+  return Math.max(1, 12 - rarity * 3) | 0;
+}
+
 export function pickRandomUpgrades(count) {
   const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.dailyOnly);
   const weighted = [];
   pool.forEach((u) => {
-    const weight = Math.max(1, 6 - u.rarity * 1.5) | 0;
+    const weight = rarityWeight(u.rarity);
     for (let i = 0; i < weight; i++) weighted.push(u);
   });
   const picked = [];
@@ -323,7 +338,7 @@ export function pickDailyUpgrades(dateSeed, count = 3) {
   const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID);
   const weighted = [];
   pool.forEach((u) => {
-    const weight = Math.max(1, 6 - u.rarity * 1.5) | 0;
+    const weight = rarityWeight(u.rarity);
     for (let i = 0; i < weight; i++) weighted.push(u);
   });
   const picked = [];
