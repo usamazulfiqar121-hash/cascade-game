@@ -104,6 +104,34 @@ function useExitTransition(isOpen, exitMs = 280) {
   return { shouldRender: shouldRender || isOpen, closing: shouldRender && !isOpen };
 }
 
+/* A wrong move used to just nudge the board 8px sideways once — barely
+   readable as a "no" versus, say, a rendering hiccup. This is a real
+   decaying shake (Web Animations API, not a CSS class): several
+   alternating lefts and rights of shrinking amplitude, plus a touch of
+   rotation so it reads as a physical little refusal rather than a slide.
+   Paired with WRONG_FLASH_KEYFRAMES, a quick red pulse over the tubes.
+   Both are triggered imperatively (see the effect keyed on `shake` in
+   Cascade) rather than via a CSS class, specifically so they can restart
+   on every tap without remounting — and therefore without disturbing —
+   the actual Tube components underneath, which carry their own live
+   pour/landing state. */
+const SHAKE_KEYFRAMES = [
+  { transform: "translateX(0) rotate(0deg)" },
+  { transform: "translateX(-11px) rotate(-1.1deg)" },
+  { transform: "translateX(9px) rotate(1deg)" },
+  { transform: "translateX(-8px) rotate(-0.9deg)" },
+  { transform: "translateX(6px) rotate(0.7deg)" },
+  { transform: "translateX(-4px) rotate(-0.5deg)" },
+  { transform: "translateX(3px) rotate(0.3deg)" },
+  { transform: "translateX(-1.5px) rotate(-0.15deg)" },
+  { transform: "translateX(0) rotate(0deg)" },
+];
+const WRONG_FLASH_KEYFRAMES = [
+  { opacity: 0 },
+  { opacity: 1, offset: 0.15 },
+  { opacity: 0 },
+];
+
 /* ═══════════  COMPONENTS  ═══════════ */
 
 /* ═══════════  MAIN  ═══════════ */
@@ -204,7 +232,14 @@ export default function Cascade() {
   const [snapshots, setSnapshots] = useState([]);
   const [hintLeft, setHintLeft] = useState(2);
   const [hint, setHint] = useState(null);
+  /* A wrong-move counter, not a boolean: it only ever counts up, and every
+     new value re-fires the shake+flash effect below even if the previous
+     one hasn't visually finished (Element.animate() starts a fresh,
+     independent animation on each call — it doesn't need to reset back to
+     0 between taps the way the old CSS-transform version did). */
   const [shake, setShake] = useState(0);
+  const tubesRowRef = useRef(null);
+  const wrongFlashRef = useRef(null);
   /* Pour visuals (see FlyingBalls.jsx / Tube.jsx): balls currently in the
      air, and the most recent pour's landing schedule for its target tube
      so the real balls there stay hidden until their flight touches down.
@@ -438,10 +473,23 @@ export default function Cascade() {
   }, [level]);
 
   useEffect(() => {
-    if (!shake) return;
-    const t = setTimeout(() => setShake(0), 300);
-    return () => clearTimeout(t);
-  }, [shake]);
+    if (!shake) return; // 0 is the initial value, not a real wrong move
+    let reduceMotion = reduceMotionOn;
+    try { reduceMotion = reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch {}
+    const row = tubesRowRef.current, flashEl = wrongFlashRef.current;
+    try {
+      if (!reduceMotion && row && typeof row.animate === "function") {
+        row.animate(SHAKE_KEYFRAMES, { duration: 420, easing: "ease-in-out" });
+      }
+      /* The flash stays even under Reduce Motion — it's a plain opacity
+         fade with nothing sliding or shaking, and with the shake itself
+         skipped it becomes the only visual "that didn't work" signal
+         besides the warning haptic. */
+      if (flashEl && typeof flashEl.animate === "function") {
+        flashEl.animate(WRONG_FLASH_KEYFRAMES, { duration: reduceMotion ? 220 : 420, easing: "ease-out" });
+      }
+    } catch {}
+  }, [shake, reduceMotionOn]);
 
   /* achToast shows one achievement at a time, but unlockAch can be called
      several times in the same synchronous tick — e.g. clearing round 10
@@ -1451,16 +1499,26 @@ export default function Cascade() {
           while a ball lifted from the top row rose 10px into the HUD /
           combo slot. Counting the lift room as part of the board when
           centering it fixes that without shrinking anything. */}
-      <div style={{ ...S.board, paddingTop: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 4), paddingBottom: 8, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
+      <div style={{ ...S.board, paddingTop: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 4), paddingBottom: 8 }}>
         {/* rowGap: when the board wraps to two rows, a ball lifted out of a
             bottom-row tube rises one ball-height (+ gap) above its rim. At
             the old uniform 12px gap it came to rest on top of the upper
             row's bottom ball; this leaves it clear space with a few px to
-            spare, including the selected tube's own 4px dip. */}
-        <div style={{ ...S.tubesRow, rowGap: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 10) }}>
+            spare, including the selected tube's own 4px dip.
+            ref + position: the wrong-move shake/flash (see the effect keyed
+            on `shake` above) animates THIS row directly via
+            Element.animate() rather than a re-rendered inline style or CSS
+            class, so a rapid string of wrong taps can't stack up stale
+            transitions and so the animation never needs to remount (and
+            thereby reset) the Tube children living inside it. */}
+        <div ref={tubesRowRef} style={{ ...S.tubesRow, position: "relative", rowGap: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 10) }}>
           {tubes.map((balls, i) => (
             <Tube key={i} idx={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} onPointerDown={(e) => onTubePointerDown(i, e)} onPointerMove={onTubePointerMove} onPointerUp={onTubePointerUp} onPointerCancel={onTubePointerCancel} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} landing={landing && landing.tube === i ? landing : null} />
           ))}
+          {/* Always mounted (never conditionally rendered) so it has a
+              stable ref to animate — opacity 0 at rest, pulsed red by the
+              same effect that triggers the shake above. */}
+          <div ref={wrongFlashRef} aria-hidden="true" style={S.wrongFlash} />
         </div>
       </div>
 

@@ -55,6 +55,19 @@ export const S = {
   upgradeStrip: { display: "flex", gap: 4, padding: "0 20px 8px", flexWrap: "wrap" },
   board: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   tubesRow: { display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", alignItems: "flex-end", maxWidth: 400 },
+  /* A wrong move's red pulse. Always mounted at opacity 0 and pulsed by
+     Element.animate() in App.jsx (see the effect keyed on `shake`) rather
+     than toggled via React state, so a quick second wrong tap can restart
+     it mid-fade instead of queuing behind a class-based animation. Sized
+     past the row's own edges since the tubes it overlays can be lifted
+     (mid-pour) or lightly rotated by the shake itself. */
+  wrongFlash: {
+    position: "absolute", inset: -24,
+    borderRadius: 32,
+    background: `radial-gradient(ellipse at center, color-mix(in srgb, ${T.danger} 50%, transparent) 0%, transparent 72%)`,
+    opacity: 0,
+    pointerEvents: "none",
+  },
   footer: {
     padding: "12px 20px calc(env(safe-area-inset-bottom, 0px) + 110px)",
     minHeight: 60,
