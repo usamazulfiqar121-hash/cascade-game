@@ -12,10 +12,19 @@ export default function SettingsScreen({
   onSetTheme,
   onBack,
   onShowTutorial,
+  closing = false,
 }) {
   const handleBack = onBack || onClose;
   return (
-    <div style={S.page}>
+    <div
+      style={{
+        ...S.page,
+        animation: closing
+          ? "slideOutRight 280ms cubic-bezier(0.4, 0, 1, 1) both"
+          : "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
+        pointerEvents: closing ? "none" : "auto",
+      }}
+    >
       <div style={S.header}>
         <button onClick={handleBack} className="press" style={S.backBtn} aria-label="Back">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -323,10 +332,11 @@ function TrashIcon() {
 
 const S = {
   page: {
+    // animation is set where this is used (App.jsx passes `closing`,
+    // which decides slideInRight vs slideOutRight) rather than fixed here.
     position: "fixed", inset: 0,
     background: "var(--bg-0)",
     display: "flex", flexDirection: "column",
-    animation: "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
     zIndex: 80,
     fontFamily: "'Inter', system-ui, sans-serif",
   },

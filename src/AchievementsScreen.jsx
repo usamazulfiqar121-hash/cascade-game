@@ -12,6 +12,7 @@ export default function AchievementsScreen({
   bestStreak = 0,
   onClose,
   onBack,
+  closing = false,
 }) {
   const handleBack = onBack || onClose;
   const count = achievements.length;
@@ -19,7 +20,15 @@ export default function AchievementsScreen({
   const pct = total > 0 ? (count / total) * 100 : 0;
 
   return (
-    <div style={S.page}>
+    <div
+      style={{
+        ...S.page,
+        animation: closing
+          ? "slideOutRight 280ms cubic-bezier(0.4, 0, 1, 1) both"
+          : "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
+        pointerEvents: closing ? "none" : "auto",
+      }}
+    >
       {/* Header */}
       <div style={S.header}>
         <button onClick={handleBack} className="press" style={S.backBtn} aria-label="Back">
@@ -123,10 +132,11 @@ function StatCard({ label, value }) {
 
 const S = {
   page: {
+    // animation is set where this is used (the closing prop decides
+    // slideInRight vs slideOutRight) rather than fixed here.
     position: "fixed", inset: 0,
     background: "var(--bg-0)",
     display: "flex", flexDirection: "column",
-    animation: "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
     zIndex: 80,
     fontFamily: "'Inter', system-ui, sans-serif",
   },

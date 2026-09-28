@@ -195,20 +195,49 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 .cascade-particle { animation: cascadeParticle 600ms cubic-bezier(.2,.8,.3,1) forwards; }
 
-/* Ball landing in a tube — ease-out (fast start, soft landing) instead of a
-   linear/instant snap, so a pour reads as weightier. Fires once per ball on
-   mount (a fresh pour, or a level's starting layout), not on every re-render,
-   since React only (re)mounts balls whose key actually changed. Reuses the
-   app's D.tQuick easing curve for consistency with the rest of the UI. */
+/* Ball appearing in a tube. Two cases, picked once per ball at mount (see
+   Ball in Tube.jsx) so a ball never switches animation-name later — a
+   name change would restart the animation on an already-settled ball.
+
+   ballDrop — a level's starting layout, or balls restored by Undo: a short
+   fall (ease-in, accelerating like gravity) into a squash on impact, a
+   small rebound stretch, then rest. Replaces a 180ms slide that started
+   at 40% opacity and scale 0.85, which read as a faded ghost sliding in
+   rather than something with weight.
+
+   ballLand — a ball arriving by pour. Its flight (FlyingBalls.jsx) already
+   brought it to the slot, so this starts AT impact: squashed on the very
+   first frame, then rebound and settle. The 0% keyframe is invisible and
+   the 1% one visible, so with fill-mode "backwards" the ball stays hidden
+   through its animation-delay (the flight) and appears within ~3ms of
+   the flying copy touching down.
+
+   transform-origin at the bottom so the squash compresses onto whatever
+   is beneath it instead of shrinking toward its own center. Fill-mode is
+   "backwards", not "both": both would keep the 100% transform applied
+   forever after, overriding the inline translateY a lifted ball uses. */
 @keyframes ballDrop {
-  0% { transform: translateY(-14px) scale(0.85); opacity: 0.4; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0%   { opacity: 0; transform: translateY(-18px) scale(0.96, 1.04); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  45%  { opacity: 1; transform: translateY(0) scale(1.1, 0.88); animation-timing-function: cubic-bezier(.3, .7, .4, 1); }
+  75%  { transform: translateY(-1px) scale(0.97, 1.03); }
+  100% { opacity: 1; transform: translateY(0) scale(1, 1); }
 }
-.cascade-ball { animation: ballDrop 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes ballLand {
+  0%   { opacity: 0; transform: translateY(0) scale(1.16, 0.8); }
+  1%   { opacity: 1; transform: translateY(0) scale(1.16, 0.8); animation-timing-function: cubic-bezier(.3, .7, .4, 1); }
+  45%  { transform: translateY(-1px) scale(0.95, 1.06); }
+  75%  { transform: translateY(0) scale(1.02, 0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1, 1); }
+}
+.cascade-ball { transform-origin: 50% 100%; animation: ballDrop 300ms linear backwards; }
+.cascade-ball.landing { animation: ballLand 260ms linear backwards; }
 
 /* ═══════════ TUBE STATES ═══════════ */
+/* The lifted balls carry the "picked up" motion now (Tube.jsx), so the
+   tube itself only dips its head 4px — enough to read as responding to
+   the touch, not so much that tube and balls both jump at once. */
 .tube-btn[data-state="selected"] {
-  transform: translateY(-10px);
+  transform: translateY(-4px);
   border-color: var(--accent);
   box-shadow: 0 12px 32px var(--accent-soft), 0 0 0 1px var(--accent-soft);
   background: var(--glass);

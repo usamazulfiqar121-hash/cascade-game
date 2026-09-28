@@ -9,7 +9,7 @@
    the message they sent back — see src/friendCompare.js for the
    code format and why it's plain text rather than an opaque blob. */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { T } from "../constants";
 import {
   buildCompareShareText,
@@ -41,11 +41,21 @@ export default function FriendCompare({ rounds, dateKey }) {
   const [pasteText, setPasteText] = useState("");
   const [labelText, setLabelText] = useState("");
   const [feedback, setFeedback] = useState(null);
+  /* Token, not the message text, decides whether a flash's own timer is
+     still the current one. Two SAME-text flashes within 2.4s (e.g. adding
+     two friends in a row, both saying "Added") used to compare by message
+     string, so the first flash's timer matched the second flash's still-
+     showing feedback and cleared it early — cutting the second toast's
+     hold time short by however much overlap there was. An incrementing
+     token is unique per call regardless of what the message says, so each
+     flash's timer only ever clears ITS OWN, still-current toast. */
+  const feedbackToken = useRef(0);
 
   const flash = (type, message) => {
+    const token = ++feedbackToken.current;
     setFeedback({ type, message });
     setTimeout(() => {
-      setFeedback((f) => (f && f.message === message ? null : f));
+      setFeedback((f) => (feedbackToken.current === token ? null : f));
     }, 2400);
   };
 
@@ -96,7 +106,7 @@ export default function FriendCompare({ rounds, dateKey }) {
       </button>
 
       {open && (
-        <div style={s.panel}>
+        <div style={s.panel} className="fade-up">
           <button style={s.shareBtn} onClick={share}>
             📤 Share your code
           </button>

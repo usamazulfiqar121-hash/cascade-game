@@ -15,7 +15,8 @@ import { buildEmojiGrid, buildShareCard, nativeShareText, nativeShareImage } fro
 import { Snd, Haptic, setVibe, Music } from "./sound";
 import { initNotifications, scheduleDailyReminder, cancelDailyReminder } from "./notifications";
 import Particles from "./Particles";
-import Tube from "./Tube";
+import Tube, { tubeDims, slotCenter, LIFT_GAP } from "./Tube";
+import FlyingBalls, { planFlight } from "./FlyingBalls";
 import UpgradeCard from "./UpgradeCard";
 import HomeScreen from "./HomeScreen";
 import AchievementsScreen from "./AchievementsScreen";
@@ -63,6 +64,44 @@ function tubeScaleFor(tubeCount) {
   if (tubeCount <= 11) return 0.74;
   if (tubeCount <= 13) return 0.64;
   return 0.56;
+}
+
+/* Keeps a full-screen page (Settings, Profile/Achievements) mounted for
+   `exitMs` after its own `isOpen` flag goes false, so it has time to play
+   a slide-OUT instead of just vanishing the instant the flag flips — which
+   is what closing did before, since {isOpen && <Screen/>} unmounts on the
+   same render the flag changes.
+
+   Deliberately a pure observer of `isOpen`, nothing more: it doesn't call
+   popNav(), doesn't know about the history/popstate stack that actually
+   flips isOpen (a screen here can close via its own back arrow, the
+   hardware back button, or a header X — several different call sites,
+   already handled elsewhere), and doesn't change when or why isOpen
+   changes. It only stretches how long the DOM node hangs around after
+   that, so it's safe to bolt onto already-working nav-stack state without
+   touching the logic that stack depends on. */
+function useExitTransition(isOpen, exitMs = 280) {
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  useEffect(() => {
+    if (isOpen) { setShouldRender(true); return; }
+    if (!shouldRender) return;
+    const t = setTimeout(() => setShouldRender(false), exitMs);
+    return () => clearTimeout(t);
+    /* shouldRender deliberately isn't a dependency: it's set by this same
+       effect, and adding it would only cause one extra, immediately-
+       no-op re-run each time (the effect would re-fire, see shouldRender
+       already false, and return right away) — harmless, just unnecessary. */
+  }, [isOpen, exitMs]);
+  /* Returning `shouldRender || isOpen` rather than the raw state matters on
+     OPEN specifically: opening from fully-closed starts from shouldRender
+     still false (it only flips true once the effect above runs, a tick
+     after this render commits), so the raw state alone would render as
+     absent for one cycle before popping in a moment later. isOpen is
+     already true by then, so OR-ing it in shows the screen on the exact
+     same render as the flip — matching the old `{isOpen && <Screen/>}`
+     behavior for opening — while closing/lingering/cancel-on-reopen still
+     go entirely through shouldRender and are unaffected. */
+  return { shouldRender: shouldRender || isOpen, closing: shouldRender && !isOpen };
 }
 
 /* ═══════════  COMPONENTS  ═══════════ */
@@ -166,6 +205,21 @@ export default function Cascade() {
   const [hintLeft, setHintLeft] = useState(2);
   const [hint, setHint] = useState(null);
   const [shake, setShake] = useState(0);
+  /* Pour visuals (see FlyingBalls.jsx / Tube.jsx): balls currently in the
+     air, and the most recent pour's landing schedule for its target tube
+     so the real balls there stay hidden until their flight touches down.
+     Both are purely presentational — game state (tubes) updates on tap. */
+  const [flights, setFlights] = useState([]);
+  const [landing, setLanding] = useState(null);
+  const removeFlight = useCallback((id) => setFlights((f) => f.filter((x) => x.id !== id)), []);
+  /* Set the moment a pour decides the round (board solved, or out of
+     moves). The results overlay now waits for the last ball to land, and
+     until this existed the board stayed fully interactive for that whole
+     wait: on a solved board you could still pour a ball out of a finished
+     tube into an empty one, and at 0 moves a second tap queued a second
+     game-over (double fail sound, daily state saved twice). Every input
+     path checks it; the level effect clears it for the next round. */
+  const roundDecidedRef = useRef(false);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
   /* Shown only on the game-over overlay. Distinct from lastRoundMovesLeft
      (which is the moves left when the last round was *cleared* and feeds
@@ -189,6 +243,12 @@ export default function Cascade() {
   const [tutorialSeen, setTutorialSeen] = useState(true); // default true = don't flash
   const [showSettings, setShowSettings] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
+  /* Purely visual — see useExitTransition's own comment. showSettings/
+     showAchievements above stay the single source of truth for the
+     nav-stack; these two just decide how long the screen stays mounted
+     after that flag goes false, so it can slide out instead of vanishing. */
+  const settingsExit = useExitTransition(showSettings);
+  const achievementsExit = useExitTransition(showAchievements);
   const [soundOn, setSoundOn] = useState(true);
   const [vibeOn, setVibeOn] = useState(true);
   const [musicOn, setMusicOn] = useState(true);
@@ -371,6 +431,9 @@ export default function Cascade() {
     setSnapshots([]);
     setHintLeft(daily ? 0 : 2);
     setHint(null);
+    setFlights([]);
+    setLanding(null);
+    roundDecidedRef.current = false;
     setPhase("playing");
   }, [level]);
 
@@ -440,6 +503,7 @@ export default function Cascade() {
   }, []);
 
   const attemptPour = useCallback((fromIdx, toIdx, e) => {
+    if (roundDecidedRef.current) return;
     if (canPour(tubes, fromIdx, toIdx)) {
       /* Snapshot BEFORE the pour lands, so undo has something to restore. */
       setSnapshots((s) => [...s, { tubes: tubes.map((t) => [...t]), moves, bonusMoves, comboCount }]);
@@ -447,6 +511,59 @@ export default function Cascade() {
       const next = pour(tubes, fromIdx, toIdx);
       const movedCount = next[toIdx].length - beforeLen;
       const newCombo = comboCount + 1;
+
+      /* ── Pour visuals ──
+         Measured from the DOM BEFORE setTubes, while the source balls are
+         still on screen in their lifted positions. Each moved ball gets a
+         flight from where it is right now to its landing slot; the target
+         tube is told when each will land, so it can keep them hidden till
+         then. Top ball of the run leaves first and fills the lowest free
+         slot, the next follows 85ms behind — a little cascade.
+         Under Reduce Motion (OS or in-app) there are no flights and no
+         landing delays at all: the CSS reduce-motion rule shortens
+         durations but not delays, so a delay would leave a ball invisible
+         for the whole would-be flight. */
+      let reduceMotion = reduceMotionOn;
+      if (!reduceMotion) {
+        try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch {}
+      }
+      const t0 = performance.now();
+      const scale = tubeScaleFor(tubes.length);
+      const colorIdx = tubes[fromIdx][tubes[fromIdx].length - 1];
+      const srcEl = document.querySelector(`[data-tube-idx="${fromIdx}"]`);
+      const dstEl = (e && e.currentTarget) || document.querySelector(`[data-tube-idx="${toIdx}"]`);
+      const dstRect = dstEl ? dstEl.getBoundingClientRect() : null;
+      /* Where (and how many ms from now) the LAST moved ball comes to rest —
+         the particle burst, and the round-end overlay, key off this. */
+      const impact = dstRect ? slotCenter(dstRect, beforeLen + movedCount - 1, scale) : null;
+      let impactMs = 0;
+      if (!reduceMotion && srcEl && dstRect) {
+        const srcBalls = srcEl.querySelectorAll(".cascade-ball"); // DOM order = bottom → top
+        const rimY = dstRect.top - LIFT_GAP - tubeDims(scale).ballH / 2;
+        const newFlights = [];
+        const lands = [];
+        for (let k = 0; k < movedCount; k++) {
+          const ballEl = srcBalls[tubes[fromIdx].length - 1 - k];
+          if (!ballEl) break;
+          const r = ballEl.getBoundingClientRect();
+          const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+          const { x: x1, y: y1 } = slotCenter(dstRect, beforeLen + k, scale);
+          const { arcMs, dropMs, topY, v0 } = planFlight(x0, y0, x1, rimY, y1);
+          const delay = k * 85;
+          newFlights.push({ id: `${t0}-${fromIdx}-${k}`, t0, delay, x0, y0, x1, rimY, y1, topY, v0, arcMs, dropMs, colorIdx, scale, colorBlind: colorBlindOn });
+          lands.push(t0 + delay + arcMs + dropMs);
+          /* the landing "tock", on the audio clock, at this ball's touchdown */
+          Snd.land(beforeLen + k, (delay + arcMs + dropMs) / 1000);
+        }
+        if (lands.length === movedCount) {
+          setFlights((f) => [...f, ...newFlights]);
+          setLanding({ tube: toIdx, from: beforeLen, lands });
+          impactMs = Math.round(lands[lands.length - 1] - t0);
+        }
+      } else {
+        Snd.land(beforeLen + movedCount - 1, 0);
+      }
+
       setTubes(next);
       setSelected(null);
       Snd.pour(movedCount);
@@ -467,18 +584,20 @@ export default function Cascade() {
       const megaEvery = getMegaEvery(runUpgrades);
       if (megaEvery && newCombo % megaEvery === 0) { bonus += 2; tier = Math.max(tier, 3); }
 
-      // Particle burst at destination — on a fresh tube-solve, give the
-      // checkmark glow a ~120ms beat to register before the burst plays
-      // (research: a brief "hold frame" makes a win land as a win). A
-      // combo/mega-tier pour also gets a bigger burst, so it reads as a
+      // Particle burst where the last ball actually comes to rest, at the
+      // moment it does — it used to fire from the tube's geometric center
+      // on the tap itself, i.e. mid-air and before anything had arrived.
+      // On a fresh tube-solve, the checkmark glow still gets a ~120ms beat
+      // to register first (a brief "hold frame" makes a win land as a
+      // win). A combo/mega-tier pour gets a bigger burst, so it reads as a
       // bigger moment, not just a bigger score.
-      if (e) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const px = rect.left + rect.width / 2, py = rect.top + rect.height / 2;
-        const color = COLORS[next[toIdx][next[toIdx].length - 1]] || T.accent;
+      if (impact) {
+        const color = COLORS[colorIdx] || T.accent;
         const burstCount = tier >= 3 ? 16 : tier >= 2 ? 10 : 6;
         const destJustSolved = isTubeSolved(next[toIdx]) && !isTubeSolved(tubes[toIdx]);
-        if (destJustSolved) setTimeout(() => spawnParticles(px, py, color, burstCount), 120);
+        const burstAt = impactMs + (destJustSolved ? 120 : 0);
+        const { x: px, y: py } = impact;
+        if (burstAt > 0) setTimeout(() => spawnParticles(px, py, color, burstCount), burstAt);
         else spawnParticles(px, py, color, burstCount);
       }
 
@@ -506,6 +625,7 @@ export default function Cascade() {
       const newMovesLeft = level.moveLimit + newBonus - newMovesUsed;
 
       if (isSolved(next)) {
+        roundDecidedRef.current = true;
         const remainingAtClear = newMovesLeft;
         recordRound();
         /* Daily round clear — increment streak. dailyState.status is
@@ -574,7 +694,12 @@ export default function Cascade() {
           Snd.clear();
           Haptic.success();
           Music.pulse("clear");
-        }, 250);
+          /* Was a flat 250ms after the tap. The winning ball is now still in
+             the air at that point, so the card would have covered the one
+             pour that matters most. Waits for it to land, then holds ~450ms
+             on the finished board — long enough for the last tube's
+             checkmark and burst to register as the win — before the reward. */
+        }, Math.max(250, impactMs + 450));
         /* Achievement triggers — fired after the transition is queued */
         unlockAch("first_clear");
         if (round + 1 >= 10) unlockAch("round_10");
@@ -592,6 +717,7 @@ export default function Cascade() {
            correctly excluded rather than trivially qualifying. */
         if (!isDaily && !undoUsedThisRun && round >= 5) unlockAch("no_undo_5");
       } else if (newMovesLeft <= 0) {
+        roundDecidedRef.current = true;
         setNearMiss(isOneMoveFromSolved(next));
         setTimeout(() => {
           // Save best if this is a new best
@@ -617,7 +743,9 @@ export default function Cascade() {
           setPhase("gameover");
           Snd.fail();
           Haptic.error();
-        }, 250);
+          /* same reasoning as the round-clear timer: let the final ball land
+             and settle before the results card covers the board */
+        }, Math.max(250, impactMs + 300));
       }
     } else {
       setShake((s) => s + 1);
@@ -625,10 +753,10 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, reduceMotionOn, colorBlindOn]);
 
   const onTubeClick = useCallback((idx, e) => {
-    if (phase !== "playing") return;
+    if (phase !== "playing" || roundDecidedRef.current) return;
     Snd.unlock();
     if (selected === null) {
       if (tubes[idx].length === 0) return;
@@ -646,7 +774,7 @@ export default function Cascade() {
   const draggingRef = useRef(false);
 
   const onTubePointerDown = useCallback((idx, e) => {
-    if (phase !== "playing") return;
+    if (phase !== "playing" || roundDecidedRef.current) return;
     if (tubes[idx].length === 0) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     dragSourceRef.current = idx;
@@ -690,7 +818,7 @@ export default function Cascade() {
 
   const useHint = useCallback(() => {
     if (hintLeft <= 0) return;
-    if (phase !== "playing") return;
+    if (phase !== "playing" || roundDecidedRef.current) return;
     /* findHint (gameLogic.js) picks a move it can confirm keeps the board
        winnable, not just any legal move — see its own comment for why
        that distinction matters. */
@@ -706,10 +834,15 @@ export default function Cascade() {
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
     if (snapshots.length === 0) return;
-    if (phase !== "playing") return;
+    if (phase !== "playing" || roundDecidedRef.current) return;
     const last = snapshots[snapshots.length - 1];
     setSnapshots((s) => s.slice(0, -1));
     setTubes(last.tubes);
+    /* Drop anything still in the air — those balls are being put back —
+       and forget the last landing schedule so restored balls get a normal
+       drop-in, not a leftover landing delay. */
+    setFlights([]);
+    setLanding(null);
     setMoves(last.moves);
     setBonusMoves(last.bonusMoves);
     /* last.comboCount, not last.combo — the snapshot (a few lines up,
@@ -1086,6 +1219,7 @@ export default function Cascade() {
       {screen === "game" && (
       <div className="screen-transition" style={S.gameRoot}>
       <Particles bursts={particles} />
+      <FlyingBalls flights={flights} onDone={removeFlight} />
 
       {/* Achievement toast — slides down from top. Keyed on the
           achievement id so two unlocks shown back-to-back (the queue
@@ -1273,12 +1407,24 @@ export default function Cascade() {
       {/* Live combo streak — appears once you're on a run of 2 or more.
           Without this the combo counter was invisible until it fired a bonus,
           so the player never knew a streak was building. */}
-      {comboCount >= 2 && (
-        <div style={S.comboBadge} className="comboPop" key={comboCount}>
-          <span style={S.comboFlame}>🔥</span>
-          <span style={S.comboText}>{comboCount}× combo</span>
-        </div>
-      )}
+      {/* The badge's space is reserved permanently. It used to sit in the
+          normal flow with nothing held open for it, so the moment a
+          combo started (the 2nd pour in a row) the badge pushed the whole
+          board — which is vertically centered in the space left over —
+          down by half its height, 18px, and the board jumped back up the
+          moment the combo broke. Measured: tube tops 286px → 304px on the
+          2nd pour. That jolt happened on every combo, and with balls now
+          in flight during a pour it also meant a ball could land 18px from
+          where its tube had just moved to. A fixed 36px slot (the badge's
+          28px + its 8px gap) means the board never moves. */}
+      <div style={{ height: 36, flexShrink: 0, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+        {comboCount >= 2 && (
+          <div style={{ ...S.comboBadge, marginBottom: 0 }} className="comboPop" key={comboCount}>
+            <span style={S.comboFlame}>🔥</span>
+            <span style={S.comboText}>{comboCount}× combo</span>
+          </div>
+        )}
+      </div>
 
       {runUpgrades.length > 0 && (
         <div style={S.upgradeStrip}>
@@ -1297,10 +1443,23 @@ export default function Cascade() {
         </div>
       )}
 
-      <div style={{ ...S.board, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
-        <div style={S.tubesRow}>
+      {/* Padding is lopsided on purpose: a selected ball rises one
+          ball-height (+ gap, + the tube's 4px dip) above its tube, so the
+          top row needs that much clear space ABOVE it and nothing extra
+          below. Centering the board symmetrically (the old flat 20px)
+          left ~50px unused under the board on a 5-7 tube, two-row round
+          while a ball lifted from the top row rose 10px into the HUD /
+          combo slot. Counting the lift room as part of the board when
+          centering it fixes that without shrinking anything. */}
+      <div style={{ ...S.board, paddingTop: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 4), paddingBottom: 8, transform: shake ? "translateX(-8px)" : "translateX(0)", transition: "transform 60ms ease" }}>
+        {/* rowGap: when the board wraps to two rows, a ball lifted out of a
+            bottom-row tube rises one ball-height (+ gap) above its rim. At
+            the old uniform 12px gap it came to rest on top of the upper
+            row's bottom ball; this leaves it clear space with a few px to
+            spare, including the selected tube's own 4px dip. */}
+        <div style={{ ...S.tubesRow, rowGap: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 10) }}>
           {tubes.map((balls, i) => (
-            <Tube key={i} idx={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} onPointerDown={(e) => onTubePointerDown(i, e)} onPointerMove={onTubePointerMove} onPointerUp={onTubePointerUp} onPointerCancel={onTubePointerCancel} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} />
+            <Tube key={i} idx={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} onPointerDown={(e) => onTubePointerDown(i, e)} onPointerMove={onTubePointerMove} onPointerUp={onTubePointerUp} onPointerCancel={onTubePointerCancel} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} landing={landing && landing.tube === i ? landing : null} />
           ))}
         </div>
       </div>
@@ -1507,8 +1666,9 @@ export default function Cascade() {
         </div>
       )}
 
-      {showSettings && (
+      {settingsExit.shouldRender && (
         <SettingsScreen
+          closing={settingsExit.closing}
           soundOn={soundOn}
           vibeOn={vibeOn}
           onToggleSound={() => {
@@ -1610,8 +1770,9 @@ export default function Cascade() {
         />
       )}
 
-      {showAchievements && (
+      {achievementsExit.shouldRender && (
         <AchievementsScreen
+          closing={achievementsExit.closing}
           achievements={achievements}
           stats={stats}
           best={best}

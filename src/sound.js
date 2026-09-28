@@ -171,6 +171,12 @@ export const Snd = (() => {
     unlock: ensure,
     pour: (n = 1) => { if (sfxOn) { transient({ cutoff: 1800, dur: 0.03, peak: 0.12 }); tone(400 + n * 80, { type: "sine", dur: 0.12, peak: 0.2, glide: 1.3 }); } },
     select: () => { if (sfxOn) { transient({ cutoff: 4000, dur: 0.02, peak: 0.08 }); tone(600, { type: "sine", dur: 0.06, peak: 0.12 }); } },
+    /* A ball touching down in a tube — scheduled on the audio clock (delay
+       in seconds) to the exact moment its flight lands, rather than
+       playing on the tap. A short, soft "tock": a tiny click plus a low
+       sine that bends slightly down. Pitch climbs with the slot it lands
+       in (0 = bottom), so filling a tube sounds like filling a glass. */
+    land: (slot = 0, delay = 0) => { if (sfxOn) { transient({ cutoff: 2400, dur: 0.02, peak: 0.09, delay }); tone(190 + slot * 45, { type: "sine", dur: 0.07, peak: 0.14, glide: 0.75, delay }); } },
     bonus: () => { if (sfxOn) { transient({ cutoff: 3200, dur: 0.03, peak: 0.13 }); tone(880, { type: "sine", dur: 0.1, peak: 0.15 }); tone(1174, { type: "sine", dur: 0.1, peak: 0.12, delay: 0.06 }); } },
     /* Combo/mega bonus tiers — same bonus moment as bonus() above, but a
        bigger combo should sound bigger too, not just add the same ping. */
