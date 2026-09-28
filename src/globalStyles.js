@@ -4,7 +4,53 @@
    Extracted from App.jsx during cleanup pass. */
 
 export const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&family=Inter:wght@600;700;800;900&family=JetBrains+Mono:wght@700;800&family=Nunito:wght@600;800;900&display=swap');
+/* ═══════════ BUNDLED FONTS ═══════════
+   Used to load from Google's CDN (fonts.googleapis.com) — a real device
+   offline, or with a flaky connection, fell back to plain system fonts for
+   the entire run, which for a game whose whole UI is built on these four
+   type families was a big, constant hit to how finished it looked. All
+   four are variable fonts (one file per family covers its whole weight
+   range, matching exactly what Google's own CDN would have served for the
+   weights this app actually uses — Plus Jakarta Sans's own upstream axis
+   tops out at 800, same as before: requesting 900 already fell back to
+   800 via the CDN too, so that's not a regression), subsetted down to
+   Latin + the extra punctuation/symbol ranges this UI's own copy actually
+   uses (see public/fonts/OFL-LICENSES.txt for how they were built and
+   their licenses — all four are SIL Open Font License, the same license
+   Google Fonts itself redistributes them under). font-display: swap keeps
+   first paint from blocking on the font file the way a bare @import would. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/Inter.woff2') format('woff2-variations'),
+       url('/fonts/Inter.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
+  src: url('/fonts/Nunito.woff2') format('woff2-variations'),
+       url('/fonts/Nunito.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/PlusJakartaSans.woff2') format('woff2-variations'),
+       url('/fonts/PlusJakartaSans.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/JetBrainsMono.woff2') format('woff2-variations'),
+       url('/fonts/JetBrainsMono.woff2') format('woff2');
+}
 
 /* ═══════════ THEME VARIABLES ═══════════ */
 :root[data-theme="dark"] {
