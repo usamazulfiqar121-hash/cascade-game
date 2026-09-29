@@ -1,17 +1,22 @@
 /* ═══════════ DAILY BOARD ═══════════
    Compact "how you did today" card for the daily game-over screen.
    Top 3 of the day's (offline, seeded — see src/leaderboard.js)
-   field, plus the player's own row if they didn't crack the top 3,
-   under a headline rank label. Deliberately small — this sits above
-   the existing countdown/share buttons, not a full scrolling list. */
+   field, plus the player's own row if they didn't crack the top 3.
+   Deliberately small — this sits above the existing countdown/share
+   buttons, not a full scrolling list.
+
+   The field is simulated, and the card says so. It used to headline a
+   percentile ("Top 12% today") computed from a guessed distribution, next
+   to invented player names, so it read as a real ranking of real players.
+   The headline is now the one true thing the card knows -- your position
+   in the field it is showing -- and a caption names the field as
+   simulated. Real comparison lives in Compare Friends. */
 
 import { T } from "../constants";
-import { generateDailyBoard, percentileBeaten, rankLabel } from "../leaderboard";
+import { generateDailyBoard } from "../leaderboard";
 
 export default function DailyBoard({ rounds, dateSeed }) {
   const board = generateDailyBoard(dateSeed, rounds);
-  const pct = percentileBeaten(rounds, dateSeed);
-  const label = rankLabel(pct);
   const player = board.find((e) => e.isPlayer);
   const top3 = board.slice(0, 3);
   const playerInTop3 = player.rank <= 3;
@@ -20,7 +25,7 @@ export default function DailyBoard({ rounds, dateSeed }) {
     <div style={s.card}>
       <div style={s.headline}>
         <span style={s.trophy}>🏆</span>
-        <span style={s.headlineText}>{label} today</span>
+        <span style={s.headlineText}>Ghost field · #{player.rank} of {board.length}</span>
       </div>
 
       <div style={s.rows}>
@@ -34,6 +39,7 @@ export default function DailyBoard({ rounds, dateSeed }) {
           </>
         )}
       </div>
+      <div style={s.caption}>Simulated players, not real accounts</div>
     </div>
   );
 }
@@ -73,6 +79,11 @@ const s = {
     color: T.gold,
   },
   rows: { display: "flex", flexDirection: "column", gap: 6 },
+  caption: {
+    marginTop: 10, textAlign: "center",
+    fontSize: 10, fontWeight: 600,
+    color: T.muted, opacity: 0.8,
+  },
   row: {
     display: "flex", alignItems: "center", gap: 8,
     padding: "4px 2px",

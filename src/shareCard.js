@@ -16,8 +16,11 @@ export function estimateRank(moves, rounds) {
   return { label: "Top 80%" };
 }
 
-export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak) {
-  const today = new Date().toISOString().slice(0, 10);
+/* `dateKey` is the day of the puzzle that was played. It defaults to today,
+   but the caller passes the run's own day: a card left open across UTC
+   midnight would otherwise stamp the NEXT day's date on yesterday's run. */
+export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak, dateKey) {
+  const today = dateKey || new Date().toISOString().slice(0, 10);
   const lines = ["CASCADE Daily " + today, ""];
   (rounds || []).forEach((r) => {
     const eff = r.moveLimit > 0 ? r.moves / r.moveLimit : 0.7;
@@ -29,8 +32,9 @@ export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak) {
   lines.push("");
   lines.push("Total: " + totalMoves + " moves");
 
-  const rank = estimateRank(totalMoves, (rounds || []).length);
-  if (rank.label !== "Complete") lines.push("Rank: " + rank.label + " today");
+  /* No "Rank: Top X% today" line: it was a guess from average moves per
+     round, not a ranking of anyone, and this text is sent to other
+     people. The rounds and moves above are the real result. */
 
   if (streak > 0) {
     lines.push("Streak: " + streak);

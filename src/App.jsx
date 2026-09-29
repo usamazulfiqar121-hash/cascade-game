@@ -479,9 +479,13 @@ export default function Cascade() {
      tutorial card's exit animation. */
   useEffect(() => {
     if (phase !== "gameover") return;
-    if (reduceMotionRef.current) { setGameOverDisplayRound(round); return; }
+    /* Daily counts ROUNDS CLEARED, the number the board, the share text and
+       the friend code all use. `round` is the one you lost on, so the big
+       number used to read one higher than everything else on the card. */
+    const shown = isDailyRef.current ? Math.max(0, round - 1) : round;
+    if (reduceMotionRef.current) { setGameOverDisplayRound(shown); return; }
     setGameOverDisplayRound(0);
-    const target = round;
+    const target = shown;
     const duration = 700;
     const start = performance.now();
     let raf = requestAnimationFrame(function tick(now) {
@@ -1424,7 +1428,10 @@ export default function Cascade() {
     try {
       const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
       const streak = computeStreak(dr, shieldedDates);
-      const text = buildEmojiGrid(dailyRun.rounds, dailyRun.totalMoves, streak, bestStreak);
+      const text = buildEmojiGrid(
+        dailyRun.rounds, dailyRun.totalMoves, streak, bestStreak,
+        dailyKey(dailyRunDateRef.current || new Date()),
+      );
       /* nativeShareText handles the WebView-vs-browser branching (native
          Share plugin on the APK, navigator.share on Chrome, clipboard as
          last resort) and returns a status string we can act on here. */
@@ -1832,7 +1839,7 @@ export default function Cascade() {
                 </div>
                 <div style={{ ...S.ovTitle, animationDelay: "140ms" }} className="fade-up">Run Over</div>
                 <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">{gameOverDisplayRound}</div>
-                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">ROUNDS SURVIVED</div>
+                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? "ROUNDS CLEARED" : "ROUNDS SURVIVED"}</div>
                 {round >= best && round > 1 && (
                   <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">✨ New Personal Best</div>
                 )}
@@ -1858,8 +1865,10 @@ export default function Cascade() {
 
                 {isDaily ? (
                   <>
-                    <DailyBoard rounds={todayRounds} dateSeed={dateToSeed()} />
-                    <FriendCompare rounds={todayRounds} dateKey={dailyKey()} />
+                    <DailyBoard rounds={todayRounds} dateSeed={dateToSeed(dailyRunDateRef.current || new Date())} />
+                    <div style={{ marginBottom: 12 }}>
+                      <FriendCompare rounds={todayRounds} dateKey={dailyKey(dailyRunDateRef.current || new Date())} />
+                    </div>
                     <div style={{
                       textAlign: "center",
                       padding: "16px 20px",
