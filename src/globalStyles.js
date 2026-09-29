@@ -484,12 +484,47 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .dailyDotPulse {
   animation: dailyDotPulse 2s ease-in-out infinite;
 }
+/* ═══ REDUCE MOTION: ONE DIAL, OPT IN ═══
+   --rm-dur is the one place "how long is a reduced-but-not-eliminated
+   transition" is decided. Everything under Reduce Motion still defaults
+   to the original near-zero cut (cheap, and correct for the vast
+   majority of the app's transitions/animations, which nobody is looking
+   at closely at the moment they run -- a toast, a modal pop, a theme
+   cross-fade, a generic button's micro-shrink on press). Only the couple
+   of spots proven to actually need real motion opt IN to --rm-dur by
+   name, rather than --rm-dur being applied to the universal selector
+   and opted OUT of.
+
+   That opt-out shape was tried first and measured worse: giving every
+   element a real ~120ms transition (not just the couple that matter)
+   raised Paint/Layerize/RasterTask roughly 1.5-2x under load (measured
+   with a fixed, board-independent 40-tap sequence so the two variants
+   are compared on identical input, not just "however many moves this
+   run's random board happened to need"). Most of that cost bought
+   nothing anyone would notice -- a generic button's press-shrink,
+   fired on every tap across the whole app, was the single biggest
+   contributor and isn't something players are watching for feedback on.
+
+   So the dial is opt-in, applied only where the user is actually
+   looking when it fires:
+     - .tube-btn's own state transition (below) -- the tube you just
+       tapped, mid-interaction. This is what "tapping, moving" in the
+       report was almost certainly pointing at: it was fully off
+       (transition: none) before, a harder cut than even the original
+       blanket 0.01ms.
+     - .cascade-ball.reduced-in (below) -- the ball itself.
+   Everything else -- every other button, every toast, modal, counter
+   pop, screen fade -- keeps the cheap near-zero default. */
 @media (prefers-reduced-motion: reduce) {
+  :root { --rm-dur: 120ms; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+:root[data-reduce-motion="1"] {
+  --rm-dur: 120ms;
 }
 :root[data-reduce-motion="1"] *,
 :root[data-reduce-motion="1"] *::before,
@@ -499,22 +534,22 @@ button:active:not(:disabled) { transform: scale(0.97); }
   transition-duration: 0.01ms !important;
 }
 
-/* The two rules above only squash duration -- the animation/transition
-   still runs its full style-recalc + paint + (re)layerize pipeline, just
-   compressed into a sliver of a frame, so it doesn't actually cut a
-   throttled device's work the way "reduce motion" implies it should. For
-   .cascade-ball that's handled in Tube.jsx/JS (see .no-anim above) because
-   it needs a JS-side decision (skip the flight sync too); these two are
-   pure CSS so they're fixed the same way right here: drop the animation/
-   transition entirely and keep a static equivalent of whatever visual
-   state it was providing, instead of just fast-forwarding through it. */
+/* hintFrom's pulse is a loop whose mid-cycle box-shadow value would
+   otherwise freeze at an arbitrary, possibly-odd point once
+   iteration-count is forced to 1 -- a static equivalent of the glow it
+   provides reads cleaner than any single frozen frame of the pulse. */
 @media (prefers-reduced-motion: reduce) {
   .tube-btn[data-state="hintFrom"] {
     animation: none;
     box-shadow: 0 0 0 4px var(--go-soft);
   }
+  /* Opt-in #1: the tube you just tapped. Was transition: none -- a
+     harder cut than even the old blanket rule -- so selecting, hinting,
+     and solving a tube used to hard-snap while everything else merely
+     fast-forwarded. A short, real duration here (no bounce -- keep
+     whatever easing curve the property already had) instead. */
   .tube-btn {
-    transition: none !important;
+    transition-duration: var(--rm-dur) !important;
   }
 }
 :root[data-reduce-motion="1"] .tube-btn[data-state="hintFrom"] {
@@ -522,41 +557,35 @@ button:active:not(:disabled) { transform: scale(0.97); }
   box-shadow: 0 0 0 4px var(--go-soft);
 }
 :root[data-reduce-motion="1"] .tube-btn {
-  transition: none !important;
+  transition-duration: var(--rm-dur) !important;
 }
 
-/* Reduce Motion, take 2 -- the ball. Tube.jsx's skipAnim used to render
-   .no-anim here: animation:none, a hard, zero-duration cut for the ball's
-   entrance AND (via the blanket rule above) its pick-up/settle transform-
-   transition. That's the cheapest possible option and correctly avoids
-   ballDrop/ballLand's real cost (Bug A), but a ball that simply IS at its
-   destination with no visual continuity at all reads as broken or
-   stuttery -- exactly what got reported as "laggy" even though it
-   measured faster than full motion, not slower. Reduced motion means
-   simplified, not eliminated. .reduced-in swaps in a short, cheap,
-   single-stage fade/scale (no bounce, no squash) and gives the pick-up/
-   settle transition a real, brief duration instead of 0.01ms -- both need
-   their own !important longhands here, at the same specificity as the
-   blanket rule above but later in the stylesheet, to actually win instead
-   of being squashed back down to instant. */
+/* Opt-in #2: the ball. Its entrance keyframe (ballDrop/ballLand) is
+   genuinely expensive (a 4-stage squash-and-rebound, mounted several-at-
+   once on every pour), so it's skipped in JS rather than just shortened
+   -- Tube.jsx's skipAnim renders .reduced-in instead. But nothing at all
+   (0ms) reads the same way instant-everywhere did: .reduced-in swaps in
+   a short, cheap, single-stage fade/scale (no bounce, no squash) for the
+   entrance, and gives its pick-up/settle transform the same --rm-dur
+   instead of the near-zero default. */
 @keyframes ballSettleReduced {
   0%   { opacity: 0; transform: scale(0.94); }
   100% { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
   .cascade-ball.reduced-in {
-    animation: ballSettleReduced 120ms ease-out backwards;
-    animation-duration: 120ms !important;
+    animation: ballSettleReduced var(--rm-dur) ease-out backwards;
+    animation-duration: var(--rm-dur) !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 130ms !important;
+    transition-duration: var(--rm-dur) !important;
     transition-timing-function: ease !important;
   }
 }
 :root[data-reduce-motion="1"] .cascade-ball.reduced-in {
-  animation: ballSettleReduced 120ms ease-out backwards;
-  animation-duration: 120ms !important;
+  animation: ballSettleReduced var(--rm-dur) ease-out backwards;
+  animation-duration: var(--rm-dur) !important;
   animation-iteration-count: 1 !important;
-  transition-duration: 130ms !important;
+  transition-duration: var(--rm-dur) !important;
   transition-timing-function: ease !important;
 }
 
