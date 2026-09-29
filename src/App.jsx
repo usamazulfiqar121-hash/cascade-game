@@ -212,7 +212,7 @@ export default function Cascade() {
   const persistDailyRun = useCallback((run) => {
     const runDate = dailyRunDateRef.current;
     if (!runDate || dailyKey(runDate) !== dailyKey()) return;
-    saveDailyRun({ dateKey: dailyKey(runDate), ...run });
+    saveDailyRun({ dateKey: dailyKey(runDate), bestAtStart: dailyBestAtStartRef.current, ...run });
   }, []);
   /* True when the run on screen belongs to an earlier UTC day than today
      (started before midnight, still playing after it). Its game-over card
@@ -354,6 +354,13 @@ export default function Cascade() {
   const [particles, setParticles] = useState([]);
   const [bonusPops, setBonusPops] = useState([]);
   const [best, setBest] = useState(0);
+  /* Daily has its own personal best: most rounds CLEARED in one daily run.
+     Daily runs used to write into `best`, the main game's record (and to
+     count the round they LOST on), so a daily result showed up as "New
+     Personal Best" against a number earned with undo and hints. */
+  const [dailyBest, setDailyBest] = useState(0);
+  const dailyBestAtStartRef = useRef(0);  /* dailyBest when this run began, to tell a new best from a tie */
+  const dailyNewBest = isDaily && todayRounds >= 1 && todayRounds > dailyBestAtStartRef.current;
   const [achievements, setAchievements] = useState([]);
   const [achToast, setAchToast] = useState(null);
   const [shareImage, setShareImage] = useState(null);
@@ -391,6 +398,8 @@ export default function Cascade() {
     try {
       const v = localStorage.getItem(BEST_KEY);
       if (v) setBest(parseInt(v, 10) || 0);
+      const dbv = localStorage.getItem("cascade:dailyBest");
+      if (dbv) setDailyBest(parseInt(dbv, 10) || 0);
       const s = localStorage.getItem("cascade:soundOn");
       if (s === "0") { setSoundOn(false); Snd.setSfx(false); }
       const vb = localStorage.getItem("cascade:vibeOn");
@@ -863,9 +872,9 @@ export default function Cascade() {
            through every round clear and only becomes terminal in the
            newMovesLeft <= 0 branch below. */
         if (isDaily) {
-          if (round > best) {
-            setBest(round);
-            try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
+          if (round > dailyBest) {
+            setDailyBest(round);
+            try { localStorage.setItem("cascade:dailyBest", String(round)); } catch {}
           }
           const clearedRun = {
             rounds: [...dailyRun.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
@@ -969,8 +978,8 @@ export default function Cascade() {
             : null;
         if (failedState) clearDailyRun();
         setTimeout(() => {
-          // Save best if this is a new best
-          if (round > best) {
+          // Save best if this is a new best (main game only -- see dailyBest)
+          if (!isDaily && round > best) {
             setBest(round);
             try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
           }
@@ -996,7 +1005,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest]);
 
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing" || roundDecidedRef.current) return;
@@ -1185,11 +1194,13 @@ export default function Cascade() {
      from inside restartRun() itself: Settings > Reset calls restartRun()
      right after setBest(0), and saving here would immediately undo that. */
   const saveBestRound = useCallback(() => {
-    if (round > best) {
+    /* A daily run records its own best as it clears rounds, and must not
+       leak into the main game's. */
+    if (!isDaily && round > best) {
       setBest(round);
       try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
     }
-  }, [round, best]);
+  }, [round, best, isDaily]);
 
   /* Single entry point for starting a new run — increments stats safely.
      Used by Home Play, Home Daily, and Game Over "Start Over". */
@@ -1252,6 +1263,7 @@ export default function Cascade() {
                 ? pickDailyUpgrades(dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate))
                 : [],
           };
+          dailyBestAtStartRef.current = Number.isFinite(saved.bestAtStart) ? saved.bestAtStart : dailyBest;
           cancelDailyReminder();
           setDailyState(fresh);
           setIsDaily(true);
@@ -1275,6 +1287,7 @@ export default function Cascade() {
          every daily round is reproducible from date + round alone. */
       const runDate = new Date();
       dailyRunDateRef.current = runDate;
+      dailyBestAtStartRef.current = dailyBest;
       const seed = dailyRoundSeed(1, DAILY_STREAM.board, runDate);
       /* Save "in_progress" state before starting */
       const st =
@@ -1314,7 +1327,7 @@ export default function Cascade() {
     }
     setScreen("game");
     return true;
-  }, [recordGameStart, restartRun, dailyResults, showToast]);
+  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest]);
 
   /* ═══════════ NAVIGATION — Back button infra ═══════════
      Phase 1: only infrastructure. Nothing wired yet.
@@ -1645,7 +1658,7 @@ export default function Cascade() {
             {isDaily && <span style={S.dailyBadge}>DAILY</span>}
             Round {round}
           </div>
-          <div style={S.colorCount}>{level.colorCount} colors · best {best}</div>
+          <div style={S.colorCount}>{level.colorCount} colors · best {isDaily ? dailyBest : best}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ textAlign: "right" }}>
@@ -1835,13 +1848,15 @@ export default function Cascade() {
                     whole result landing on screen in one flat block, since
                     this is the one moment that sums up the entire run. */}
                 <div style={{ ...S.ovIconCircle, animationDelay: "80ms" }} className="fade-up">
-                  <span style={{ fontSize: 32 }}>{round >= best && round > 1 ? "🏆" : "💥"}</span>
+                  <span style={{ fontSize: 32 }}>{(isDaily ? dailyNewBest : round >= best && round > 1) ? "🏆" : "💥"}</span>
                 </div>
                 <div style={{ ...S.ovTitle, animationDelay: "140ms" }} className="fade-up">Run Over</div>
                 <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">{gameOverDisplayRound}</div>
-                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? "ROUNDS CLEARED" : "ROUNDS SURVIVED"}</div>
-                {round >= best && round > 1 && (
-                  <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">✨ New Personal Best</div>
+                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : "ROUNDS SURVIVED"}</div>
+                {(isDaily ? dailyNewBest : round >= best && round > 1) && (
+                  <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">
+                    {isDaily ? "✨ New Daily Best" : "✨ New Personal Best"}
+                  </div>
                 )}
                 {nearMiss && (
                   <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">😮 1 move away!</div>
@@ -1854,8 +1869,8 @@ export default function Cascade() {
                     <div style={S.ovStatLabel}>Upgrades</div>
                   </div>
                   <div style={S.ovStat}>
-                    <div style={S.ovStatNum}>{best}</div>
-                    <div style={S.ovStatLabel}>Best</div>
+                    <div style={S.ovStatNum}>{isDaily ? dailyBest : best}</div>
+                    <div style={S.ovStatLabel}>{isDaily ? "Daily Best" : "Best"}</div>
                   </div>
                   <div style={S.ovStat}>
                     <div style={S.ovStatNum}>{finalMovesLeft}</div>
@@ -2039,6 +2054,7 @@ export default function Cascade() {
               onConfirm: () => {
                 try {
                   localStorage.removeItem(BEST_KEY);
+                  localStorage.removeItem("cascade:dailyBest");
                   localStorage.removeItem("cascade:tutorialSeen");
                   localStorage.removeItem("cascade:stats");
                   localStorage.removeItem("cascade:dailyResults");
@@ -2047,6 +2063,7 @@ export default function Cascade() {
                   localStorage.removeItem("cascade:hasPlayedOnce");
                 } catch {}
                 setBest(0);
+                setDailyBest(0);
                 setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
                 /* These three used to only be cleared in localStorage, never
                    in the live React state that actually drives the screen —
