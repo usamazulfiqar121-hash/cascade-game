@@ -278,7 +278,10 @@ export function computeStreak(results, shieldedDates = []) {
   const today = new Date();
   const todayDone = !!results[dailyKey(today)];
   const start = todayDone ? 0 : 1;
-  for (let i = start; i < 365; i++) {
+  /* Stops at the first missed day, so this only ever walks as far as the
+     player's real streak. The cap is a safety net against a corrupt save,
+     not a limit: it used to be 365, which froze a 400-day streak at 365. */
+  for (let i = start; i < 36500; i++) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - i);
     const key = dailyKey(d);
