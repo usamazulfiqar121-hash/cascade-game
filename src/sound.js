@@ -1,25 +1,20 @@
 /* ═══════════ AUDIO + HAPTICS LAYER ═══════════
-   Self-contained. Exports Snd (SFX), buzz (vibrate),
-   setVibe (enable/disable haptics). */
+   Self-contained. Exports Snd (SFX), Music (ambient bed),
+   Haptic (taps), setVibe (enable/disable haptics). */
 
 /* ─── Haptics ─── */
 let VIBE_ON = true;
 export function setVibe(v) { VIBE_ON = v; }
-export function buzz(ms) {
-  if (!VIBE_ON) return;
-  try { navigator?.vibrate?.(ms); } catch {}
-}
 
 /* Haptics plugin loader — caches the PROMISE, not a boolean flag, so
    concurrent calls during the first import all await the same in-flight
    load instead of racing past the guard and getting a still-null plugin.
    Old pattern set hapticsLoadAttempted=true synchronously, so any call
-   between "import started" and "import resolved" got null and fell back
-   to navigator.vibrate() — a no-op in Android WebView without a VIBRATE
-   manifest permission. That's why the first several taps in an APK
-   session felt dead. Also: on failure, reset the promise so a later call
-   retries, instead of permanently disabling haptics after one transient
-   chunk-load error. */
+   between "import started" and "import resolved" got null and produced no
+   haptic at all. That's why the first several taps in an APK session felt
+   dead. Also: on failure, reset the promise so a later call retries,
+   instead of permanently disabling haptics after one transient chunk-load
+   error. */
 let hapticsPlugin = null;
 let hapticsPromise = null;
 
@@ -39,38 +34,54 @@ function getHapticsPlugin() {
   return hapticsPromise;
 }
 
-function impact(style, fallback) {
+/* Taps go through Haptics.vibrate() — which is a plain one-shot
+   VibrationEffect on Android — instead of Haptics.impact(), which the
+   same plugin implements as a two-entry amplitude waveform
+   (createWaveform({0,43},{0,180}) and friends, see
+   HapticsImpactType.java). On Samsung/OneUI that short two-entry form
+   is dropped without an error: no rejection, no vibration, so the
+   promise resolves and the catch below never even sees it. The same
+   signature shows up outside Capacitor too (flutter#144226,
+   flutter#73987, tauri plugins-workspace#2023): impact/selection dead,
+   notification alive, vibrate alive. notification() survives because
+   its patterns are four to six entries long rather than two.
+   Intensity is therefore graded by duration instead of amplitude.
+   The old code worked around this by climbing the style names
+   (light→MEDIUM, medium→HEAVY) on the theory that Samsung just mapped
+   them too softly; that only made it worse, since MEDIUM and HEAVY
+   share the same broken two-entry shape, and it flattened medium and
+   heavy into the same call. Falls back to nothing on failure — the
+   previous navigator.vibrate() fallback could not run in an Android
+   WebView at all, so it only ever masked real plugin errors. */
+function tick(duration) {
   if (!VIBE_ON) return;
   getHapticsPlugin().then((plugin) => {
-    if (plugin) plugin.impact({ style }).catch(() => buzz(fallback));
-    else buzz(fallback);
+    if (plugin) plugin.vibrate({ duration }).catch(() => {});
   });
 }
 
-function notification(type, fallback) {
+/* notification() is left exactly as it was: its longer multi-entry
+   waveforms already fire on the devices that dropped the two-entry
+   impact ones, so the duration-grading workaround does not apply. */
+function notification(type) {
   if (!VIBE_ON) return;
   getHapticsPlugin().then((plugin) => {
-    if (plugin) plugin.notification({ type }).catch(() => buzz(fallback));
-    else buzz(fallback);
+    if (plugin) plugin.notification({ type }).catch(() => {});
   });
 }
 
-/* Escalated one step above the plugin's "intended" style names: on
-   Samsung (confirmed via on-device testing) LIGHT impact is effectively
-   imperceptible, MEDIUM is what LIGHT should feel like on a Pixel, and
-   HEAVY reads as a proper tap. Using the literal LIGHT/MEDIUM here
-   means every pour/tap that was supposed to tick felt like nothing on
-   the target device — the plugin fires correctly, the OS just maps it
-   too soft. Fallback vibrate ms bumped the same way, since some older
-   WebViews route to navigator.vibrate() and had the same too-short-to-
-   feel problem. */
+/* 14/28/55ms are a starting guess at tick / tap / thud, not a tuned
+   ladder — same caveat as the music mix levels further down. Retune by
+   ear on a real device, particularly on Samsung, where short one-shots
+   need to be longer than they do on a Pixel to read as a distinct
+   tick. */
 export const Haptic = {
-  light:   () => impact("MEDIUM", 15),
-  medium:  () => impact("HEAVY",  25),
-  heavy:   () => impact("HEAVY",  40),
-  success: () => notification("SUCCESS", 30),
-  warning: () => notification("WARNING", [10, 40, 10]),
-  error:   () => notification("ERROR",   60),
+  light:   () => tick(14),
+  medium:  () => tick(28),
+  heavy:   () => tick(55),
+  success: () => notification("SUCCESS"),
+  warning: () => notification("WARNING"),
+  error:   () => notification("ERROR"),
 };
 
 /* ─── Web Audio SFX ─── */
