@@ -33,7 +33,7 @@ export default function UpgradeCard({ upgrade, onPick }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 900, fontSize: 16 }}>{upgrade.name}</div>
         <div style={{ fontSize: 12, fontWeight: 600, color: T.muted, marginTop: 2, lineHeight: 1.4 }}>{upgrade.desc}</div>
-        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: r.color, marginTop: 4, textTransform: "uppercase" }}>{r.name}</div>
+        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: r.color, marginTop: 4, textTransform: "uppercase" }}>{r.name}{upgrade.dailyOnly ? " \u00b7 Daily only" : ""}</div>
       </div>
     </button>
   );

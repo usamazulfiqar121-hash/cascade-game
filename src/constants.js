@@ -115,5 +115,35 @@ export const UPGRADES = [
   /* Daily-challenge exclusive — never offered by pickRandomUpgrades, so the
      daily habit has a payoff normal runs can't get, not just the same pool
      seeded differently. */
-  { id: "dawn", name: "Dawn Bonus", desc: "+6 moves every round — today only", icon: "🌅", rarity: 3, value: 6, dailyOnly: true },
+  /* Second Wind is spent by turning its id into "wind_used" in the run's
+     upgrade list (App.jsx), so a saved daily run remembers it without any
+     extra field. "wind_used" is not in this list on purpose: the run strip
+     skips ids it doesn't know, so a spent card just disappears. */
+  { id: "wind", name: "Second Wind", desc: "Once: out of moves? Get +5 and play on", icon: "💨", rarity: 3, dailyOnly: true },
+  /* Retired. +6 moves for Rare was strictly worse than +8 Moves at the same
+     rarity, so nobody had a reason to take the "daily exclusive". Kept in
+     the list only so a run saved with it still resolves; pickDailyUpgrades
+     skips retired cards. */
+  { id: "dawn", name: "Dawn Bonus", desc: "+6 moves every round", icon: "🌅", rarity: 3, value: 6, dailyOnly: true, retired: true },
+];
+
+/* ═══════════ DAILY TWISTS ═══════════
+   One rule change per day, the same for everyone (the day picks it, see
+   pickDailyTwist in gameLogic.js) and applied to the whole run. Blessings,
+   curses and one trade-off, because a day of only good news is not a rule
+   and a day of only bad news is not fun. No twist gives an extra empty tube:
+   in a simple player model that one change moved a run from about 9 rounds
+   to about 40 (a 3-move cost did not dent it, and 5 or more made the first
+   rounds unwinnable), because it removes the dead ends that end most runs.
+   The effects themselves live where they act: move/board changes in
+   generateLevel, Lucky Day in the pour
+   handler, Feast & Famine in the upgrade offer. */
+export const DAILY_TWISTS = [
+  { id: "tailwind", name: "Tailwind", icon: "🌬️", kind: "blessing", desc: "+3 moves every round" },
+  { id: "warm", name: "Warm Start", icon: "🌅", kind: "blessing", desc: "One colour starts already sorted" },
+  { id: "lucky", name: "Lucky Day", icon: "🍀", kind: "blessing", desc: "+25% chance of a free move on every pour" },
+  { id: "thin", name: "Thin Margins", icon: "⏳", kind: "curse", desc: "2 fewer moves every round" },
+  { id: "rainbow", name: "Rainbow", icon: "🌈", kind: "curse", desc: "Colours ramp up two rounds sooner" },
+  { id: "tide", name: "Rising Tide", icon: "🌊", kind: "curse", desc: "1 fewer move for every 3 rounds you clear" },
+  { id: "feast", name: "Feast & Famine", icon: "⚖️", kind: "mixed", desc: "+5 moves every round, but only 2 cards" },
 ];

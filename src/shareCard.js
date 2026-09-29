@@ -16,12 +16,16 @@ export function estimateRank(moves, rounds) {
   return { label: "Top 80%" };
 }
 
-/* `dateKey` is the day of the puzzle that was played. It defaults to today,
+/* `extra` is optional: { twist, score } of the run being shared.
+   `dateKey` is the day of the puzzle that was played. It defaults to today,
    but the caller passes the run's own day: a card left open across UTC
    midnight would otherwise stamp the NEXT day's date on yesterday's run. */
-export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak, dateKey) {
+export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak, dateKey, extra = {}) {
   const today = dateKey || new Date().toISOString().slice(0, 10);
-  const lines = ["CASCADE Daily " + today, ""];
+  const lines = ["CASCADE Daily " + today];
+  /* Same day, same twist for everyone, so it belongs in what is sent. */
+  if (extra.twist) lines.push(extra.twist.icon + " " + extra.twist.name);
+  lines.push("");
   (rounds || []).forEach((r) => {
     const eff = r.moveLimit > 0 ? r.moves / r.moveLimit : 0.7;
     let sq = "\uD83D\uDFE9";
@@ -31,6 +35,7 @@ export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak, dateKey) 
   });
   lines.push("");
   lines.push("Total: " + totalMoves + " moves");
+  if (Number.isFinite(extra.score)) lines.push("Score: " + extra.score.toLocaleString("en-US"));
 
   /* No "Rank: Top X% today" line: it was a guess from average moves per
      round, not a ranking of anyone, and this text is sent to other

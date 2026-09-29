@@ -9,6 +9,8 @@ import {
   loadDailyState, saveDailyState,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
   dailyRoundSeed, dailyLuckRoll, DAILY_STREAM,
+  pickDailyTwist, LUCKY_DAY_BONUS, FEAST_CARD_COUNT, WIND_MOVES,
+  dailyScore, DAILY_BEST_SCORE_KEY,
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
 } from "./gameLogic";
 import { S } from "./theme";
@@ -178,6 +180,10 @@ export default function Cascade() {
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
   const [toast, setToast] = useState(null);
   const [dailyRun, setDailyRun] = useState({ rounds: [], totalMoves: 0 });
+  /* Today's rule change (see DAILY_TWISTS in constants.js), fixed when the
+     run starts from the run's own date, so a run that crosses UTC midnight
+     keeps the twist it began with. null outside a daily run. */
+  const [dailyTwist, setDailyTwist] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
   /* Today's rounds-cleared count, good across a same-day app restart —
      dailyRun resets to empty on reload (session-only React state), but
@@ -362,6 +368,10 @@ export default function Cascade() {
      count the round they LOST on), so a daily result showed up as "New
      Personal Best" against a number earned with undo and hints. */
   const [dailyBest, setDailyBest] = useState(0);
+  /* Personal best daily SCORE (see dailyScore in gameLogic.js), and what the
+     run that just ended scored, for the game-over card. */
+  const [dailyBestScore, setDailyBestScore] = useState(0);
+  const [dailyScoreResult, setDailyScoreResult] = useState(null);
   const dailyBestAtStartRef = useRef(0);  /* dailyBest when this run began, to tell a new best from a tie */
   const dailyNewBest = isDaily && todayRounds >= 1 && todayRounds > dailyBestAtStartRef.current;
   const [achievements, setAchievements] = useState([]);
@@ -403,6 +413,8 @@ export default function Cascade() {
       if (v) setBest(parseInt(v, 10) || 0);
       const dbv = localStorage.getItem("cascade:dailyBest");
       if (dbv) setDailyBest(parseInt(dbv, 10) || 0);
+      const dbs = localStorage.getItem(DAILY_BEST_SCORE_KEY);
+      if (dbs) setDailyBestScore(parseInt(dbs, 10) || 0);
       const s = localStorage.getItem("cascade:soundOn");
       if (s === "0") { setSoundOn(false); Snd.setSfx(false); }
       const vb = localStorage.getItem("cascade:vibeOn");
@@ -563,7 +575,7 @@ export default function Cascade() {
     toastTimerRef.current = setTimeout(() => {
       setToast((t) => t ? { ...t, exiting: true } : null);
       toastTimerRef.current = setTimeout(() => setToast(null), 240);
-    }, 2600);
+    }, config.duration ?? 2600);
   }, []);
 
   useEffect(() => {
@@ -772,7 +784,8 @@ export default function Cascade() {
       // bigger combo can make that same burst bigger, not just score more.
       // tier: 0 = plain pour, 1 = lucky roll, 2 = combo bonus, 3 = mega bonus.
       let bonus = 0, tier = 0;
-      const luckyChance = getLuckyChance(runUpgrades);
+      const luckyChance =
+        getLuckyChance(runUpgrades) + (isDaily && dailyTwist?.id === "lucky" ? LUCKY_DAY_BONUS : 0);
       /* Daily: the roll is fixed by (day, round, pour number) so every
          player with the same luck upgrade gets the same drops. Math.random
          here made the daily a different game for each player, and let
@@ -817,6 +830,29 @@ export default function Cascade() {
       const newMovesUsed = moves + 1;
       recordMoves(1);
       recordCombo(newCombo);
+      /* Second Wind (daily-only card): the pour that would end the run spends
+         it instead and buys WIND_MOVES more. Spent means "wind" becomes
+         "wind_used" in the upgrade list, which is also what the saved run
+         stores, so leaving and coming back can't hand it back. */
+      const windIdx = runUpgrades.indexOf("wind");
+      const windNow =
+        isDaily &&
+        windIdx !== -1 &&
+        !isSolved(next) &&
+        level.moveLimit + bonusMoves + bonus - newMovesUsed <= 0;
+      if (windNow) bonus += WIND_MOVES;
+      const upgradesNow = windNow
+        ? runUpgrades.map((id, i) => (i === windIdx ? "wind_used" : id))
+        : runUpgrades;
+      if (windNow) {
+        setRunUpgrades(upgradesNow);
+        showToast({
+          icon: "💨",
+          color: "var(--gold)",
+          title: "Second Wind!",
+          message: `+${WIND_MOVES} moves \u2014 play on`,
+        });
+      }
       const newBonus = bonusMoves + bonus;
       setMoves(newMovesUsed);
       if (bonus > 0) {
@@ -843,7 +879,7 @@ export default function Cascade() {
         persistDailyRun({
           phase: "playing",
           round,
-          upgrades: runUpgrades,
+          upgrades: upgradesNow,
           genPrevLeft: lastRoundMovesLeft,
           nextPrevLeft: 0,
           tubes: next,
@@ -880,7 +916,10 @@ export default function Cascade() {
             try { localStorage.setItem("cascade:dailyBest", String(round)); } catch {}
           }
           const clearedRun = {
-            rounds: [...dailyRun.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
+            rounds: [
+              ...dailyRun.rounds,
+              { round, moves: newMovesUsed, moveLimit: level.moveLimit, left: Math.max(0, remainingAtClear) },
+            ],
             totalMoves: dailyRun.totalMoves + newMovesUsed,
           };
           setDailyRun(clearedRun);
@@ -926,7 +965,7 @@ export default function Cascade() {
             setPendingUpgrades(
               pickDailyUpgrades(
                 dailyRoundSeed(round, DAILY_STREAM.upgrades, dailyRunDateRef.current || new Date()),
-                3,
+                dailyTwist?.id === "feast" ? FEAST_CARD_COUNT : 3,
                 runUpgrades,
               ),
             );
@@ -992,6 +1031,15 @@ export default function Cascade() {
           }
 
           setFinalMovesLeft(Math.max(0, newMovesLeft));
+          if (isDaily) {
+            const score = dailyScore(dailyRun.rounds);
+            const isNew = score > 0 && score > dailyBestScore;
+            if (isNew) {
+              setDailyBestScore(score);
+              try { localStorage.setItem(DAILY_BEST_SCORE_KEY, String(score)); } catch {}
+            }
+            setDailyScoreResult({ score, isNew, best: isNew ? score : dailyBestScore });
+          }
 
           /* Daily failure: show it (the state itself was saved above) */
           if (failedState) {
@@ -1012,7 +1060,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast]);
 
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing" || roundDecidedRef.current) return;
@@ -1153,7 +1201,10 @@ export default function Cascade() {
     const nextSeed = isDaily
       ? dailyRoundSeed(nextRound, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
       : null;
-    const nextLevel = generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound);
+    const nextLevel = generateLevel(
+      nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound,
+      isDaily ? dailyTwist : null,
+    );
     setLevel(nextLevel);
     setRetriedThisRound(false);
     if (isDaily) {
@@ -1173,15 +1224,15 @@ export default function Cascade() {
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound, dailyRun, persistDailyRun]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist]);
 
   const retry = useCallback(() => {
     const seed = isDaily
       ? dailyRoundSeed(round, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
       : null;
-    setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
+    setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed, false, isDaily ? dailyTwist : null));
     setRetriedThisRound(true);
-  }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
+  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, dailyTwist]);
 
   const restartRun = useCallback(() => {
     setRound(1);
@@ -1190,6 +1241,7 @@ export default function Cascade() {
     setShareImage(null);
     setShared(false);
     setIsDaily(false);
+    setDailyTwist(null);
     setRetriedThisRound(false);
     setUndoUsedThisRun(false);
     setLevel(generateLevel(1, [], 0));
@@ -1253,9 +1305,11 @@ export default function Cascade() {
       const saved = loadDailyRun();
       if (saved) {
         const runDate = new Date();
+        const twist = pickDailyTwist(runDate);
         const lvl = generateLevel(
           saved.round, saved.upgrades, saved.genPrevLeft,
           dailyRoundSeed(saved.round, DAILY_STREAM.board, runDate),
+          false, twist,
         );
         if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
           dailyRunDateRef.current = runDate;
@@ -1269,7 +1323,7 @@ export default function Cascade() {
               saved.phase === "upgrade"
                 ? pickDailyUpgrades(
                     dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate),
-                    3,
+                    twist.id === "feast" ? FEAST_CARD_COUNT : 3,
                     saved.upgrades,
                   )
                 : [],
@@ -1277,6 +1331,8 @@ export default function Cascade() {
           dailyBestAtStartRef.current = Number.isFinite(saved.bestAtStart) ? saved.bestAtStart : dailyBest;
           setDailyState(fresh);
           setIsDaily(true);
+          setDailyTwist(twist);
+          setDailyScoreResult(null);
           setRound(saved.round);
           setRunUpgrades(saved.upgrades);
           setLastRoundMovesLeft(saved.phase === "upgrade" ? saved.nextPrevLeft : saved.genPrevLeft);
@@ -1299,6 +1355,7 @@ export default function Cascade() {
       dailyRunDateRef.current = runDate;
       dailyBestAtStartRef.current = dailyBest;
       const seed = dailyRoundSeed(1, DAILY_STREAM.board, runDate);
+      const twist = pickDailyTwist(runDate);
       /* Save "in_progress" state before starting */
       const st =
         fresh && fresh.status === "in_progress"
@@ -1308,6 +1365,15 @@ export default function Cascade() {
       clearDailyRun();
       syncDailyReminders();
       setIsDaily(true);
+      setDailyTwist(twist);
+      setDailyScoreResult(null);
+      showToast({
+        icon: twist.icon,
+        color: twist.kind === "curse" ? "var(--danger)" : twist.kind === "mixed" ? "var(--gold)" : "var(--go)",
+        title: `Today's twist: ${twist.name}`,
+        message: twist.desc,
+        duration: 4200,
+      });
       setRound(1);
       setRunUpgrades([]);
       setLastRoundMovesLeft(0);
@@ -1316,7 +1382,7 @@ export default function Cascade() {
       setShareImage(null);
       setShared(false);
       setDailyRun({ rounds: [], totalMoves: 0 });
-      setLevel(generateLevel(1, [], 0, seed));
+      setLevel(generateLevel(1, [], 0, seed, false, twist));
     } else if (!resumed) {
       restartRun();
     }
@@ -1439,6 +1505,7 @@ export default function Cascade() {
       const text = buildEmojiGrid(
         dailyRun.rounds, dailyRun.totalMoves, streak, bestStreak,
         dailyKey(dailyRunDateRef.current || new Date()),
+        { twist: dailyTwist, score: dailyScore(dailyRun.rounds) },
       );
       /* nativeShareText handles the WebView-vs-browser branching (native
          Share plugin on the APK, navigator.share on Chrome, clipboard as
@@ -1457,7 +1524,7 @@ export default function Cascade() {
     } catch (err) {
       console.warn("Share daily failed:", err);
     }
-  }, [dailyRun, showToast, shieldedDates, bestStreak]);
+  }, [dailyRun, showToast, shieldedDates, bestStreak, dailyTwist]);
 
   const generateShare = useCallback(() => {
     try {
@@ -1747,12 +1814,44 @@ export default function Cascade() {
           where its tube had just moved to. A fixed 36px slot (the badge's
           28px + its 8px gap) means the board never moves. */}
       <div style={{ height: 36, flexShrink: 0, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
-        {comboCount >= 2 && (
+        {comboCount >= 2 ? (
           <div style={{ ...S.comboBadge, marginBottom: 0 }} className="comboPop" key={comboCount}>
             <span style={S.comboFlame}>🔥</span>
             <span style={S.comboText}>{comboCount}× combo</span>
           </div>
-        )}
+        ) : isDaily && dailyTwist ? (
+          /* Today's twist lives in this same fixed slot while no combo is
+             showing, so it costs no layout. Tap it to read the rule again. */
+          (() => {
+            const c = dailyTwist.kind === "curse" ? T.danger : dailyTwist.kind === "mixed" ? T.gold : T.go;
+            return (
+              <button
+                onClick={() =>
+                  showToast({
+                    icon: dailyTwist.icon,
+                    color: c,
+                    title: `Today's twist: ${dailyTwist.name}`,
+                    message: dailyTwist.desc,
+                    duration: 4200,
+                  })
+                }
+                aria-label={`Today's twist: ${dailyTwist.name}. ${dailyTwist.desc}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  height: 28, padding: "0 12px", borderRadius: 14,
+                  background: `color-mix(in srgb, ${c} 14%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${c} 40%, transparent)`,
+                  color: T.ink, cursor: "pointer",
+                  fontFamily: "'Nunito', sans-serif", fontSize: 12, fontWeight: 800,
+                  letterSpacing: "0.01em",
+                }}
+              >
+                <span aria-hidden="true">{dailyTwist.icon}</span>
+                <span>{dailyTwist.name}</span>
+              </button>
+            );
+          })()
+        ) : null}
       </div>
 
       {runUpgrades.length > 0 && (
@@ -1875,6 +1974,35 @@ export default function Cascade() {
 
                 {isDaily ? (
                   <>
+                    {dailyScoreResult && (
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "12px 16px", marginBottom: 12, borderRadius: 14,
+                          background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
+                          border: `1px solid ${T.edge}`,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: T.muted, textTransform: "uppercase" }}>
+                            Daily score
+                          </div>
+                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 800, color: T.gold, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+                            {dailyScoreResult.score.toLocaleString("en-US")}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", fontSize: 11, fontWeight: 800, color: dailyScoreResult.isNew ? T.go : T.muted }}>
+                          {dailyScoreResult.isNew
+                            ? "New personal best!"
+                            : `Best ${dailyScoreResult.best.toLocaleString("en-US")}`}
+                          {dailyTwist && (
+                            <div style={{ fontWeight: 700, color: T.muted, marginTop: 3 }}>
+                              {dailyTwist.icon} {dailyTwist.name}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <DailyBoard rounds={todayRounds} dateSeed={dateToSeed(dailyRunDateRef.current || new Date())} />
                     <div style={{ marginBottom: 12 }}>
                       <FriendCompare rounds={todayRounds} dateKey={dailyKey(dailyRunDateRef.current || new Date())} />
@@ -2050,6 +2178,7 @@ export default function Cascade() {
                 try {
                   localStorage.removeItem(BEST_KEY);
                   localStorage.removeItem("cascade:dailyBest");
+                  localStorage.removeItem(DAILY_BEST_SCORE_KEY);
                   localStorage.removeItem("cascade:tutorialSeen");
                   localStorage.removeItem("cascade:stats");
                   localStorage.removeItem("cascade:dailyResults");
@@ -2059,6 +2188,8 @@ export default function Cascade() {
                 } catch {}
                 setBest(0);
                 setDailyBest(0);
+                setDailyBestScore(0);
+                setDailyScoreResult(null);
                 setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
                 /* These three used to only be cleared in localStorage, never
                    in the live React state that actually drives the screen —

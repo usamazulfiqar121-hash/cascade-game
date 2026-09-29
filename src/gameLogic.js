@@ -2,7 +2,7 @@
    Pure functions. No React, no state, no side effects
    (except Math.random default in shuffle). */
 
-import { MAX_HEIGHT, UPGRADES } from "./constants";
+import { MAX_HEIGHT, UPGRADES, DAILY_TWISTS } from "./constants";
 
 /* ─── Move calculation helpers ─── */
 export function sumMoveBonus(ups) {
@@ -366,6 +366,92 @@ export function applyAutoSort(tubes, count, rng = Math.random) {
   return result;
 }
 
+/* ─── Daily score ───
+   Rounds cleared says how far you got; it can't say how well, and most days
+   many players end on the same round. The daily also keeps a score, which
+   the main game does not have: 100 points times the round for every round
+   cleared, plus 10 for every move still unspent when it was cleared. Depth
+   dominates (a round is worth more than any one round's spare moves), and
+   spare moves separate two runs that stopped on the same round. Rounds
+   saved before the "left" field existed fall back to limit minus moves. */
+export const DAILY_BEST_SCORE_KEY = "cascade:dailyBestScore";
+
+export function dailyScore(rounds) {
+  return (rounds || []).reduce((sum, r) => {
+    const left = Number.isFinite(r.left) ? r.left : (r.moveLimit || 0) - (r.moves || 0);
+    return sum + (r.round || 0) * 100 + Math.max(0, left) * 10;
+  }, 0);
+}
+
+/* ─── Daily twist ───
+   Which rule of the day it is, and what it does to a round's move limit.
+   One twist a day, in a shuffled order that is re-drawn every time the whole
+   set has been used (a "cycle", seven days with today's seven twists): each
+   twist comes round once per cycle, none can repeat inside one, and the
+   first day of a cycle is never the last day of the one before it.
+   Everything is a function of the UTC day alone, so it is the same for
+   every player and needs no server. */
+const TWIST_SALT = 0x7a3d51;
+
+/* A plain shuffle put five curse days in a row on the calendar (measured
+   over 1,400 days), so a cycle's order is re-drawn until it passes three
+   checks, all of which look only at that cycle (each cycle is drawn from its
+   own number alone, so nothing has to be computed from the one before):
+     - no three days of the same kind in a row;
+     - neither the first two nor the last two days hold two of the same kind,
+       so a run can't stretch across the seam between two cycles;
+     - the cycle opens with one of the OPENERS and closes with one of the
+       others, so the last day of a cycle can never be the first day of the
+       next one (no twist twice in a row). */
+const TWIST_OPENERS = new Set(["tailwind", "thin", "tide"]);
+
+function orderIsFair(order) {
+  const kinds = order.map((i) => DAILY_TWISTS[i].kind);
+  const n = kinds.length;
+  for (let i = 0; i + 2 < n; i++) if (kinds[i] === kinds[i + 1] && kinds[i] === kinds[i + 2]) return false;
+  if (kinds[0] === kinds[1] && kinds[0] !== "mixed") return false;
+  if (kinds[n - 1] === kinds[n - 2] && kinds[n - 1] !== "mixed") return false;
+  if (!TWIST_OPENERS.has(DAILY_TWISTS[order[0]].id)) return false;
+  if (TWIST_OPENERS.has(DAILY_TWISTS[order[n - 1]].id)) return false;
+  return true;
+}
+
+function twistOrder(block) {
+  const ids = DAILY_TWISTS.map((_, i) => i);
+  let order = ids;
+  for (let attempt = 0; attempt < 2000; attempt++) {
+    order = shuffle(ids, mulberry32(fmix32((block ^ TWIST_SALT ^ Math.imul(attempt, 0x9e3779b1)) >>> 0)));
+    if (orderIsFair(order)) break;
+  }
+  return order;
+}
+
+export function pickDailyTwist(date = new Date()) {
+  const n = DAILY_TWISTS.length;
+  const day = Math.floor(date.getTime() / 86400000) - DAILY_EPOCH_DAY;
+  const block = Math.floor(day / n);
+  return DAILY_TWISTS[twistOrder(block)[day - block * n]];
+}
+
+export const LUCKY_DAY_BONUS = 0.25;
+export const FEAST_CARD_COUNT = 2;
+export const WIND_MOVES = 5;
+
+export function twistMoveDelta(twistId, round) {
+  switch (twistId) {
+    case "tailwind":
+      return 3;
+    case "thin":
+      return -2;
+    case "feast":
+      return 5;
+    case "tide":
+      return -Math.floor((Math.max(1, round) - 1) / 3);
+    default:
+      return 0;
+  }
+}
+
 /* ─── Level generator ───
    Recovery levels ("hills, not stairs"): after a round that took a retry
    (struggled=true, set by the caller) or barely cleared (prevMovesLeft <= 1),
@@ -376,13 +462,18 @@ export function applyAutoSort(tubes, count, rng = Math.random) {
    signals (retried, moves left) are this player's own performance, so
    letting them change colorCount would make the "same board for everyone"
    guarantee false starting round 2. */
-export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false) {
+export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false, twist = null) {
+  const twistId = twist && typeof twist === "object" ? twist.id : twist;
   const rng = seed !== null ? mulberry32(seed) : Math.random;
   const isDailyLevel = seed !== null;
   const closeCall = !isDailyLevel && round > 1 && prevMovesLeft >= 0 && prevMovesLeft <= 1;
   const recovery = !isDailyLevel && (struggled || closeCall);
   const baseColorCount = Math.min(2 + Math.floor((round - 1) / 2), 7);
-  const colorCount = recovery ? Math.max(2, baseColorCount - 1) : baseColorCount;
+  let colorCount = recovery ? Math.max(2, baseColorCount - 1) : baseColorCount;
+  /* Rainbow: one colour more than the round would normally have, which is
+     the board two rounds further on. Capped at the 7 colours the game has
+     always topped out at, so from round 9 on it changes nothing. */
+  if (twistId === "rainbow") colorCount = Math.min(7, colorCount + 1);
   const balls = [];
   for (let c = 0; c < colorCount; c++) for (let i = 0; i < MAX_HEIGHT; i++) balls.push(c);
 
@@ -398,13 +489,17 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
 
   const extraTubes = runUpgrades.filter((id) => id === "tube").length;
   for (let i = 0; i < extraTubes; i++) tubes.push([]);
-  const autoSortCount = runUpgrades.filter((id) => id === "auto").length;
+  /* Warm Start is one free Auto-Sort, on top of any the run has taken. */
+  const autoSortCount = runUpgrades.filter((id) => id === "auto").length + (twistId === "warm" ? 1 : 0);
   tubes = applyAutoSort(tubes, autoSortCount, rng);
 
   const baseLimit = Math.round(colorCount * 3 + round * 0.8) + 4;
   const moveBonus = sumMoveBonus(runUpgrades);
   const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
-  const moveLimit = baseLimit + moveBonus + perfectClearBonus;
+  const moveLimit = Math.max(
+    1,
+    baseLimit + moveBonus + perfectClearBonus + twistMoveDelta(twistId, round),
+  );
 
   return { tubes, moveLimit, colorCount };
 }
@@ -536,7 +631,7 @@ export function formatCountdown(ms) {
 }
 
 /* Deterministic 3 upgrades for daily — same for everyone on given date.
-   dailyOnly upgrades (e.g. "dawn") are eligible here and nowhere else —
+   dailyOnly upgrades (e.g. "wind") are eligible here and nowhere else —
    the whole point of the daily habit having its own payoff. Jackpot stays
    exclusive to pickRandomUpgrades's explicit roll, so it's excluded here. */
 /* A card that would do nothing for a run that already owns what it gives.
@@ -552,6 +647,7 @@ export function isDeadUpgrade(id, owned = []) {
     case "clear":
     case "mega":
     case "combo2":
+    case "wind":
       return owned.includes(id);
     case "combo3":
       return owned.includes("combo3") || owned.includes("combo2");
@@ -570,7 +666,7 @@ export function isDeadUpgrade(id, owned = []) {
    exactly the cards it always did. */
 export function pickDailyUpgrades(dateSeed, count = 3, owned = []) {
   const rng = mulberry32(dateSeed);
-  const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID);
+  const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.retired);
   const weighted = [];
   pool.forEach((u) => {
     const weight = rarityWeight(u.rarity);

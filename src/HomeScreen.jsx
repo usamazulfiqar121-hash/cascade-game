@@ -3,7 +3,7 @@
    v3: bottom navigation + custom StreakBadge. */
 
 import { D } from "./constants";
-import { isTubeSolved } from "./gameLogic";
+import { isTubeSolved, pickDailyTwist } from "./gameLogic";
 import BottomNav from "./components/BottomNav";
 import StreakBadge from "./components/StreakBadge";
 import FriendCompare from "./components/FriendCompare";
@@ -42,6 +42,10 @@ export default function HomeScreen({
   const streakSafe = !!dailyResults[dailyKey()];
   const attemptOver = dailyPhase === "done" || dailyPhase === "used";
   const streak = computeStreak(dailyResults, shieldedDates);
+  /* Today's rule change, shown on the card so it's part of the reason to
+     open it (see DAILY_TWISTS in constants.js). */
+  const twist = pickDailyTwist();
+  const twistColor = twist.kind === "curse" ? D.danger : twist.kind === "mixed" ? D.gold : D.go;
 
   const days = [];
   const today = new Date();
@@ -184,6 +188,15 @@ export default function HomeScreen({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Today's twist */}
+            <div style={S.twistRow}>
+              <span aria-hidden="true">{twist.icon}</span>
+              <span>
+                <span style={{ color: twistColor, fontWeight: 800 }}>{twist.name}</span>
+                <span style={{ color: D.textSub }}>{" \u00b7 "}{twist.desc}</span>
+              </span>
             </div>
 
             {/* CTA */}
@@ -361,6 +374,13 @@ const S = {
     transition: `background ${D.tSpring}, border-color ${D.tQuick}, box-shadow ${D.tQuick}`,
   },
 
+  twistRow: {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: 11.5, fontWeight: 600, lineHeight: 1.35,
+    textAlign: "left",
+    margin: "12px 0 10px",
+  },
   dailyCta: {
     fontFamily: "'Inter', system-ui, sans-serif",
     fontSize: 11.5, fontWeight: 700,
