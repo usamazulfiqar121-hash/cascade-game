@@ -97,13 +97,15 @@ export default function AchievementsScreen({
                 background: unlocked
                   ? "linear-gradient(135deg, rgba(255, 194, 75, 0.08) 0%, rgba(255, 194, 75, 0.02) 100%)"
                   : "var(--glass)",
-                opacity: unlocked ? 1 : 0.55,
               }}>
                 <div style={{
                   ...S.icon,
                   background: unlocked ? "rgba(255, 194, 75, 0.15)" : "rgba(122, 133, 168, 0.08)",
                   borderColor: unlocked ? "rgba(255, 194, 75, 0.35)" : "var(--glass-border)",
                   filter: unlocked ? "none" : "grayscale(1)",
+                  // Only the lock icon is dimmed. The whole card used to sit at 55% opacity, which
+                  // left "how to unlock this" at ~1.6:1 contrast; the text must stay readable.
+                  opacity: unlocked ? 1 : 0.6,
                 }}>{unlocked ? a.icon : "🔒"}</div>
                 <div style={S.body}>
                   <div style={{ ...S.name, color: unlocked ? "var(--text)" : "var(--text-sub)" }}>{a.name}</div>
@@ -211,7 +213,7 @@ const S = {
   /* Section label */
   sectionLabel: {
     fontSize: 10, fontWeight: 900,
-    color: "var(--text-dim)",
+    color: "var(--text-sub)",
     letterSpacing: "0.16em",
     padding: "0 4px 10px",
     marginTop: 4,
@@ -310,7 +312,7 @@ const S = {
   },
   desc: {
     fontSize: 11.5, fontWeight: 600,
-    color: "var(--text-dim)",
+    color: "var(--text-sub)",
     marginTop: 3, lineHeight: 1.35,
   },
   check: {

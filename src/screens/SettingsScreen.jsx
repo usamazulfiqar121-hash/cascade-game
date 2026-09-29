@@ -377,7 +377,7 @@ const S = {
     WebkitOverflowScrolling: "touch",
   },
   sectionLabel: {
-    fontSize: 10, fontWeight: 900, color: "var(--text-dim)",
+    fontSize: 10, fontWeight: 900, color: "var(--text-sub)",
     letterSpacing: "0.16em", padding: "16px 12px 8px",
     fontFamily: "'Inter', system-ui, sans-serif",
   },
@@ -399,7 +399,7 @@ const S = {
   },
   rowBody: { flex: 1, minWidth: 0 },
   rowLabel: { fontSize: 14.5, fontWeight: 700, lineHeight: 1.2 },
-  rowSub: { fontSize: 11, fontWeight: 600, color: "var(--text-dim)", marginTop: 2 },
+  rowSub: { fontSize: 11, fontWeight: 600, color: "var(--text-sub)", marginTop: 2 },
   rowRight: { display: "flex", alignItems: "center", flexShrink: 0 },
   themeSegment: {
     display: "flex", alignItems: "center", gap: 2,

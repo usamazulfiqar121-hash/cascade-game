@@ -57,7 +57,7 @@ function TabButton({ label, active, onClick, renderIcon }) {
       </div>
       <span style={{
         ...S.tabLabel,
-        color: active ? D.accent : D.textDim,
+        color: active ? D.accent : D.textSub,
         fontWeight: active ? 900 : 700,
       }}>{label}</span>
     </button>

@@ -105,7 +105,7 @@ export const CSS = `
   --glass-border: rgba(15, 23, 42, 0.08);
   --glass-border-active: rgba(15, 23, 42, 0.16);
   --text: #0F172A;
-  --text-sub: #64748B;
+  --text-sub: #5B6B82;
   --text-dim: #94A3B8;
   --accent: #2563EB;
   --accent-soft: rgba(37, 99, 235, 0.28);
@@ -123,7 +123,7 @@ export const CSS = `
   --shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.12);
   --card: #FFFFFF;
   --ink: #0F172A;
-  --muted: #64748B;
+  --muted: #5B6B82;
   --line: #E2E8F0;
   --edge: rgba(15, 23, 42, 0.08);
   --tube-bg: rgba(15, 23, 42, 0.06);
