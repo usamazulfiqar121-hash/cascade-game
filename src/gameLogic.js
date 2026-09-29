@@ -536,7 +536,36 @@ export function formatCountdown(ms) {
    dailyOnly upgrades (e.g. "dawn") are eligible here and nowhere else —
    the whole point of the daily habit having its own payoff. Jackpot stays
    exclusive to pickRandomUpgrades's explicit roll, so it's excluded here. */
-export function pickDailyUpgrades(dateSeed, count = 3) {
+/* A card that would do nothing for a run that already owns what it gives.
+   The flat effects (Extra Tube, Auto-Sort, the +N moves cards) stack, so
+   they are never dead; these ones are read with includes() or capped:
+   Perfect Clear and Mega Bonus are on/off, Combo Master is covered by Combo
+   Legend (but not the other way round), and Lucky Drop / Super Lucky share
+   the 70% cap in getLuckyChance. Measured over 200 simulated days with
+   random picks, 13.8% of all daily cards and 35.6% of all offers had at
+   least one of these, and from round 9 on more than half of the offers. */
+export function isDeadUpgrade(id, owned = []) {
+  switch (id) {
+    case "clear":
+    case "mega":
+    case "combo2":
+      return owned.includes(id);
+    case "combo3":
+      return owned.includes("combo3") || owned.includes("combo2");
+    case "lucky":
+    case "lucky2":
+      return getLuckyChance(owned) >= 0.7;
+    default:
+      return false;
+  }
+}
+
+/* `owned` is what the run holds when the cards are shown. The draw is still
+   the seeded stream for (day, round), so two players holding the same
+   upgrades see the same cards; a card that would be dead for this run is
+   skipped and the stream simply carries on. A run with nothing dead sees
+   exactly the cards it always did. */
+export function pickDailyUpgrades(dateSeed, count = 3, owned = []) {
   const rng = mulberry32(dateSeed);
   const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID);
   const weighted = [];
@@ -549,7 +578,7 @@ export function pickDailyUpgrades(dateSeed, count = 3) {
   let guard = 0;
   while (picked.length < count && guard < 200) {
     const u = weighted[(rng() * weighted.length) | 0];
-    if (used.has(u.id)) { guard++; continue; }
+    if (used.has(u.id) || isDeadUpgrade(u.id, owned)) { guard++; continue; }
     used.add(u.id);
     picked.push(u);
   }

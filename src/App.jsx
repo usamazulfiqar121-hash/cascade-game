@@ -926,6 +926,8 @@ export default function Cascade() {
             setPendingUpgrades(
               pickDailyUpgrades(
                 dailyRoundSeed(round, DAILY_STREAM.upgrades, dailyRunDateRef.current || new Date()),
+                3,
+                runUpgrades,
               ),
             );
             setJackpotNearMiss(false);
@@ -1265,7 +1267,11 @@ export default function Cascade() {
             combo: saved.combo,
             pendingUpgrades:
               saved.phase === "upgrade"
-                ? pickDailyUpgrades(dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate))
+                ? pickDailyUpgrades(
+                    dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate),
+                    3,
+                    saved.upgrades,
+                  )
                 : [],
           };
           dailyBestAtStartRef.current = Number.isFinite(saved.bestAtStart) ? saved.bestAtStart : dailyBest;
