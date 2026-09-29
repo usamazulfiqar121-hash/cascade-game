@@ -236,20 +236,32 @@ const S = {
   homeRoot: {
     position: "fixed", inset: 0,
     display: "flex", flexDirection: "column",
-    alignItems: "center", justifyContent: "center",
+    /* Top-aligned, with the content centred by its own auto margins (see
+       homeContent). justify-content:center here centred the content in
+       the scroll box too, which is fine while it fits -- but once it is
+       taller (a returning player with the daily card and Compare Friends
+       open) the overflow spills equally off the top AND the bottom, and
+       the part above the top edge can never be scrolled to: the title,
+       and on short screens the Play button, were unreachable. Auto
+       margins centre while there is room and collapse to zero when
+       there isn't, so the scroll box then starts at the title. */
+    alignItems: "center", justifyContent: "flex-start",
     background: "var(--bg-0)",
     /* auto, not hidden: hero+tagline (first-time) or the daily card +
        friend-compare (returning) are sized to comfortably fit even a
        small phone in either state, verified down to a 320x568 viewport --
        but "comfortably fits everything we tested" isn't the same
        guarantee as "can never overflow" (a larger system font size, a
-       split-screen window), and hidden would silently swallow the Play
-       button itself if that ever happened. Scrolling is the fallback of
-       last resort, not the plan. */
+       split-screen window, Compare Friends expanded), and hidden would
+       silently swallow the Play button itself if that ever happened.
+       Scrolling is the fallback of last resort, not the plan. */
     overflow: "auto",
   },
   homeAmbient: {
-    position: "absolute", inset: 0,
+    /* fixed, not absolute: the root scrolls when the content is taller than
+       the screen, and an absolute layer scrolls away with it -- leaving a
+       visible seam where its bottom edge ends. */
+    position: "fixed", inset: 0,
     background: `
       radial-gradient(80% 50% at 50% 0%, var(--accent-soft) 0%, transparent 60%),
       radial-gradient(60% 40% at 50% 100%, var(--accent-soft) 0%, transparent 60%),
@@ -265,6 +277,7 @@ const S = {
     padding: "24px 24px 140px",  /* extra bottom padding for nav */
     width: "100%",
     maxWidth: 360,
+    margin: "auto 0",  /* centres vertically while it fits; 0 when it overflows */
   },
 
   hero: {
