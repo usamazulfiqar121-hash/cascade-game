@@ -179,8 +179,21 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* The page never scrolls (S.root is position:fixed), so a downward drag on any
+     non-tube area would start Chrome's pull-to-refresh on the web build and reload
+     the game mid-run. Pan and pinch still work; only double-tap-zoom (iOS Safari)
+     and the overscroll effects are switched off. */
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* Keyboard focus ring. Most buttons carry an inline outline:none (which beats any
+   stylesheet rule, hence !important), so tabbing through the app showed nothing.
+   :focus-visible only matches keyboard focus, never a tap or mouse click. */
+button:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+}
 button { transition: transform 200ms cubic-bezier(.2,1.1,.3,1); }
 button:active:not(:disabled) { transform: scale(0.97); }
 @keyframes tutIn {

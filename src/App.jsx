@@ -2053,7 +2053,7 @@ export default function Cascade() {
 
       {phase === "upgrade" && pendingUpgrades.length > 0 && (
         <div style={S.overlay} className="fade-in">
-          <div style={{ ...S.ovCard, maxWidth: 360 }} className="popIn">
+          <div style={{ ...S.ovCard, maxWidth: 360 }} className="popIn" role="dialog" aria-modal="true" aria-label={`Round ${round} cleared. Choose an upgrade`}>
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
             <div style={{ ...S.ovSub, marginBottom: jackpotNearMiss ? 8 : 20 }}>Choose an upgrade</div>
             {jackpotNearMiss && (
@@ -2077,7 +2077,7 @@ export default function Cascade() {
 
       {phase === "gameover" && (
         <div style={S.overlay} className="fade-in">
-          <div style={{ ...S.ovCard, maxWidth: 380 }} className="popIn">
+          <div style={{ ...S.ovCard, maxWidth: 380 }} className="popIn" role="dialog" aria-modal="true" aria-label="Run over">
             {!shareImage ? (
               <>
                 {/* Big round display — each piece stages in on its own beat
