@@ -182,9 +182,8 @@ button:active:not(:disabled) { transform: scale(0.97); }
    should accelerate AWAY (ease-in) — using the same curve both ways is why
    so many hand-rolled close animations feel like they're dragging at the
    start. The "both" fill mode matters here specifically: without it the element would
-   snap back to fully visible for one frame right before unmount, since the
-   0.01ms reduced-motion override (bottom of this file) still runs the
-   animation, just instantly — a flicker rather than an early cut. */
+   snap back to fully visible for one frame right before unmount if the
+   close timer lands a frame after the animation ends. */
 @keyframes tutOut {
   0% { opacity: 1; transform: scale(1) translateY(0); }
   100% { opacity: 0; transform: scale(0.94) translateY(10px); }
@@ -484,109 +483,34 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .dailyDotPulse {
   animation: dailyDotPulse 2s ease-in-out infinite;
 }
-/* ═══ REDUCE MOTION: ONE DIAL, OPT IN ═══
-   --rm-dur is the one place "how long is a reduced-but-not-eliminated
-   transition" is decided. Everything under Reduce Motion still defaults
-   to the original near-zero cut (cheap, and correct for the vast
-   majority of the app's transitions/animations, which nobody is looking
-   at closely at the moment they run -- a toast, a modal pop, a theme
-   cross-fade, a generic button's micro-shrink on press). Only the couple
-   of spots proven to actually need real motion opt IN to --rm-dur by
-   name, rather than --rm-dur being applied to the universal selector
-   and opted OUT of.
+/* ═══ REDUCE MOTION = CALM MODE ═══
+   One animation system for both settings. Reduce Motion used to run a
+   completely different path from normal play: balls teleported instead
+   of flying, and a blanket rule forced every animation/transition in the
+   app down to ~0ms. Each round of patching that blanket rule still left
+   the two modes looking and behaving differently.
 
-   That opt-out shape was tried first and measured worse: giving every
-   element a real ~120ms transition (not just the couple that matter)
-   raised Paint/Layerize/RasterTask roughly 1.5-2x under load (measured
-   with a fixed, board-independent 40-tap sequence so the two variants
-   are compared on identical input, not just "however many moves this
-   run's random board happened to need"). Most of that cost bought
-   nothing anyone would notice -- a generic button's press-shrink,
-   fired on every tap across the whole app, was the single biggest
-   contributor and isn't something players are watching for feedback on.
-
-   So the dial is opt-in, applied only where the user is actually
-   looking when it fires:
-     - .tube-btn's own state transition (below) -- the tube you just
-       tapped, mid-interaction. This is what "tapping, moving" in the
-       report was almost certainly pointing at: it was fully off
-       (transition: none) before, a harder cut than even the original
-       blanket 0.01ms.
-     - .cascade-ball.reduced-in (below) -- the ball itself.
-   Everything else -- every other button, every toast, modal, counter
-   pop, screen fade -- keeps the cheap near-zero default. */
-@media (prefers-reduced-motion: reduce) {
-  :root { --rm-dur: 120ms; }
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+   Now Reduce Motion ("data-reduce-motion", set by App.jsx from the in-app
+   toggle OR the phone's own reduce-motion setting) only does two things,
+   and everything else is identical to normal play:
+     1. JS side (App.jsx): pours still fly exactly like normal, just
+        faster (shorter arc time), with a smaller particle burst and no
+        wrong-move shake.
+     2. CSS side (here): continuous, looping, decorative motion is paused
+        -- the ambient movement reduce-motion settings exist to remove.
+        One-shot feedback (ball landing, button press, tube select, screen
+        fades, toasts) plays exactly as in normal mode. */
+:root[data-reduce-motion="1"] .heroFloat,
+:root[data-reduce-motion="1"] .daily-border-wrap,
+:root[data-reduce-motion="1"] .daily-shimmer,
+:root[data-reduce-motion="1"] .flamePulse,
+:root[data-reduce-motion="1"] .dailyDotPulse {
+  animation: none;
 }
-:root[data-reduce-motion="1"] {
-  --rm-dur: 120ms;
-}
-:root[data-reduce-motion="1"] *,
-:root[data-reduce-motion="1"] *::before,
-:root[data-reduce-motion="1"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-}
-
-/* hintFrom's pulse is a loop whose mid-cycle box-shadow value would
-   otherwise freeze at an arbitrary, possibly-odd point once
-   iteration-count is forced to 1 -- a static equivalent of the glow it
-   provides reads cleaner than any single frozen frame of the pulse. */
-@media (prefers-reduced-motion: reduce) {
-  .tube-btn[data-state="hintFrom"] {
-    animation: none;
-    box-shadow: 0 0 0 4px var(--go-soft);
-  }
-  /* Opt-in #1: the tube you just tapped. Was transition: none -- a
-     harder cut than even the old blanket rule -- so selecting, hinting,
-     and solving a tube used to hard-snap while everything else merely
-     fast-forwarded. A short, real duration here (no bounce -- keep
-     whatever easing curve the property already had) instead. */
-  .tube-btn {
-    transition-duration: var(--rm-dur) !important;
-  }
-}
+/* Hint pulse loops forever -- replace with a steady glow instead. */
 :root[data-reduce-motion="1"] .tube-btn[data-state="hintFrom"] {
   animation: none;
   box-shadow: 0 0 0 4px var(--go-soft);
-}
-:root[data-reduce-motion="1"] .tube-btn {
-  transition-duration: var(--rm-dur) !important;
-}
-
-/* Opt-in #2: the ball. Its entrance keyframe (ballDrop/ballLand) is
-   genuinely expensive (a 4-stage squash-and-rebound, mounted several-at-
-   once on every pour), so it's skipped in JS rather than just shortened
-   -- Tube.jsx's skipAnim renders .reduced-in instead. But nothing at all
-   (0ms) reads the same way instant-everywhere did: .reduced-in swaps in
-   a short, cheap, single-stage fade/scale (no bounce, no squash) for the
-   entrance, and gives its pick-up/settle transform the same --rm-dur
-   instead of the near-zero default. */
-@keyframes ballSettleReduced {
-  0%   { opacity: 0; transform: scale(0.94); }
-  100% { opacity: 1; transform: scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .cascade-ball.reduced-in {
-    animation: ballSettleReduced var(--rm-dur) ease-out backwards;
-    animation-duration: var(--rm-dur) !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: var(--rm-dur) !important;
-    transition-timing-function: ease !important;
-  }
-}
-:root[data-reduce-motion="1"] .cascade-ball.reduced-in {
-  animation: ballSettleReduced var(--rm-dur) ease-out backwards;
-  animation-duration: var(--rm-dur) !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: var(--rm-dur) !important;
-  transition-timing-function: ease !important;
 }
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */

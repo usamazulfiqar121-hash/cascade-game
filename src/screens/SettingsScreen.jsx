@@ -71,7 +71,7 @@ export default function SettingsScreen({
           <Row
             icon={<ReduceMotionIcon on={reduceMotionOn} />}
             label="Reduce Motion"
-            sub="Minimize animations everywhere"
+            sub="Calmer, quicker animations"
             right={<Toggle on={reduceMotionOn} />}
             onClick={onToggleReduceMotion}
           />

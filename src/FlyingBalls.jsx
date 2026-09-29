@@ -92,8 +92,12 @@ function FlyingBall({ f, onDone }) {
       return undefined;
     }
     const d = tubeDims(f.scale);
+    /* timeScale < 1 under Reduce Motion: the exact same path and keyframes,
+       played faster. Keyframe offsets are fractions of the total, so
+       scaling only the duration keeps the arc and the gravity drop
+       continuous -- nothing jumps. */
     const anim = el.animate(buildKeyframes(f, ballWidth(f.scale), d.ballH), {
-      duration: f.arcMs + f.dropMs,
+      duration: (f.arcMs + f.dropMs) * (f.timeScale || 1),
       delay: f.delay,
       fill: "both",
       easing: "linear",

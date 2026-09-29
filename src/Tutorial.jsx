@@ -9,22 +9,13 @@
 
    Entrance staggers the three rule-steps instead of revealing them as one
    flat block, and "Got it" now plays a real exit — the card used to just
-   vanish the instant it was clicked. The exit's hold time is skipped
-   entirely under Reduce Motion (OS-level or the in-app toggle) rather
-   than leaving a dead pause where an invisible animation used to be. */
+   vanish the instant it was clicked. The exit plays the same way with
+   Reduce Motion on or off -- that setting only pauses looping ambient
+   motion now (see globalStyles.js). */
 
 import { useEffect, useRef, useState } from "react";
 import { T } from "./constants";
 import { S } from "./theme";
-
-function prefersReducedMotion() {
-  try {
-    if (document.documentElement.getAttribute("data-reduce-motion") === "1") return true;
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch {
-    return false;
-  }
-}
 
 export default function Tutorial({ onClose }) {
   const [closing, setClosing] = useState(false);
@@ -37,7 +28,10 @@ export default function Tutorial({ onClose }) {
   const handleClose = () => {
     if (closing) return; // one tap during the exit shouldn't queue a second onClose
     setClosing(true);
-    closeTimer.current = setTimeout(onClose, prefersReducedMotion() ? 0 : 200);
+    /* Same 200ms exit in both motion settings: Reduce Motion no longer
+       squashes one-shot animations (globalStyles.js), so cutting this to 0
+       would unmount the card halfway through its own fade. */
+    closeTimer.current = setTimeout(onClose, 200);
   };
 
   const stepStyle = (i) => ({ ...S.tutStep, animationDelay: `${120 + i * 90}ms` });

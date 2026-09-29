@@ -328,6 +328,16 @@ export default function Cascade() {
   const [musicOn, setMusicOn] = useState(true);
   const [colorBlindOn, setColorBlindOn] = useState(false);
   const [reduceMotionOn, setReduceMotionOn] = useState(false);
+  /* The phone's own reduce-motion setting, kept live. Combined with the
+     in-app toggle into ONE value below, so every part of the game reads the
+     same answer instead of each spot re-querying matchMedia on its own. */
+  const [osReduceMotion, setOsReduceMotion] = useState(() => {
+    try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; }
+  });
+  const reduceMotion = reduceMotionOn || osReduceMotion;
+  /* Read by event handlers/effects that must not re-fire just because the
+     setting changed (e.g. the wrong-move shake replaying on toggle). */
+  const reduceMotionRef = useRef(reduceMotion);
 
   const movesLeft = level.moveLimit + bonusMoves - moves;
 
@@ -395,8 +405,23 @@ export default function Cascade() {
   useEffect(() => { Music.duck(phase !== "playing"); }, [phase]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-reduce-motion", reduceMotionOn ? "1" : "0");
-  }, [reduceMotionOn]);
+    let mq;
+    try { mq = window.matchMedia("(prefers-reduced-motion: reduce)"); } catch { return undefined; }
+    const onChange = () => setOsReduceMotion(mq.matches);
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else if (mq.removeListener) mq.removeListener(onChange);
+    };
+  }, []);
+
+  /* The single sync point: CSS (globalStyles.js, via the attribute) and JS
+     (via the ref) always see the same Reduce Motion value. */
+  useEffect(() => {
+    reduceMotionRef.current = reduceMotion;
+    document.documentElement.setAttribute("data-reduce-motion", reduceMotion ? "1" : "0");
+  }, [reduceMotion]);
 
   /* Counts the game-over screen's big round number up from 0 instead of
      it just appearing — the single most-looked-at number in the game
@@ -409,11 +434,7 @@ export default function Cascade() {
      tutorial card's exit animation. */
   useEffect(() => {
     if (phase !== "gameover") return;
-    let reduceMotion = reduceMotionOn;
-    if (!reduceMotion) {
-      try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch {}
-    }
-    if (reduceMotion) { setGameOverDisplayRound(round); return; }
+    if (reduceMotionRef.current) { setGameOverDisplayRound(round); return; }
     setGameOverDisplayRound(0);
     const target = round;
     const duration = 700;
@@ -425,7 +446,7 @@ export default function Cascade() {
       if (t < 1) raf = requestAnimationFrame(tick);
     });
     return () => cancelAnimationFrame(raf);
-  }, [phase, round, reduceMotionOn]);
+  }, [phase, round]);
 
   /* ═══ THEME ═══ */
 
@@ -513,8 +534,7 @@ export default function Cascade() {
 
   useEffect(() => {
     if (!shake) return; // 0 is the initial value, not a real wrong move
-    let reduceMotion = reduceMotionOn;
-    try { reduceMotion = reduceMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch {}
+    const reduceMotion = reduceMotionRef.current;
     const row = tubesRowRef.current, flashEl = wrongFlashRef.current;
     try {
       if (!reduceMotion && row && typeof row.animate === "function") {
@@ -528,7 +548,7 @@ export default function Cascade() {
         flashEl.animate(WRONG_FLASH_KEYFRAMES, { duration: reduceMotion ? 220 : 420, easing: "ease-out" });
       }
     } catch {}
-  }, [shake, reduceMotionOn]);
+  }, [shake]);
 
   /* achToast shows one achievement at a time, but unlockAch can be called
      several times in the same synchronous tick — e.g. clearing round 10
@@ -618,14 +638,12 @@ export default function Cascade() {
          tube is told when each will land, so it can keep them hidden till
          then. Top ball of the run leaves first and fills the lowest free
          slot, the next follows 85ms behind — a little cascade.
-         Under Reduce Motion (OS or in-app) there are no flights and no
-         landing delays at all: the CSS reduce-motion rule shortens
-         durations but not delays, so a delay would leave a ball invisible
-         for the whole would-be flight. */
-      let reduceMotion = reduceMotionOn;
-      if (!reduceMotion) {
-        try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch {}
-      }
+         Reduce Motion runs this exact same path (it used to skip flights
+         and teleport the balls, which is what read as choppy) — just
+         faster: every flight, stagger and landing is scaled by timeScale.
+         Same keyframes, same landing sync, same sound timing. */
+      const reduceMotion = reduceMotionRef.current;
+      const timeScale = reduceMotion ? 0.6 : 1;
       const t0 = performance.now();
       const scale = tubeScaleFor(tubes.length);
       const colorIdx = tubes[fromIdx][tubes[fromIdx].length - 1];
@@ -636,7 +654,7 @@ export default function Cascade() {
          the particle burst, and the round-end overlay, key off this. */
       const impact = dstRect ? slotCenter(dstRect, beforeLen + movedCount - 1, scale) : null;
       let impactMs = 0;
-      if (!reduceMotion && srcEl && dstRect) {
+      if (srcEl && dstRect) {
         const srcBalls = srcEl.querySelectorAll(".cascade-ball"); // DOM order = bottom → top
         const rimY = dstRect.top - LIFT_GAP - tubeDims(scale).ballH / 2;
         const newFlights = [];
@@ -648,11 +666,12 @@ export default function Cascade() {
           const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
           const { x: x1, y: y1 } = slotCenter(dstRect, beforeLen + k, scale);
           const { arcMs, dropMs, topY, v0 } = planFlight(x0, y0, x1, rimY, y1);
-          const delay = k * 85;
-          newFlights.push({ id: `${t0}-${fromIdx}-${k}`, t0, delay, x0, y0, x1, rimY, y1, topY, v0, arcMs, dropMs, colorIdx, scale, colorBlind: colorBlindOn });
-          lands.push(t0 + delay + arcMs + dropMs);
+          const delay = Math.round(k * 85 * timeScale);
+          const flightMs = (arcMs + dropMs) * timeScale;
+          newFlights.push({ id: `${t0}-${fromIdx}-${k}`, t0, delay, timeScale, x0, y0, x1, rimY, y1, topY, v0, arcMs, dropMs, colorIdx, scale, colorBlind: colorBlindOn });
+          lands.push(t0 + delay + flightMs);
           /* the landing "tock", on the audio clock, at this ball's touchdown */
-          Snd.land(beforeLen + k, (delay + arcMs + dropMs) / 1000);
+          Snd.land(beforeLen + k, (delay + flightMs) / 1000);
         }
         if (lands.length === movedCount) {
           setFlights((f) => [...f, ...newFlights]);
@@ -698,7 +717,9 @@ export default function Cascade() {
       // bigger moment, not just a bigger score.
       if (impact) {
         const color = COLORS[colorIdx] || T.accent;
-        const burstCount = tier >= 3 ? 16 : tier >= 2 ? 10 : 6;
+        const fullBurst = tier >= 3 ? 16 : tier >= 2 ? 10 : 6;
+        /* Calm mode: same burst, fewer pieces flying outward. */
+        const burstCount = reduceMotion ? Math.ceil(fullBurst / 2) : fullBurst;
         const destJustSolved = isTubeSolved(next[toIdx]) && !isTubeSolved(tubes[toIdx]);
         const burstAt = impactMs + (destJustSolved ? 120 : 0);
         const { x: px, y: py } = impact;
@@ -858,7 +879,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, reduceMotionOn, colorBlindOn]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn]);
 
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing" || roundDecidedRef.current) return;
