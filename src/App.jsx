@@ -172,6 +172,12 @@ function DailyResetCountdown() {
 
 /* ═══════════  MAIN  ═══════════ */
 
+/* How long after the upgrade cards appear before a tap can pick one. The cards
+   fade in over ~0.5s but were tappable from the first frame -- while still
+   invisible -- so a stray tap from the last pour picked an upgrade the player
+   had never seen. */
+const UPGRADE_TAP_GUARD_MS = 500;
+
 export default function Cascade() {
   const [round, setRound] = useState(1);
   const [theme, setTheme] = useState("dark");   /* "dark" | "light" | "system" */
@@ -500,6 +506,15 @@ export default function Cascade() {
   useEffect(() => { Music.setTension(movesLeft <= 3); }, [movesLeft]);
 
   useEffect(() => { Music.duck(phase !== "playing"); }, [phase]);
+
+  /* false the whole time the upgrade overlay is closed, so it is already false
+     on the very first frame the cards exist. */
+  const [upgradeReady, setUpgradeReady] = useState(false);
+  useEffect(() => {
+    if (phase !== "upgrade") { setUpgradeReady(false); return undefined; }
+    const t = setTimeout(() => setUpgradeReady(true), UPGRADE_TAP_GUARD_MS);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   useEffect(() => {
     let mq;
@@ -1229,6 +1244,7 @@ export default function Cascade() {
        the overlay unmounts. pendingUpgrades is cleared the instant the
        first pick lands, so the second tap can never fire. */
     if (pendingUpgrades.length === 0) return;
+    if (!upgradeReady) return;
     const newUpgrades = [...runUpgrades, upgrade.id];
     setRunUpgrades(newUpgrades);
     /* >= 4, not === 4: Jackpot (rarity 5) is rarer and strictly better
@@ -1276,7 +1292,7 @@ export default function Cascade() {
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist]);
 
   const retry = useCallback(() => {
     const seed = isDaily
@@ -2032,7 +2048,7 @@ export default function Cascade() {
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {pendingUpgrades.map((u, i) => (
-                <div key={u.id} className="fade-up" style={{ animationDelay: `${100 + i * 80}ms` }}>
+                <div key={u.id} className="fade-up" style={{ animationDelay: `${100 + i * 80}ms`, pointerEvents: upgradeReady ? undefined : "none" }}>
                   <UpgradeCard upgrade={u} onPick={() => chooseUpgrade(u)} />
                 </div>
               ))}
