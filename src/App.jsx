@@ -180,7 +180,20 @@ const UPGRADE_TAP_GUARD_MS = 500;
 
 export default function Cascade() {
   const [round, setRound] = useState(1);
-  const [theme, setTheme] = useState("dark");   /* "dark" | "light" | "system" */
+  /* "dark" | "light" | "system". Read from storage when the state is created,
+     not in a mount effect: the effect version rendered the first frame with
+     the default, and the effect below that writes the theme back to storage
+     ran with that default BEFORE the saved value was applied -- under
+     StrictMode's double-run (dev builds) it overwrote the saved theme with
+     "dark" and the second run read that back, so a saved Light theme reset to
+     Dark on every reload of `npm run dev`. */
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem("cascade:theme");
+      if (saved === "dark" || saved === "light" || saved === "system") return saved;
+    } catch {}
+    return "dark";
+  });
   const [stats, setStats] = useState({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
   const [isDaily, setIsDaily] = useState(false);
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
@@ -565,16 +578,6 @@ export default function Cascade() {
   }, [phase, round]);
 
   /* ═══ THEME ═══ */
-
-  /* On mount: read saved theme from localStorage */
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("cascade:theme");
-      if (saved === "dark" || saved === "light" || saved === "system") {
-        setTheme(saved);
-      }
-    } catch {}
-  }, []);
 
   /* Sync theme to <html data-theme="..."> attribute.
      System mode resolves via prefers-color-scheme media query. */
