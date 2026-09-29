@@ -202,6 +202,11 @@ export default function Cascade() {
      the next day's boards and writing its result onto a day the player
      never opened. */
   const dailyRunDateRef = useRef(null);
+  /* True when the run on screen belongs to an earlier UTC day than today
+     (started before midnight, still playing after it). Its game-over card
+     must not say "come back tomorrow": today's puzzle is already open. */
+  const staleDailyRun =
+    isDaily && !!dailyRunDateRef.current && dailyKey(dailyRunDateRef.current) !== dailyKey();
 
   /* Load persisted daily state on mount */
   useEffect(() => {
@@ -706,7 +711,16 @@ export default function Cascade() {
       // tier: 0 = plain pour, 1 = lucky roll, 2 = combo bonus, 3 = mega bonus.
       let bonus = 0, tier = 0;
       const luckyChance = getLuckyChance(runUpgrades);
-      if (luckyChance > 0 && Math.random() < luckyChance) { bonus += 1; tier = Math.max(tier, 1); }
+      /* Daily: the roll is fixed by (day, round, pour number) so every
+         player with the same luck upgrade gets the same drops. Math.random
+         here made the daily a different game for each player, and let
+         anyone re-roll by replaying. */
+      if (luckyChance > 0) {
+        const roll = isDaily
+          ? dailyLuckRoll(round, moves, dailyRunDateRef.current || new Date())
+          : Math.random();
+        if (roll < luckyChance) { bonus += 1; tier = Math.max(tier, 1); }
+      }
       /* Gated on `meaningful`, not just checked against newCombo: a parking
          move leaves newCombo unchanged, and if that unchanged value already
          happened to be a multiple of comboEvery/megaEvery (from the pour
@@ -792,9 +806,10 @@ export default function Cascade() {
              keeps the streak alive), separate from whether the run itself
              is still going. See computeStreak in gameLogic.js. */
           try {
+            const k = dailyKey(dailyRunDateRef.current || new Date());
             const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
-            if (!dr[dailyKey()]) {
-              dr[dailyKey()] = { completed: true, ts: Date.now() };
+            if (!dr[k]) {
+              dr[k] = { completed: true, ts: Date.now() };
               localStorage.setItem("cascade:dailyResults", JSON.stringify(dr));
               setDailyResults(dr);
             }
@@ -802,17 +817,6 @@ export default function Cascade() {
         }
         /* Schedule the round transition FIRST — an achievement hiccup
            must never block the player from advancing to the upgrade. */
-        /* Daily challenge — save completion when round 1 clears.
-           Guard: idempotent, StrictMode double-fire safe. */
-        if (isDaily && round === 1) {
-          const k = dailyKey();
-          setDailyResults((prev) => {
-            if (prev[k]) return prev;
-            const updated = { ...prev, [k]: { completed: true, ts: Date.now() } };
-            try { localStorage.setItem("cascade:dailyResults", JSON.stringify(updated)); } catch {}
-            return updated;
-          });
-        }
         setTimeout(() => {
           setLastRoundMovesLeft(remainingAtClear);
           /* Daily upgrade choices must be identical for every player too —
@@ -869,7 +873,13 @@ export default function Cascade() {
           setFinalMovesLeft(Math.max(0, newMovesLeft));
 
           /* Daily failure — mark state */
-          if (isDaily) {
+          /* Only when the run is still on today's puzzle. A run that
+             started before UTC midnight and failed after it belongs to the
+             previous day: saveDailyState stamps "today", so writing it
+             here marked the player's brand-new day as already failed
+             ("One Attempt Used" on a puzzle they never opened), and
+             cancelled the reminder for it too. */
+          if (isDaily && dailyKey(dailyRunDateRef.current || new Date()) === dailyKey()) {
             const st = saveDailyState({
               status: "failed",
               failedAt: Date.now(),
@@ -1706,21 +1716,25 @@ export default function Cascade() {
                         color: T.gold,
                         textTransform: "uppercase",
                       }}>
-                        One attempt only
+                        {staleDailyRun ? "That was yesterday's puzzle" : "One attempt only"}
                       </div>
                       <div style={{
                         fontSize: 15, fontWeight: 800,
                         color: T.ink, marginTop: 6,
                       }}>
-                        Come back tomorrow
+                        {staleDailyRun ? "Today's new puzzle is ready" : "Come back tomorrow"}
                       </div>
-                      <div style={{
-                        fontSize: 11, fontWeight: 600,
-                        color: T.muted, marginTop: 6,
-                      }}>
-                        Next puzzle in
-                      </div>
-                      <DailyResetCountdown />
+                      {!staleDailyRun && (
+                        <>
+                          <div style={{
+                            fontSize: 11, fontWeight: 600,
+                            color: T.muted, marginTop: 6,
+                          }}>
+                            Next puzzle in
+                          </div>
+                          <DailyResetCountdown />
+                        </>
+                      )}
                     </div>
                     <button style={{ ...S.ghost, color: T.accent }} onClick={shareDaily}>📋 Share Result</button>
                     <button style={S.ghost} onClick={() => { popNav(); setIsDaily(false); }}>← Home</button>
