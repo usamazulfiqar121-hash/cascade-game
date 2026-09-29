@@ -48,17 +48,36 @@ export const LIFT_GAP = 6;
    Pure so it can be tested without a browser.
      boardTop: y of the board's top edge in the game root (HUD + strip above it)
      viewH/viewW: the game root's size
-   The board is allowed to run down to 10px above the bottom edge: it may
-   overlap the (empty) padding under the footer exactly as it always has, so
-   any layout that already fit is left alone. */
+   Vertical budget depends on how many rows the board wraps to — see
+   BOTTOM_RESERVE_1ROW / BOTTOM_RESERVE_WRAPPED below. */
+/* How close to the bottom edge the board is allowed to get, in px, split by
+   whether it wrapped. Undo and Hint are position:fixed at bottom 92 with a
+   54px height (App.jsx), so their top edge sits 146px up — a two-row board
+   that runs past that sits its bottom row on the buttons. A ONE-row board
+   doesn't: it sits centred in its flex:1 box (S.board, theme.js), which ends
+   where the footer begins, and its single row is nowhere near the bottom, so
+   charging it the full 146px only shrank tubes that were never going to
+   overlap anything (a 5-tube round dropped 0.96 -> 0.86 on a 360x640 for
+   exactly that reason). The old flat 10px was the opposite error: it let a
+   WRAPPED board overflow ~92px past its own box and onto the buttons, because
+   it assumed the board could spill into the footer's empty 110px bottom
+   padding — it can't, the board's box ends where the footer starts. */
+const BOTTOM_RESERVE_1ROW = 10;
+const BOTTOM_RESERVE_WRAPPED = 146;
+
 export const MIN_FIT_SCALE = 0.5;
 export function fitTubeScale(count, base, boardTop, viewH, viewW) {
   const rowW = Math.min(400, viewW - 40);
-  const avail = viewH - 10 - boardTop;
   for (let s = base; s >= MIN_FIT_SCALE - 1e-9; s = Math.round((s - 0.02) * 100) / 100) {
     const d = tubeDims(s);
     const perRow = Math.max(1, Math.floor((rowW + 12) / (d.width + 12)));
     const rows = Math.ceil(count / perRow);
+    /* Re-derived every step, not hoisted: perRow moves as the tubes shrink
+       (at 360px wide a 5-tube round flips 4-per-row -> 5-per-row between
+       0.88 and 0.86), so the row count — and therefore the reservation —
+       is a function of the scale being tried. */
+    const bottomReserve = count <= perRow ? BOTTOM_RESERVE_1ROW : BOTTOM_RESERVE_WRAPPED;
+    const avail = viewH - bottomReserve - boardTop;
     const need =
       Math.ceil(d.ballH + LIFT_GAP + 4) + rows * d.height + (rows - 1) * Math.ceil(d.ballH + LIFT_GAP + 10);
     if (need <= avail) return s;

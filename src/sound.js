@@ -314,7 +314,16 @@ export const Music = (() => {
       .then((r) => r.arrayBuffer())
       .then((ab) => c.decodeAudioData(ab))
       .then((buf) => { buffer = buf; return buf; })
-      .catch(() => null);
+      .catch(() => {
+        /* Clear the cache on failure. Both guards above are keyed on
+           buffer/bufferLoadPromise, so a promise that resolved to null
+           short-circuits every later start() for the rest of the session:
+           one network blip and the bed never comes back. Nulling it here
+           makes the next start() re-fetch, same as the haptics loader at
+           the top of this file already does. */
+        bufferLoadPromise = null;
+        return null;
+      });
     return bufferLoadPromise;
   }
 
@@ -342,14 +351,26 @@ export const Music = (() => {
     activeNodes.push({ node: src, endAt: at + dur });
   }
 
+  /* setTimeout is wall-clock, c.currentTime is the audio clock, and the two
+     drift apart every time the tab is throttled or the phone sleeps: the
+     timer then fires late, leaving the absolute `nextStart` in the PAST. A
+     BufferSource whose start AND stop are both in the past renders nothing
+     at all, so the bed would stay silent for the rest of the run. So the
+     target is re-anchored on the audio clock whenever the absolute time has
+     already gone by, and the delay is always measured from that clock rather
+     than from a stale reading. LEAD is the headroom that gets the next copy
+     onto the audio clock before it's due, so ordinary jitter still can't
+     cause a dropout. */
+  const LEAD = 1;
+
   function queueNext(c, myToken, startedAt, dur) {
     const nextStart = startedAt + dur - CROSSFADE;
-    const fireInMs = Math.max(0, (nextStart - c.currentTime - 1) * 1000);
+    const audibleAt = nextStart > c.currentTime ? nextStart : c.currentTime + LEAD;
     loopTimer = setTimeout(() => {
       if (!playing || myToken !== runToken) return;
-      playSegment(c, nextStart, dur);
-      queueNext(c, myToken, nextStart, dur);
-    }, fireInMs);
+      playSegment(c, audibleAt, dur);
+      queueNext(c, myToken, audibleAt, dur);
+    }, Math.max(0, (audibleAt - LEAD - c.currentTime) * 1000));
   }
 
   /* Bound on the first start(), not at import. Registering at module

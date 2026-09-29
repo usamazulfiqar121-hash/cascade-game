@@ -274,7 +274,20 @@ const S = {
     display: "flex", flexDirection: "column",
     alignItems: "center",
     gap: 18,
-    padding: "24px 24px 140px",  /* extra bottom padding for nav */
+    /* Top padding is 14vh, clamped to 24-96px, not a flat 24. The in-app
+       toast is position:fixed at safe-area-inset-top + 20px (the toast
+       block in App.jsx), so on a 320x568 screen the toast covered y 20-86
+       while this stack's title block sat at y 44.8-92.8 — a ~41px overlap
+       landing right on the word CASCADE. Returning-player content totalled
+       ~550px in a 568px viewport, so "auto 0" only bought ~9px of headroom
+       and the whole stack began ~25px from the top; there was simply no
+       room left at the top for a fixed overlay to sit in. 14vh clears the
+       toast on short screens and still reads as plain top padding on tall
+       ones (clamped at 96px, so a 900px phone doesn't get a 126px gap).
+       Known cost: total content becomes ~588px on a 320x568, so Home
+       scrolls by ~20px there — absorbed by homeRoot's overflow:auto (see
+       the note there on scrolling being the fallback of last resort). */
+    padding: "clamp(24px, 14vh, 96px) 24px 140px",  /* extra bottom padding for nav */
     width: "100%",
     maxWidth: 360,
     margin: "auto 0",  /* centres vertically while it fits; 0 when it overflows */

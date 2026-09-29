@@ -69,7 +69,14 @@ export const S = {
     pointerEvents: "none",
   },
   footer: {
-    padding: "12px 20px calc(env(safe-area-inset-bottom, 0px) + 110px)",
+    /* Bottom padding was calc(env(safe-area-inset-bottom, 0px) + 110px).
+       110px dead padding removed — Undo/Hint buttons were the only
+       consumers, hint text was sitting inside their vertical band (hint at
+       viewH-125..viewH-110, buttons at viewH-146..viewH-92, zIndex 30 on
+       top). Board also gains 102px. Only 8px is kept now, so the hint sits
+       BELOW the buttons in the 92px band they're fixed into, and can never
+       be covered by them at any screen width. */
+    padding: "12px 20px calc(env(safe-area-inset-bottom, 0px) + 8px)",
     minHeight: 60,
     display: "flex", justifyContent: "center", alignItems: "center",
   },

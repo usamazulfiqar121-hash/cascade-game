@@ -20,6 +20,13 @@ export function estimateRank(moves, rounds) {
    `dateKey` is the day of the puzzle that was played. It defaults to today,
    but the caller passes the run's own day: a card left open across UTC
    midnight would otherwise stamp the NEXT day's date on yesterday's run. */
+/* "1 move" vs "2 moves". A round CAN be cleared in a single pour
+   (App.jsx builds each entry with moves: newMovesUsed, which is moves + 1),
+   so "1 moves" is reachable in a real share, and this text is what other
+   people read — it reads as a bug in the result being shared. Same `=== 1`
+   conditional the moves counter uses in App.jsx ("1 move left"). */
+const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+
 export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak, dateKey, extra = {}) {
   const today = dateKey || new Date().toISOString().slice(0, 10);
   const lines = ["CASCADE Daily " + today];
@@ -31,10 +38,10 @@ export function buildEmojiGrid(rounds, totalMoves, streak, bestStreak, dateKey, 
     let sq = "\uD83D\uDFE9";
     if (eff > 0.75) sq = "\uD83D\uDFE5";
     else if (eff > 0.55) sq = "\uD83D\uDFE8";
-    lines.push(sq + "  R" + r.round + " - " + r.moves + " moves");
+    lines.push(sq + "  R" + r.round + " - " + plural(r.moves, "move"));
   });
   lines.push("");
-  lines.push("Total: " + totalMoves + " moves");
+  lines.push("Total: " + plural(totalMoves, "move"));
   if (Number.isFinite(extra.score)) lines.push("Score: " + extra.score.toLocaleString("en-US"));
 
   /* No "Rank: Top X% today" line: it was a guess from average moves per
@@ -171,7 +178,7 @@ export function buildShareCard({ round, upgrades, best }) {
       ctx.fillStyle = "#7A85A8";
       ctx.font = body(20, 900);
       sp("6px");
-      ctx.fillText(upgrades.length + " UPGRADES COLLECTED", 540, cursorY);
+      ctx.fillText(plural(upgrades.length, "UPGRADE") + " COLLECTED", 540, cursorY);
       sp("0px");
 
       const items = upgrades.slice(-8);
