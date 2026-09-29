@@ -1759,7 +1759,7 @@ export default function Cascade() {
 
   const shareNow = useCallback(async () => {
     if (!shareImage) return;
-    const shareText = `I survived ${round} rounds in Cascade! Can you beat me?`;
+    const shareText = `I survived ${round} round${round === 1 ? "" : "s"} in Cascade! Can you beat me?`;
     const shareUrl = "https://cascade-main-rho.vercel.app";
     try {
       /* On real Chrome, navigator.canShare({files}) lets us hand the PNG
@@ -1947,7 +1947,7 @@ export default function Cascade() {
         <div className="hud-right" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ textAlign: "right" }}>
             <div style={{ ...S.movesLabel, color: movesLeft <= 3 ? T.danger : T.ink }}>
-              {Math.max(0, movesLeft)} <span className="hud-moves-sub" style={S.movesSub}>moves left</span>
+              {Math.max(0, movesLeft)} <span className="hud-moves-sub" style={S.movesSub}>{movesLeft === 1 ? "move left" : "moves left"}</span>
             </div>
           </div>
           <button onClick={onHomePress} aria-label="Home" style={{
@@ -2126,7 +2126,7 @@ export default function Cascade() {
                 </div>
                 <div style={{ ...S.ovTitle, animationDelay: "140ms" }} className="fade-up">Run Over</div>
                 <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">{gameOverDisplayRound}</div>
-                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : "ROUNDS SURVIVED"}</div>
+                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : (round === 1 ? "ROUND SURVIVED" : "ROUNDS SURVIVED")}</div>
                 {(isDaily ? dailyNewBest : round >= best && round > 1) && (
                   <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">
                     {isDaily ? "✨ New Daily Best" : "✨ New Personal Best"}

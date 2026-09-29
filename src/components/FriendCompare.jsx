@@ -21,6 +21,8 @@ import {
   compareToFriend,
 } from "../friendCompare";
 
+const roundsText = (n) => `${n} round${n === 1 ? "" : "s"}`;
+
 /* Rotates to point up when the panel is open — an SVG, not a text
    glyph (▾/⌄/›), for the same reason the in-game icons were moved off
    emoji/text glyphs earlier: those render inconsistently across
@@ -172,12 +174,12 @@ export default function FriendCompare({ rounds, dateKey }) {
                           {cmp.ahead === "tie"
                             ? `Tied at ${f.rounds}`
                             : cmp.ahead === "you"
-                            ? `You're ahead by ${Math.abs(cmp.delta)} (${f.rounds} rounds)`
-                            : `Ahead by ${Math.abs(cmp.delta)} (${f.rounds} rounds)`}
+                            ? `You're ahead by ${Math.abs(cmp.delta)} (${roundsText(f.rounds)})`
+                            : `Ahead by ${Math.abs(cmp.delta)} (${roundsText(f.rounds)})`}
                         </div>
                       ) : (
                         <div style={s.stale}>
-                          {f.rounds} rounds — from {f.dateKey}, not today
+                          {roundsText(f.rounds)} — from {f.dateKey}, not today
                         </div>
                       )}
                     </div>
