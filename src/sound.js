@@ -231,6 +231,15 @@ export const Snd = (() => {
    reason as before: Snd's graph is shipped and verified, this stays
    additive. Two AudioContexts on one page is normal and inexpensive.
 
+   Stops when the app is no longer frontmost. This module owns that, not
+   the screens: a React screen's effect only sees navigation, so it keeps
+   calling start() and leaves the bed running when the app is minimised,
+   the tab is hidden, or the phone locks — with no state change anywhere
+   to hang a stop() on. Two signals cover the platforms this ships to,
+   both bound lazily inside start() (see bindLifecycle), and both routed
+   through pause()/resume() rather than stop()/start() so that a
+   backgrounded app can be resumed without a real user stop() being undone.
+
    The mix levels below (BASE_LEVEL/TENSE_LEVEL) are still a starting
    guess, not a verified-good balance — this can't be heard in the
    build sandbox. Retune by ear on a real device before treating them
@@ -238,13 +247,20 @@ export const Snd = (() => {
 export const Music = (() => {
   let ctx = null, master = null, musicBus = null, musicOn = true;
   let padFilter = null, playing = false;
+  let wantPlaying = false;   // the CALLER's intent — true from start() until stop().
+                              // Deliberately left standing across pause()/resume() so a
+                              // resume can tell "app was backgrounded" apart from
+                              // "the user stopped the music", and only restart the former.
+  let paused = false;        // true only while a lifecycle event holds us off the air
   let tension = 0;   // 0 = calm, 1 = urgent — set by setTension()
   let ducked = false;
   let buffer = null, bufferLoadPromise = null;
   let activeNodes = [];   // { node, endAt } — anything with .stop(), pending teardown
   let loopTimer = null;
-  let runToken = 0;       // bumped on every stop() so a start() that's still loading
-                          // when stop() is called can't resurrect playback afterward
+  let runToken = 0;       // bumped on every teardown so a start() that's still loading
+                          // when it happens can't resurrect playback afterward
+  let lifecycleBound = false;
+  let appStateListener = null;
 
   const BASE_LEVEL = 0.14;
   const TENSE_LEVEL = 0.19;
@@ -336,10 +352,44 @@ export const Music = (() => {
     }, fireInMs);
   }
 
-  function start() {
-    if (playing) return;
+  /* Bound on the first start(), not at import. Registering at module
+     scope would keep two listeners alive for the whole session including
+     the ones that never play music, and on web would attach before any
+     user gesture, so the very first (silent) AudioContext would be
+     created from a background callback the browser is entitled to block.
+     The Capacitor plugin is pulled with a dynamic import for the same
+     reason the haptics loader at the top of this file does: it isn't
+     installed in a browser build, and a static import would fail the
+     whole module rather than just skipping the native path. */
+  function bindLifecycle() {
+    if (lifecycleBound) return;
+    lifecycleBound = true;
+
+    if (typeof document !== "undefined" && document.addEventListener) {
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) pause(); else resume();
+      });
+    }
+
+    import("@capacitor/app")
+      .then((mod) => {
+        const App = mod && mod.App;
+        if (!App || typeof App.addListener !== "function") return;
+        appStateListener = App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) resume(); else pause();
+        });
+      })
+      .catch(() => {});
+  }
+
+  /* Real start. Split out of start() so resume() can re-enter it without
+     having to fake a user intent change, and so the "ctx unavailable"
+     bail-out is reported upward (start() uses it to stay retryable the
+     way it was before the split). */
+  function begin() {
+    if (playing) return true;
     const c = ensure();
-    if (!c) return;
+    if (!c) return false;
     playing = true;
     const myToken = runToken;
 
@@ -357,9 +407,20 @@ export const Music = (() => {
     });
 
     rampBusTo(targetLevel(), 2.2);
+    return true;
   }
 
-  function stop() {
+  function start() {
+    if (wantPlaying) return;
+    wantPlaying = true;
+    paused = false;
+    if (!begin()) wantPlaying = false;   // no AudioContext at all — stay retryable
+  }
+
+  /* Real stop — shared by the user-facing stop() and by pause(), so
+     "backgrounded" and "user stopped" tear the graph down identically.
+     wantPlaying is what tells them apart afterwards. */
+  function teardown() {
     if (!playing || !ctx) return;
     playing = false;
     runToken++;   // invalidates any in-flight load/schedule from this run
@@ -375,6 +436,31 @@ export const Music = (() => {
     setTimeout(() => {
       nodesToStop.forEach(({ node }) => { try { node.stop(); } catch {} });
     }, 1100);
+  }
+
+  function stop() {
+    if (!wantPlaying) return;
+    wantPlaying = false;
+    paused = false;
+    teardown();
+  }
+
+  /* Backgrounded / tab hidden / phone locked. wantPlaying is left alone,
+     which is the whole point: a screen that started the music and then
+     got torn down by the OS will still resume it, while a user who
+     stopped it (or an app that never started it) is left alone —
+     otherwise the next appStateChange would resurrect a bed nobody
+     asked for, which is the bug in reverse. */
+  function pause() {
+    if (!wantPlaying || paused) return;
+    paused = true;
+    teardown();
+  }
+
+  function resume() {
+    if (!paused || !wantPlaying) return;
+    paused = false;
+    begin();
   }
 
   /* urgent: true once movesLeft <= 3 for the current round, false
@@ -422,5 +508,5 @@ export const Music = (() => {
     master.gain.linearRampToValueAtTime(v ? 1 : 0, t + 0.3);
   }
 
-  return { start, stop, setTension, duck, pulse, setEnabled };
+  return { start, stop, pause, resume, setTension, duck, pulse, setEnabled };
 })();
