@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
@@ -265,6 +265,24 @@ export default function Cascade() {
   const [screen, setScreen] = useState("home");   // "home" | "game"
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [dailyResults, setDailyResults] = useState({});
+  /* Where today's daily ATTEMPT stands, for the Home card (HomeScreen.jsx
+     explains the four phases). dailyState is authoritative once it exists;
+     the streak flag alone is only consulted for a save from before
+     dailyState existed. */
+  const dailyPhase =
+    dailyState?.status === "failed"
+      ? dailyResults[dailyKey()] ? "done" : "used"
+      : dailyState?.status === "in_progress"
+      ? "resume"
+      : dailyState?.status === "completed" || dailyResults[dailyKey()]
+      ? "done"
+      : "new";
+  /* Round the saved run will resume on. Read from disk only while Home is
+     showing (screen flips on Exit, so it refreshes when you come back). */
+  const resumeRound = useMemo(
+    () => (screen === "home" && dailyPhase === "resume" ? loadDailyRun()?.round ?? 1 : 1),
+    [screen, dailyPhase, dailyState],
+  );
   const [shieldedDates, setShieldedDates] = useState([]);
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
@@ -1501,6 +1519,8 @@ export default function Cascade() {
           dailyKey={dailyKey}
           hasPlayedOnce={hasPlayedOnce}
           todayRounds={todayRounds}
+          dailyPhase={dailyPhase}
+          resumeRound={resumeRound}
         />
       )}
 

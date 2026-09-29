@@ -26,8 +26,21 @@ export default function HomeScreen({
   onPlay, onDaily, onSettings, onAwards,
   dailyResults, shieldedDates = [], computeStreak, dailyKey,
   hasPlayedOnce, achievements, ACHIEVEMENTS, todayRounds,
+  dailyPhase = "new", resumeRound = 1,
 }) {
-  const todayDone = !!dailyResults[dailyKey()];
+  /* Two different questions, kept apart. `streakSafe`: today already counts
+     for the streak (round 1 cleared) -- drives the streak badge and the week
+     strip. `dailyPhase` (from App): where today's ATTEMPT stands --
+       new     not started
+       resume  started, still open (leaving a run keeps it; tapping resumes)
+       done    over, and the streak was credited
+       used    over on round 1, so the streak was NOT credited
+     The card used to read "Daily Complete / Come back tomorrow" the moment
+     round 1 cleared, even though tapping it dropped you back into the run,
+     and stayed "Tap to play" after a round-1 loss, when tapping only showed
+     a "One Attempt Used" toast. */
+  const streakSafe = !!dailyResults[dailyKey()];
+  const attemptOver = dailyPhase === "done" || dailyPhase === "used";
   const streak = computeStreak(dailyResults, shieldedDates);
 
   const days = [];
@@ -44,8 +57,25 @@ export default function HomeScreen({
   }
 
   /* Unified state color family */
-  const dailyAccent = todayDone ? D.go : D.gold;
-  const dailySoft = todayDone ? `color-mix(in srgb, ${D.go} 27.8%, transparent)` : `color-mix(in srgb, ${D.gold} 22%, transparent)`;
+  const dailyAccent = dailyPhase === "done" ? D.go : dailyPhase === "used" ? D.textSub : D.gold;
+  const dailySoft =
+    dailyPhase === "done"
+      ? `color-mix(in srgb, ${D.go} 27.8%, transparent)`
+      : dailyPhase === "used"
+      ? `color-mix(in srgb, ${D.textSub} 22%, transparent)`
+      : `color-mix(in srgb, ${D.gold} 22%, transparent)`;
+  const dailyLabelText = {
+    new: "🎯  Daily Challenge",
+    resume: "▶  Daily In Progress",
+    done: "✓  Daily Complete",
+    used: "Daily Attempt Used",
+  }[dailyPhase];
+  const dailyCtaText = {
+    new: "Tap to play today's puzzle",
+    resume: `Tap to resume · Round ${resumeRound}`,
+    done: "Come back tomorrow",
+    used: "Come back tomorrow",
+  }[dailyPhase];
 
   return (
     <div className="screen-transition" style={S.homeRoot}>
@@ -118,10 +148,10 @@ export default function HomeScreen({
             {/* Header row */}
             <div style={S.dailyHeader}>
               <span style={{ ...S.dailyLabel, color: dailyAccent }}>
-                {todayDone ? "✓  Daily Complete" : "🎯  Daily Challenge"}
+                {dailyLabelText}
               </span>
               {streak > 0 && (
-                <StreakBadge streak={streak} complete={todayDone} size="md" />
+                <StreakBadge streak={streak} complete={streakSafe} size="md" />
               )}
             </div>
 
@@ -159,9 +189,9 @@ export default function HomeScreen({
             {/* CTA */}
             <div style={{
               ...S.dailyCta,
-              color: todayDone ? D.go : D.textSub,
+              color: dailyPhase === "done" ? D.go : D.textSub,
             }}>
-              {todayDone ? "Come back tomorrow" : "Tap to play today's puzzle"}
+              {dailyCtaText}
             </div>
           </button>
         )}
@@ -170,7 +200,7 @@ export default function HomeScreen({
             can't legally contain another button or an input, and
             FriendCompare has both. Only shown once today's run is
             over, since comparing needs a score to compare with. */}
-        {hasPlayedOnce && todayDone && (
+        {hasPlayedOnce && attemptOver && (
           <div className="fade-up" style={{ width: "100%", animationDelay: "260ms" }}>
             <FriendCompare rounds={todayRounds} dateKey={dailyKey()} />
           </div>
