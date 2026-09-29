@@ -178,6 +178,7 @@ function DailyResetCountdown() {
    had never seen. */
 const UPGRADE_TAP_GUARD_MS = 500;
 const SCREEN_SHIELD_MS = 350;
+const CONFIRM_SCRIM_GUARD_MS = 400;
 
 export default function Cascade() {
   const [round, setRound] = useState(1);
@@ -205,6 +206,14 @@ export default function Cascade() {
      keeps the twist it began with. null outside a daily run. */
   const [dailyTwist, setDailyTwist] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  /* When the dialog opened. A tap on the dim area cancels it, but a double-tap on
+     the button that opened it (the HUD Home button) sent its second tap straight to
+     that dim area, so the dialog appeared and vanished again. Dim-area taps in the
+     first CONFIRM_SCRIM_GUARD_MS are ignored; the buttons themselves always work. */
+  const confirmOpenedAtRef = useRef(0);
+  useEffect(() => {
+    if (confirmDialog) confirmOpenedAtRef.current = performance.now();
+  }, [confirmDialog]);
   /* Today's rounds-cleared count, good across a same-day app restart —
      dailyRun resets to empty on reload (session-only React state), but
      dailyState is persisted and loadDailyState() already only returns
@@ -2430,7 +2439,11 @@ export default function Cascade() {
       {confirmDialog && (
         <div
           style={S.overlay}
-          onClick={(e) => { if (e.target === e.currentTarget) setConfirmDialog(null); }}
+          onClick={(e) => {
+            if (e.target !== e.currentTarget) return;
+            if (performance.now() - confirmOpenedAtRef.current < CONFIRM_SCRIM_GUARD_MS) return;
+            setConfirmDialog(null);
+          }}
         >
           <div style={{ ...S.ovCard, maxWidth: 340 }} role="alertdialog" aria-modal="true" aria-label={confirmDialog.title}>
             <div style={{ ...S.ovTitle, fontSize: 20 }}>{confirmDialog.title}</div>
