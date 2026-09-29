@@ -11,6 +11,7 @@
 
 import { useRef, useState } from "react";
 import { T } from "../constants";
+import { nativeShareText } from "../shareCard";
 import {
   buildCompareShareText,
   decodeCompareCode,
@@ -59,27 +60,24 @@ export default function FriendCompare({ rounds, dateKey }) {
     }, 2400);
   };
 
+  /* Goes through nativeShareText like the daily share does: Android's WebView has no
+     navigator.share (see shareCard.js), so calling it directly meant the APK only ever
+     copied to the clipboard instead of opening the share sheet, and with no clipboard
+     either the button did nothing at all. */
   const share = async () => {
     const text = buildCompareShareText({ dateKey, rounds });
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: "Cascade — Compare", text });
-      } else if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-        flash("ok", "Copied — paste it to a friend");
-      }
-    } catch (err) {
-      if (err && err.name !== "AbortError") {
-        flash("err", "Couldn't share — try again");
-      }
-    }
+    const result = await nativeShareText({ title: "Cascade — Compare", text });
+    if (result === "copied") flash("ok", "Copied — paste it to a friend");
+    else if (result === "failed") flash("err", "Couldn't share — try again");
   };
 
+  /* Returns true when a friend was added (so Enter can close the keyboard only then). */
   const addFriend = () => {
+    if (!pasteText.trim()) return false;
     const decoded = decodeCompareCode(pasteText);
     if (!decoded) {
       flash("err", "Couldn't find a Cascade code in that");
-      return;
+      return false;
     }
     const updated = saveFriend({
       label: labelText,
@@ -90,6 +88,7 @@ export default function FriendCompare({ rounds, dateKey }) {
     setPasteText("");
     setLabelText("");
     flash("ok", "Added");
+    return true;
   };
 
   const remove = (id) => setFriends(removeFriend(id));
@@ -117,12 +116,18 @@ export default function FriendCompare({ rounds, dateKey }) {
               placeholder="Paste a friend's message"
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && addFriend()) e.currentTarget.blur(); }}
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              enterKeyHint="done"
             />
             <input
               style={s.input}
               placeholder="Their name (optional)"
               value={labelText}
               onChange={(e) => setLabelText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && addFriend()) e.currentTarget.blur(); }}
+              autoComplete="off" maxLength={24}
+              enterKeyHint="done"
             />
             <button
               style={{ ...s.addBtn, opacity: pasteText.trim() ? 1 : 0.45 }}
@@ -261,7 +266,9 @@ const s = {
     padding: "10px 12px",
     color: T.ink,
     fontFamily: "'Inter', system-ui, sans-serif",
-    fontSize: 13,
+    /* 16px, not 13: iOS Safari zooms the whole page in when an input under 16px is
+       focused, and this page can't scroll or be un-zoomed easily. */
+    fontSize: 16,
     outline: "none",
     boxSizing: "border-box",
   },

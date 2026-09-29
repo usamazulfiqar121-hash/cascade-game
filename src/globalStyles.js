@@ -189,8 +189,9 @@ html, body, #root {
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* Keyboard focus ring. Most buttons carry an inline outline:none (which beats any
    stylesheet rule, hence !important), so tabbing through the app showed nothing.
-   :focus-visible only matches keyboard focus, never a tap or mouse click. */
-button:focus-visible, [role="button"]:focus-visible {
+   For buttons :focus-visible only matches keyboard focus, never a tap or mouse click;
+   text inputs (which had no focus indication at all) always match it. */
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent) !important;
   outline-offset: 2px;
 }
