@@ -301,20 +301,33 @@ export default function Cascade() {
     };
   }, []);
   const [screen, setScreen] = useState("home");   // "home" | "game"
-  /* Home <-> game switches instantly, so a second tap on the button that caused it
-     (a double-tap on "Exit" in the Exit-to-Home dialog, or on Play) landed on
-     whatever the new screen had under the finger: coming home, that was the Daily
-     Challenge card, which started a Daily run. A transparent layer swallows input
-     for the first SCREEN_SHIELD_MS after every screen change. */
+  /* Home <-> game switches instantly, and a confirm dialog vanishes the moment it is
+     answered, so a second tap on the button that caused either (a double-tap on "Exit"
+     in the Exit-to-Home dialog, on Play, or on the dialog's Cancel) landed on
+     whatever the screen underneath had at that spot: coming home, the Daily Challenge
+     card, which started a Daily run; after Cancel on the Reset dialog, the
+     Color-Blind row, which toggled it. A transparent layer swallows input for
+     SCREEN_SHIELD_MS after every screen change and every dialog close. */
   const [screenShield, setScreenShield] = useState(false);
+  const shieldTimerRef = useRef(null);
+  const raiseShield = useCallback(() => {
+    setScreenShield(true);
+    clearTimeout(shieldTimerRef.current);
+    shieldTimerRef.current = setTimeout(() => setScreenShield(false), SCREEN_SHIELD_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(shieldTimerRef.current), []);
   const shieldScreenRef = useRef(screen);
   useEffect(() => {
     if (shieldScreenRef.current === screen) return;
     shieldScreenRef.current = screen;
-    setScreenShield(true);
-    const t = setTimeout(() => setScreenShield(false), SCREEN_SHIELD_MS);
-    return () => clearTimeout(t);
-  }, [screen]);
+    raiseShield();
+  }, [screen, raiseShield]);
+  const shieldConfirmRef = useRef(confirmDialog);
+  useEffect(() => {
+    const wasOpen = !!shieldConfirmRef.current;
+    shieldConfirmRef.current = confirmDialog;
+    if (wasOpen && !confirmDialog) raiseShield();
+  }, [confirmDialog, raiseShield]);
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [dailyResults, setDailyResults] = useState({});
   /* Where today's daily ATTEMPT stands, for the Home card (HomeScreen.jsx
