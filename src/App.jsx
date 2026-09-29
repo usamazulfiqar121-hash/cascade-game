@@ -8,6 +8,7 @@ import {
   applyAutoSort, generateLevel, findHint,
   loadDailyState, saveDailyState,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
+  dailyRoundSeed, dailyLuckRoll, DAILY_STREAM,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -192,6 +193,15 @@ export default function Cascade() {
   /* Ref to avoid stale closures in level effect (before isDaily is set) */
   const isDailyRef = useRef(false);
   useEffect(() => { isDailyRef.current = isDaily; }, [isDaily]);
+
+  /* The moment today's daily run began. Every seed and every date key the
+     run uses comes from THIS date, not from "now" at the time each round
+     happens to be generated or cleared. A run that starts before UTC
+     midnight and carries on after it is still playing the puzzle it
+     started (see gameLogic.js dailyRoundSeed), instead of drifting onto
+     the next day's boards and writing its result onto a day the player
+     never opened. */
+  const dailyRunDateRef = useRef(null);
 
   /* Load persisted daily state on mount */
   useEffect(() => {
@@ -809,7 +819,11 @@ export default function Cascade() {
              pickRandomUpgrades() alone used Math.random even in daily mode,
              so two players clearing the same round saw different 3 cards. */
           if (isDaily) {
-            setPendingUpgrades(pickDailyUpgrades(dateToSeed() + round + 1));
+            setPendingUpgrades(
+              pickDailyUpgrades(
+                dailyRoundSeed(round, DAILY_STREAM.upgrades, dailyRunDateRef.current || new Date()),
+              ),
+            );
             setJackpotNearMiss(false);
           } else {
             const { upgrades, jackpotNearMiss } = pickRandomUpgrades(3);
@@ -1017,7 +1031,9 @@ export default function Cascade() {
        round 2 onward silently fell back to Math.random, so "today's
        daily challenge" was actually a different board for everyone
        past the first round. */
-    const nextSeed = isDaily ? dateToSeed() + nextRound : null;
+    const nextSeed = isDaily
+      ? dailyRoundSeed(nextRound, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
+      : null;
     setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound));
     setRetriedThisRound(false);
     Snd.upgrade();
@@ -1025,7 +1041,9 @@ export default function Cascade() {
   }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound]);
 
   const retry = useCallback(() => {
-    const seed = isDaily ? dateToSeed() + round : null;
+    const seed = isDaily
+      ? dailyRoundSeed(round, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
+      : null;
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed));
     setRetriedThisRound(true);
   }, [round, runUpgrades, lastRoundMovesLeft, isDaily]);
@@ -1087,10 +1105,12 @@ export default function Cascade() {
     }
     recordGameStart();
     if (daily) {
-      /* Round 1's seed follows the same dateToSeed() + round convention
-         used in chooseUpgrade/retry, so every daily round (not just the
-         first) is reproducible from date + round alone. */
-      const seed = dateToSeed() + 1;
+      /* Pin the run to today's date, then seed round 1 the same way every
+         later round is seeded (dailyRoundSeed in chooseUpgrade/retry), so
+         every daily round is reproducible from date + round alone. */
+      const runDate = new Date();
+      dailyRunDateRef.current = runDate;
+      const seed = dailyRoundSeed(1, DAILY_STREAM.board, runDate);
       /* Save "in_progress" state before starting */
       const st = saveDailyState({
         status: "in_progress",

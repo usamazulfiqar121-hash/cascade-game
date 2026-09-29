@@ -227,6 +227,52 @@ export function dateToSeed(date = new Date()) {
   return parseInt(dailyKey(date).replace(/-/g, ""), 10);
 }
 
+/* ─── Daily seeds ───
+   Every random draw in a daily run comes from a seed made here, so the
+   run is the same for everyone on a given date.
+
+   The old scheme was dateToSeed() + round, i.e. YYYYMMDD + round. Two
+   different (date, round) pairs with the same sum shared a seed: tomorrow's
+   round 1 drew from the same stream as today's round 2, so tomorrow's
+   upgrade cards were visible a day early and boards repeated across days
+   (measured: 97 of 600 date/round boards were copies of another day's).
+
+   Now (day, round, stream) is packed into one integer -- UTC day counted
+   from 2026-01-01 in the high 14 bits, round in the next 12, stream in
+   the low 2 -- which is unique by construction, then passed through
+   murmur3's 32-bit finalizer. That finalizer is a bijection, so unique
+   inputs stay unique outputs, while neighbouring days/rounds no longer
+   land on neighbouring PRNG streams. Unique until about 2070, round 4095.
+   `stream` keeps the board, the upgrade cards and the luck rolls of one
+   round from sharing a sequence. */
+const DAILY_EPOCH_DAY = 20454; /* 2026-01-01 as UTC days since 1970 */
+export const DAILY_STREAM = { board: 0, upgrades: 1, luck: 2 };
+
+function fmix32(h) {
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+export function dailyRoundSeed(round, stream = DAILY_STREAM.board, date = new Date()) {
+  const day = (Math.floor(date.getTime() / 86400000) - DAILY_EPOCH_DAY) & 0x3fff;
+  const r = Math.max(0, Math.min(4095, Math.floor(round)));
+  return fmix32((((day << 12) | r) << 2) | (stream & 3));
+}
+
+/* Lucky Drop / Super Lucky roll for one pour, in [0, 1). Daily runs used
+   Math.random() here, so two players making identical moves on the same
+   board got different move totals -- "same puzzle for everyone" stopped
+   being true the moment someone took a luck upgrade. `moveIdx` is the
+   number of pours already made this round, so the roll is fixed by
+   (day, round, pour number): identical for every player, and leaving and
+   coming back can't re-roll it. */
+export function dailyLuckRoll(round, moveIdx, date = new Date()) {
+  const s = dailyRoundSeed(round, DAILY_STREAM.luck, date);
+  return fmix32(s ^ Math.imul(moveIdx + 1, 0x9e3779b1)) / 4294967296;
+}
+
 export function computeStreak(results, shieldedDates = []) {
   let streak = 0;
   const today = new Date();
