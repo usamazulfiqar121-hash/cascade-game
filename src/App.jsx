@@ -816,6 +816,7 @@ export default function Cascade() {
 
       setTubes(next);
       setSelected(null);
+      setHint(null);
       Snd.pour(movedCount);
       if (!hasPlayedOnce) {
         setHasPlayedOnce(true);
@@ -1190,9 +1191,22 @@ export default function Cascade() {
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
   }, []);
 
+  /* One timer for the highlight. Each press used to start its own 1.6s timer,
+     so a second press while the first was still showing had its highlight
+     cut short by the first press's timer (measured: ~0.5s instead of 1.6s)
+     and spent a second hint to show the same move. */
+  const hintTimerRef = useRef(null);
+  const armHintTimer = useCallback(() => {
+    clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => setHint(null), 1600);
+  }, []);
+
   const useHint = useCallback(() => {
-    if (hintLeft <= 0) return;
     if (phase !== "playing" || roundDecidedRef.current) return;
+    /* A hint is on screen (and is cleared the moment the board changes, see
+       attemptPour / undo): pressing again just keeps it up, free. */
+    if (hint) { armHintTimer(); return; }
+    if (hintLeft <= 0) return;
     /* findHint (gameLogic.js) picks a move it can confirm keeps the board
        winnable, not just any legal move — see its own comment for why
        that distinction matters. */
@@ -1202,8 +1216,8 @@ export default function Cascade() {
     setHintLeft((h) => h - 1);
     Snd.select();
     Haptic.light();
-    setTimeout(() => setHint(null), 1600);
-  }, [hintLeft, phase, tubes]);
+    armHintTimer();
+  }, [hintLeft, phase, tubes, hint, armHintTimer]);
 
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
@@ -1217,6 +1231,7 @@ export default function Cascade() {
        drop-in, not a leftover landing delay. */
     setFlights([]);
     setLanding(null);
+    setHint(null);
     setMoves(last.moves);
     setBonusMoves(last.bonusMoves);
     /* last.comboCount, not last.combo — the snapshot (a few lines up,
