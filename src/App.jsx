@@ -1090,9 +1090,17 @@ export default function Cascade() {
     }
   }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast]);
 
+  /* A drag ends in a pointerup, and the browser then fires a click on the
+     tube the pointer was captured by (a mouse always does; a touch does if it
+     moved only a little). That click is the tail of the drag, not a new tap:
+     acting on it toggled the source tube back to selected right after a
+     drag-pour. Drags stamp this; onTubeClick ignores clicks until it passes. */
+  const suppressClickUntilRef = useRef(0);
+
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing" || roundDecidedRef.current) return;
     Snd.unlock();
+    if (performance.now() < suppressClickUntilRef.current) return;
     if (selected === null) {
       if (tubes[idx].length === 0) return;
       Snd.select();
@@ -1104,6 +1112,7 @@ export default function Cascade() {
   }, [phase, selected, tubes, attemptPour]);
 
   const DRAG_THRESHOLD = 10;
+  const WIGGLE_MAX = 40;
   const dragSourceRef = useRef(null);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const draggingRef = useRef(false);
@@ -1112,11 +1121,16 @@ export default function Cascade() {
     if (phase !== "playing" || roundDecidedRef.current) return;
     if (tubes[idx].length === 0) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    /* Something is already picked up and this is a different tube: the touch
+       is the destination tap of a tap-tap pour, never the start of a drag.
+       Arming a drag here meant a finger that drifted 10px+ during the tap
+       re-picked THIS tube instead of pouring into it. */
+    if (selected !== null && selected !== idx) return;
     dragSourceRef.current = idx;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     draggingRef.current = false;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-  }, [phase, tubes]);
+  }, [phase, tubes, selected]);
 
   const onTubePointerMove = useCallback((e) => {
     if (dragSourceRef.current === null || draggingRef.current) return;
@@ -1136,11 +1150,21 @@ export default function Cascade() {
     draggingRef.current = false;
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     if (!wasDragging || source === null) return;
+    suppressClickUntilRef.current = performance.now() + 150;
     if (phase !== "playing") { setSelected(null); return; }
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const targetEl = el && el.closest ? el.closest("[data-tube-idx]") : null;
     const targetIdx = targetEl ? parseInt(targetEl.dataset.tubeIdx, 10) : NaN;
-    if (Number.isNaN(targetIdx) || targetIdx === source) { setSelected(null); return; }
+    /* Let go over empty space: cancel. Let go over its own tube after only
+       a small wiggle (a finger that drifted during a tap): it stays picked
+       up, the same end state a plain tap gives. Dragged well away and let
+       go over its own tube (or its lifted balls): cancel, as before. */
+    if (Number.isNaN(targetIdx)) { setSelected(null); return; }
+    if (targetIdx === source) {
+      const travelled = Math.hypot(e.clientX - dragStartRef.current.x, e.clientY - dragStartRef.current.y);
+      if (travelled > WIGGLE_MAX) setSelected(null);
+      return;
+    }
     attemptPour(source, targetIdx, { currentTarget: targetEl });
   }, [phase, attemptPour]);
 
