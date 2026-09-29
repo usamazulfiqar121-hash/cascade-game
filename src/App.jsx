@@ -2174,6 +2174,10 @@ export default function Cascade() {
                     <button style={S.primary} onClick={retry}>Retry Round {round}</button>
                     <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
                     <button style={S.ghost} onClick={() => startNewGame(false)}>Start Over</button>
+                    {/* The Home button in the HUD is under this overlay, so without
+                        this the only way out was the OS back gesture, or Start Over
+                        and then Home. Same route back does (see onBackFromGame). */}
+                    <button style={S.ghost} onClick={popNav}>← Home</button>
                   </>
                 )}
               </>
