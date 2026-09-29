@@ -70,9 +70,11 @@ export const CSS = `
   --accent-grad: linear-gradient(135deg, #5A9BFF 0%, #3B7BF0 100%);
   --accent-glow: 0 12px 32px rgba(76, 141, 255, 0.4);
   --gold: #FFC24B;
+  --gold-text: #FFC24B;
   --gold-soft: rgba(255, 194, 75, 0.35);
   --gold-glow: 0 12px 32px rgba(255, 194, 75, 0.35);
   --go: #22C58A;
+  --go-text: #22C58A;
   --go-soft: rgba(34, 197, 138, 0.4);
   --go-glow: 0 12px 32px rgba(34, 197, 138, 0.35);
   --danger: #FF5C7A;
@@ -112,9 +114,13 @@ export const CSS = `
   --accent-grad: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
   --accent-glow: 0 12px 32px rgba(37, 99, 235, 0.28);
   --gold: #D97706;
+  /* Text-safe variants: --gold / --go are too light to read as small text on the
+     light theme (3.1:1 / 3.7:1). Same value as the fill colour in dark. */
+  --gold-text: #B45309;
   --gold-soft: rgba(217, 119, 6, 0.28);
   --gold-glow: 0 12px 32px rgba(217, 119, 6, 0.25);
   --go: #059669;
+  --go-text: #047857;
   --go-soft: rgba(5, 150, 105, 0.28);
   --go-glow: 0 12px 32px rgba(5, 150, 105, 0.25);
   --danger: #DC2626;

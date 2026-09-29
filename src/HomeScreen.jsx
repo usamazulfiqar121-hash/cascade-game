@@ -45,7 +45,7 @@ export default function HomeScreen({
   /* Today's rule change, shown on the card so it's part of the reason to
      open it (see DAILY_TWISTS in constants.js). */
   const twist = pickDailyTwist();
-  const twistColor = twist.kind === "curse" ? D.danger : twist.kind === "mixed" ? D.gold : D.go;
+  const twistColor = twist.kind === "curse" ? D.danger : twist.kind === "mixed" ? D.goldText : D.goText;
 
   const days = [];
   const today = new Date();
@@ -61,7 +61,7 @@ export default function HomeScreen({
   }
 
   /* Unified state color family */
-  const dailyAccent = dailyPhase === "done" ? D.go : dailyPhase === "used" ? D.textSub : D.gold;
+  const dailyAccent = dailyPhase === "done" ? D.goText : dailyPhase === "used" ? D.textSub : D.goldText;
   const dailySoft =
     dailyPhase === "done"
       ? `color-mix(in srgb, ${D.go} 27.8%, transparent)`

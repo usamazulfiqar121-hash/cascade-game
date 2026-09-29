@@ -159,7 +159,7 @@ function DailyResetCountdown() {
     <div style={{
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: 16, fontWeight: 800,
-      color: urgent ? T.danger : T.gold,
+      color: urgent ? T.danger : T.goldText,
       marginTop: 4,
       fontVariantNumeric: "tabular-nums",
       letterSpacing: "-0.02em",
@@ -1826,7 +1826,7 @@ export default function Cascade() {
               fontSize: 22,
             }}>{achToast.icon}</div>
             <div>
-              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", color: T.gold, textTransform: "uppercase" }}>Achievement</div>
+              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", color: T.goldText, textTransform: "uppercase" }}>Achievement</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: T.ink }}>{achToast.name}</div>
             </div>
           </div>
@@ -1843,7 +1843,7 @@ export default function Cascade() {
           width: 54, height: 54, borderRadius: 18,
           background: T.card,
           border: "1.5px solid " + (hintLeft > 0 && phase === "playing" ? `color-mix(in srgb, ${T.go} 40%, transparent)` : T.line),
-          color: hintLeft > 0 && phase === "playing" ? T.go : T.muted,
+          color: hintLeft > 0 && phase === "playing" ? T.goText : T.muted,
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           cursor: hintLeft > 0 && phase === "playing" ? "pointer" : "default",
           opacity: hintLeft <= 0 || phase !== "playing" ? 0.4 : 1,
@@ -2134,7 +2134,7 @@ export default function Cascade() {
                             {dailyScoreResult.score.toLocaleString("en-US")}
                           </div>
                         </div>
-                        <div style={{ textAlign: "right", fontSize: 11, fontWeight: 800, color: dailyScoreResult.isNew ? T.go : T.muted }}>
+                        <div style={{ textAlign: "right", fontSize: 11, fontWeight: 800, color: dailyScoreResult.isNew ? T.goText : T.muted }}>
                           {dailyScoreResult.isNew
                             ? "New personal best!"
                             : `Best ${dailyScoreResult.best.toLocaleString("en-US")}`}

@@ -190,7 +190,7 @@ const S = {
   },
   heroLabel: {
     fontSize: 10, fontWeight: 900,
-    color: "var(--gold)",
+    color: "var(--gold-text)",
     letterSpacing: "0.18em",
     textTransform: "uppercase",
     marginBottom: 8,
