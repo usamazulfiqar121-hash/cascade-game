@@ -112,7 +112,7 @@ export const S = {
   comboFlame: { fontSize: 13 },
   comboText: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 12, fontWeight: 800, color: "var(--gold)",
+    fontSize: 12, fontWeight: 800, color: "var(--gold-text)",
     letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums",
   },
   /* ─── HOME SCREEN ─── */

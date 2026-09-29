@@ -91,6 +91,11 @@ export const RARITY = {
   5: { name: "Jackpot", color: "#FF3DAF" },
 };
 
+/* A rarity colour as *text*. The raw colours are right for fills, borders and glows
+   but only 1.6-3.2:1 as 9-12px text on the light theme; --rarity-ink is 0% in dark
+   (colour unchanged) and 50% in light (globalStyles.js). */
+export const rarityText = (color) => `color-mix(in srgb, ${color}, var(--ink) var(--rarity-ink))`;
+
 /* Roguelike upgrades pool.
    "start" was 10 — only +2 over Rare's m8 (8), barely distinguishable from
    the tier below despite being Legendary. Widened to make the top tier feel

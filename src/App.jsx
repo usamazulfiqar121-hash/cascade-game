@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, rarityText } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -2059,7 +2059,7 @@ export default function Cascade() {
             {jackpotNearMiss && (
               <div style={{
                 fontSize: 12, fontWeight: 800, textAlign: "center",
-                color: RARITY[5].color, marginBottom: 12,
+                color: rarityText(RARITY[5].color), marginBottom: 12,
               }}>
                 ✨ A Jackpot almost dropped!
               </div>

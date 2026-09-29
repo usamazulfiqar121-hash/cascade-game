@@ -71,6 +71,7 @@ export const CSS = `
   --accent-glow: 0 12px 32px rgba(76, 141, 255, 0.4);
   --gold: #FFC24B;
   --gold-text: #FFC24B;
+  --rarity-ink: 0%;
   --gold-soft: rgba(255, 194, 75, 0.35);
   --gold-glow: 0 12px 32px rgba(255, 194, 75, 0.35);
   --go: #22C58A;
@@ -117,13 +118,17 @@ export const CSS = `
   /* Text-safe variants: --gold / --go are too light to read as small text on the
      light theme (3.1:1 / 3.7:1). Same value as the fill colour in dark. */
   --gold-text: #B45309;
+  /* How much --ink is mixed into a rarity colour when it is used as small text (see
+     rarityText in constants.js): none in dark, half in light so Legendary gold and
+     Uncommon green stay above 4.5:1 on white. */
+  --rarity-ink: 50%;
   --gold-soft: rgba(217, 119, 6, 0.28);
   --gold-glow: 0 12px 32px rgba(217, 119, 6, 0.25);
   --go: #059669;
   --go-text: #047857;
   --go-soft: rgba(5, 150, 105, 0.28);
   --go-glow: 0 12px 32px rgba(5, 150, 105, 0.25);
-  --danger: #DC2626;
+  --danger: #CF2020;
   --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
   --shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.12);
