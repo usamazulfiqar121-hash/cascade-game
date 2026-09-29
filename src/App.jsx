@@ -177,6 +177,7 @@ function DailyResetCountdown() {
    invisible -- so a stray tap from the last pour picked an upgrade the player
    had never seen. */
 const UPGRADE_TAP_GUARD_MS = 500;
+const SCREEN_SHIELD_MS = 350;
 
 export default function Cascade() {
   const [round, setRound] = useState(1);
@@ -291,6 +292,20 @@ export default function Cascade() {
     };
   }, []);
   const [screen, setScreen] = useState("home");   // "home" | "game"
+  /* Home <-> game switches instantly, so a second tap on the button that caused it
+     (a double-tap on "Exit" in the Exit-to-Home dialog, or on Play) landed on
+     whatever the new screen had under the finger: coming home, that was the Daily
+     Challenge card, which started a Daily run. A transparent layer swallows input
+     for the first SCREEN_SHIELD_MS after every screen change. */
+  const [screenShield, setScreenShield] = useState(false);
+  const shieldScreenRef = useRef(screen);
+  useEffect(() => {
+    if (shieldScreenRef.current === screen) return;
+    shieldScreenRef.current = screen;
+    setScreenShield(true);
+    const t = setTimeout(() => setScreenShield(false), SCREEN_SHIELD_MS);
+    return () => clearTimeout(t);
+  }, [screen]);
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
   const [dailyResults, setDailyResults] = useState({});
   /* Where today's daily ATTEMPT stands, for the Home card (HomeScreen.jsx
@@ -2428,6 +2443,7 @@ export default function Cascade() {
         </div>
       )}
 
+      {screenShield && <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 400 }} />}
     </div>
   );
 }
