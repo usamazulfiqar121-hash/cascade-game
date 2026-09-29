@@ -17,9 +17,15 @@ import { useEffect, useRef, useState } from "react";
 import { T } from "./constants";
 import { S } from "./theme";
 
+/* "Got it" sits exactly under Settings' "How to Play" row (y 606-654 vs 645 on a
+   390x844 phone), so a double-tap on that row opened the card and dismissed it again
+   with the second tap. Taps in the first TUT_TAP_GUARD_MS are ignored. */
+const TUT_TAP_GUARD_MS = 500;
+
 export default function Tutorial({ onClose }) {
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef(null);
+  const openedAt = useRef(performance.now());
 
   // Guards against the timer still being in flight if something force-
   // unmounts this component before "Got it" itself gets clicked.
@@ -27,6 +33,7 @@ export default function Tutorial({ onClose }) {
 
   const handleClose = () => {
     if (closing) return; // one tap during the exit shouldn't queue a second onClose
+    if (performance.now() - openedAt.current < TUT_TAP_GUARD_MS) return;
     setClosing(true);
     /* Same 200ms exit in both motion settings: Reduce Motion no longer
        squashes one-shot animations (globalStyles.js), so cutting this to 0
