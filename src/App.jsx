@@ -15,7 +15,7 @@ import { S } from "./theme";
 import { CSS } from "./globalStyles";
 import { buildEmojiGrid, buildShareCard, nativeShareText, nativeShareImage } from "./shareCard";
 import { Snd, Haptic, setVibe, Music } from "./sound";
-import { initNotifications, scheduleDailyReminder, cancelDailyReminder } from "./notifications";
+import { initNotifications, syncDailyReminders } from "./notifications";
 import Particles from "./Particles";
 import Tube, { tubeDims, slotCenter, LIFT_GAP } from "./Tube";
 import FlyingBalls, { planFlight } from "./FlyingBalls";
@@ -225,42 +225,45 @@ export default function Cascade() {
     try {
       const ds = loadDailyState();
       if (ds) setDailyState(ds);
-      (async () => {
-        const granted = await initNotifications();
-        if (!granted) return;
-        if (ds && (ds.status === "completed" || ds.status === "failed")) {
-          cancelDailyReminder();
-        } else {
-          scheduleDailyReminder();
-        }
-      })();
+      /* Permission first, then let notifications.js rebuild the reminders
+         from what is true right now (see planDailyReminders there). */
+      initNotifications().then((granted) => { if (granted) syncDailyReminders(); });
     } catch {}
   }, []);
 
-  /* Watches for the daily challenge's UTC-midnight rollover so dailyState
-     refreshes the moment a new day's puzzle unlocks. This used to also
-     store the live countdown (ms until next) in App-level state, ticking
-     every second for the app's entire lifetime -- which re-rendered this
-     whole component (HUD, board, every tube, every overlay) once a
-     second regardless of what screen was even showing, since a top-level
-     state update can't be scoped to the one small "next puzzle in..."
-     label that actually displays it (and that label is only mounted at
-     all on the daily game-over overlay). See DailyResetCountdown below --
-     it now owns that per-second tick itself, so only it re-renders. This
-     effect only needs to notice the rollover, not display it, so it
-     computes ms locally without ever putting it in state. */
+  /* Day rollover. The daily puzzle changes at UTC midnight, and everything
+     on Home that depends on "today" (the card, the week strip, the streak,
+     the shield) is worked out while rendering. Nothing re-renders at
+     midnight by itself, and the old watcher only reloaded dailyState if a
+     one-second tick happened to land in the last second before midnight.
+     A phone that sleeps through midnight never gets that tick, so the app
+     kept showing yesterday's "Daily Attempt Used" / "Come back tomorrow"
+     card and yesterday's week (reproduced with a faked clock). Now the day
+     key itself is compared, every second while the app is awake and again
+     the moment it becomes visible, so it doesn't matter how the midnight
+     was slept through. dayTick exists only to force that re-render. */
+  const [, setDayTick] = useState(0);
+  const seenDayRef = useRef(dailyKey());
   useEffect(() => {
-    const tick = () => {
-      if (msUntilNextDaily() <= 1000) {
-        try {
-          const fresh = loadDailyState();
-          setDailyState(fresh);
-        } catch {}
-      }
+    const refreshDay = () => {
+      const k = dailyKey();
+      if (k === seenDayRef.current) return;
+      seenDayRef.current = k;
+      try { setDailyState(loadDailyState()); } catch {}
+      try {
+        const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+        setShieldedDates(reconcileStreakShield(dr));
+      } catch {}
+      setDayTick((n) => n + 1);
+      syncDailyReminders();
     };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    const onVisible = () => { if (!document.hidden) refreshDay(); };
+    const id = setInterval(refreshDay, 1000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
   const [screen, setScreen] = useState("home");   // "home" | "game"
   const [hasPlayedOnce, setHasPlayedOnce] = useState(false);
@@ -907,6 +910,8 @@ export default function Cascade() {
               dr[k] = { completed: true, ts: Date.now() };
               localStorage.setItem("cascade:dailyResults", JSON.stringify(dr));
               setDailyResults(dr);
+              /* the streak is safe for today: drop today's reminder */
+              syncDailyReminders();
             }
           } catch {}
         }
@@ -989,7 +994,7 @@ export default function Cascade() {
           /* Daily failure: show it (the state itself was saved above) */
           if (failedState) {
             setDailyState(failedState);
-            cancelDailyReminder();
+            syncDailyReminders();
           }
 
           setPhase("gameover");
@@ -1264,7 +1269,6 @@ export default function Cascade() {
                 : [],
           };
           dailyBestAtStartRef.current = Number.isFinite(saved.bestAtStart) ? saved.bestAtStart : dailyBest;
-          cancelDailyReminder();
           setDailyState(fresh);
           setIsDaily(true);
           setRound(saved.round);
@@ -1296,22 +1300,7 @@ export default function Cascade() {
           : saveDailyState({ status: "in_progress", startedAt: Date.now(), seed });
       setDailyState(st);
       clearDailyRun();
-      /* The mount effect schedules a "Today's Cascade is waiting... play
-         today's challenge" reminder for later today whenever there's no
-         dailyState yet — correct at the time, since it only fires when
-         the player genuinely hasn't played. But it's a one-shot decision
-         made once at launch: nothing ever revisits it, so opening the app
-         before playing, then actually playing (clearing rounds, still
-         in_progress) and backing out without failing, left that reminder
-         armed. Hours later it fires anyway, telling the player their
-         streak is at risk and to go play a challenge they already
-         started — the exact kind of factually-wrong push notification
-         that trains people to ignore (or disable) a game's notifications.
-         Cancelling it the moment they actually start covers that; the
-         existing cancel on failure (below, in the moves-exhausted branch)
-         still runs too, harmlessly, since a cancelled reminder can't be
-         cancelled twice. */
-      cancelDailyReminder();
+      syncDailyReminders();
       setIsDaily(true);
       setRound(1);
       setRunUpgrades([]);
