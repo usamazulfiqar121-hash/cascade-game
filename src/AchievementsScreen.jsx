@@ -3,6 +3,7 @@
    iOS-style slide-in, back arrow header. */
 
 import { D, ACHIEVEMENTS } from "./constants";
+import { useEnterShield } from "./useEnterShield";
 
 export default function AchievementsScreen({
   achievements,
@@ -15,6 +16,7 @@ export default function AchievementsScreen({
   closing = false,
 }) {
   const handleBack = onBack || onClose;
+  const ready = useEnterShield();
   const count = achievements.length;
   const total = ACHIEVEMENTS.length;
   const pct = total > 0 ? (count / total) * 100 : 0;
@@ -117,6 +119,7 @@ export default function AchievementsScreen({
           })}
         </div>
       </div>
+      {!ready && <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 5 }} />}
     </div>
   );
 }

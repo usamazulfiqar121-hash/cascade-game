@@ -1,4 +1,5 @@
 import { D } from "../constants";
+import { useEnterShield } from "../useEnterShield";
 
 export default function SettingsScreen({
   soundOn, vibeOn, musicOn,
@@ -15,6 +16,7 @@ export default function SettingsScreen({
   closing = false,
 }) {
   const handleBack = onBack || onClose;
+  const ready = useEnterShield();
   return (
     <div
       style={{
@@ -109,6 +111,7 @@ export default function SettingsScreen({
             onClick={onReset}
           />
       </div>
+      {!ready && <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 5 }} />}
     </div>
   );
 }
