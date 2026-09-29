@@ -9,6 +9,7 @@ import {
   loadDailyState, saveDailyState,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
   dailyRoundSeed, dailyLuckRoll, DAILY_STREAM,
+  saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -202,6 +203,17 @@ export default function Cascade() {
      the next day's boards and writing its result onto a day the player
      never opened. */
   const dailyRunDateRef = useRef(null);
+  /* Position to lay over the freshly generated round when a saved daily
+     run is resumed. Read once, by the level effect below. */
+  const pendingResumeRef = useRef(null);
+  /* Saves the live daily position (see saveDailyRun in gameLogic.js).
+     Does nothing outside a daily run, or once the run's day has rolled
+     over, since a saved run is only ever resumed on its own day. */
+  const persistDailyRun = useCallback((run) => {
+    const runDate = dailyRunDateRef.current;
+    if (!runDate || dailyKey(runDate) !== dailyKey()) return;
+    saveDailyRun({ dateKey: dailyKey(runDate), ...run });
+  }, []);
   /* True when the run on screen belongs to an earlier UTC day than today
      (started before midnight, still playing after it). Its game-over card
      must not say "come back tomorrow": today's puzzle is already open. */
@@ -545,6 +557,22 @@ export default function Cascade() {
     setLanding(null);
     roundDecidedRef.current = false;
     setPhase("playing");
+    /* Resuming a saved daily run: the round was just regenerated exactly as
+       it started, now lay the saved position over it. */
+    const resume = pendingResumeRef.current;
+    pendingResumeRef.current = null;
+    if (resume) {
+      setTubes(resume.tubes.map((t) => [...t]));
+      setMoves(resume.moves);
+      setBonusMoves(resume.bonusMoves);
+      setComboCount(resume.combo);
+      if (resume.phase === "upgrade") {
+        roundDecidedRef.current = true;
+        setPendingUpgrades(resume.pendingUpgrades);
+        setJackpotNearMiss(false);
+        setPhase("upgrade");
+      }
+    }
   }, [level]);
 
   useEffect(() => {
@@ -774,6 +802,25 @@ export default function Cascade() {
 
       const newMovesLeft = level.moveLimit + newBonus - newMovesUsed;
 
+      /* Daily: keep the live position on disk, so leaving and coming back
+         resumes it (see saveDailyRun). The pours that end the round are
+         saved below instead, as a cleared round or a failed run. */
+      if (isDaily && !isSolved(next) && newMovesLeft > 0) {
+        persistDailyRun({
+          phase: "playing",
+          round,
+          upgrades: runUpgrades,
+          genPrevLeft: lastRoundMovesLeft,
+          nextPrevLeft: 0,
+          tubes: next,
+          moves: newMovesUsed,
+          bonusMoves: newBonus,
+          combo: newCombo,
+          rounds: dailyRun.rounds,
+          totalMoves: dailyRun.totalMoves,
+        });
+      }
+
       if (isSolved(next)) {
         roundDecidedRef.current = true;
         const remainingAtClear = newMovesLeft;
@@ -798,10 +845,27 @@ export default function Cascade() {
             setBest(round);
             try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
           }
-          setDailyRun((prev) => ({
-            rounds: [...prev.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
-            totalMoves: prev.totalMoves + newMovesUsed,
-          }));
+          const clearedRun = {
+            rounds: [...dailyRun.rounds, { round, moves: newMovesUsed, moveLimit: level.moveLimit }],
+            totalMoves: dailyRun.totalMoves + newMovesUsed,
+          };
+          setDailyRun(clearedRun);
+          /* Saved the moment the round is cleared, not when the upgrade
+             cards open ~1s later: leaving in that gap resumes straight at
+             the cards. */
+          persistDailyRun({
+            phase: "upgrade",
+            round,
+            upgrades: runUpgrades,
+            genPrevLeft: lastRoundMovesLeft,
+            nextPrevLeft: remainingAtClear,
+            tubes: next,
+            moves: newMovesUsed,
+            bonusMoves: newBonus,
+            combo: newCombo,
+            rounds: clearedRun.rounds,
+            totalMoves: clearedRun.totalMoves,
+          });
           /* Save streak day — a deliberately low bar (clearing just round 1
              keeps the streak alive), separate from whether the run itself
              is still going. See computeStreak in gameLogic.js. */
@@ -863,6 +927,25 @@ export default function Cascade() {
       } else if (newMovesLeft <= 0) {
         roundDecidedRef.current = true;
         setNearMiss(isOneMoveFromSolved(next));
+        /* Daily: the attempt is over the instant the last move is spent, so
+           it's recorded now and the saved run is dropped. Waiting for the
+           results card (~0.5s) left a window where closing the app would
+           resume the run one move from the end. Only when the run is still
+           on today's puzzle: a run that started before UTC midnight and
+           failed after it belongs to the previous day, and saveDailyState
+           stamps "today" -- writing it marked the player's brand-new day as
+           already failed ("One Attempt Used" on a puzzle they never
+           opened). */
+        const failedState =
+          isDaily && dailyKey(dailyRunDateRef.current || new Date()) === dailyKey()
+            ? saveDailyState({
+                status: "failed",
+                failedAt: Date.now(),
+                movesUsed: newMovesUsed,
+                rounds: Math.max(0, round - 1),
+              })
+            : null;
+        if (failedState) clearDailyRun();
         setTimeout(() => {
           // Save best if this is a new best
           if (round > best) {
@@ -872,21 +955,9 @@ export default function Cascade() {
 
           setFinalMovesLeft(Math.max(0, newMovesLeft));
 
-          /* Daily failure — mark state */
-          /* Only when the run is still on today's puzzle. A run that
-             started before UTC midnight and failed after it belongs to the
-             previous day: saveDailyState stamps "today", so writing it
-             here marked the player's brand-new day as already failed
-             ("One Attempt Used" on a puzzle they never opened), and
-             cancelled the reminder for it too. */
-          if (isDaily && dailyKey(dailyRunDateRef.current || new Date()) === dailyKey()) {
-            const st = saveDailyState({
-              status: "failed",
-              failedAt: Date.now(),
-              movesUsed: newMovesUsed,
-              rounds: Math.max(0, round - 1),
-            });
-            setDailyState(st);
+          /* Daily failure: show it (the state itself was saved above) */
+          if (failedState) {
+            setDailyState(failedState);
             cancelDailyReminder();
           }
 
@@ -903,7 +974,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun]);
 
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing" || roundDecidedRef.current) return;
@@ -1044,11 +1115,27 @@ export default function Cascade() {
     const nextSeed = isDaily
       ? dailyRoundSeed(nextRound, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
       : null;
-    setLevel(generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound));
+    const nextLevel = generateLevel(nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound);
+    setLevel(nextLevel);
     setRetriedThisRound(false);
+    if (isDaily) {
+      persistDailyRun({
+        phase: "playing",
+        round: nextRound,
+        upgrades: newUpgrades,
+        genPrevLeft: lastRoundMovesLeft,
+        nextPrevLeft: 0,
+        tubes: nextLevel.tubes,
+        moves: 0,
+        bonusMoves: 0,
+        combo: 0,
+        rounds: dailyRun.rounds,
+        totalMoves: dailyRun.totalMoves,
+      });
+    }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, isDaily, retriedThisRound, dailyRun, persistDailyRun]);
 
   const retry = useCallback(() => {
     const seed = isDaily
@@ -1097,8 +1184,9 @@ export default function Cascade() {
        the very attempt they're still in the middle of. So the legacy
        flag is only consulted when there's no dailyState at all for today
        (a save from before dailyState existed). */
+    let fresh = null;
     if (daily) {
-      const fresh = loadDailyState();
+      fresh = loadDailyState();
       const isCompleted = fresh ? fresh.status === "completed" : !!dailyResults[dailyKey()];
       const isFailed = fresh && fresh.status === "failed";
 
@@ -1113,8 +1201,53 @@ export default function Cascade() {
         return false;
       }
     }
-    recordGameStart();
-    if (daily) {
+    /* Daily, attempt still open, and a saved position exists: pick the run
+       up where it was left, rather than starting round 1 again. Restarting
+       was the hole in "one attempt a day" (the boards are the same for
+       everyone, so a player could step out before losing, which records
+       nothing, and retry with every board already known). The saved tubes
+       are only trusted if they're a real position of the regenerated round;
+       otherwise it falls through to a fresh start. */
+    let resumed = false;
+    if (daily && fresh && fresh.status === "in_progress") {
+      const saved = loadDailyRun();
+      if (saved) {
+        const runDate = new Date();
+        const lvl = generateLevel(
+          saved.round, saved.upgrades, saved.genPrevLeft,
+          dailyRoundSeed(saved.round, DAILY_STREAM.board, runDate),
+        );
+        if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
+          dailyRunDateRef.current = runDate;
+          pendingResumeRef.current = {
+            phase: saved.phase,
+            tubes: saved.tubes,
+            moves: saved.moves,
+            bonusMoves: saved.bonusMoves,
+            combo: saved.combo,
+            pendingUpgrades:
+              saved.phase === "upgrade"
+                ? pickDailyUpgrades(dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate))
+                : [],
+          };
+          cancelDailyReminder();
+          setDailyState(fresh);
+          setIsDaily(true);
+          setRound(saved.round);
+          setRunUpgrades(saved.upgrades);
+          setLastRoundMovesLeft(saved.phase === "upgrade" ? saved.nextPrevLeft : saved.genPrevLeft);
+          setRetriedThisRound(false);
+          setUndoUsedThisRun(false);
+          setShareImage(null);
+          setShared(false);
+          setDailyRun({ rounds: saved.rounds, totalMoves: saved.totalMoves });
+          setLevel(lvl);
+          resumed = true;
+        }
+      }
+    }
+    if (!resumed) recordGameStart();
+    if (!resumed && daily) {
       /* Pin the run to today's date, then seed round 1 the same way every
          later round is seeded (dailyRoundSeed in chooseUpgrade/retry), so
          every daily round is reproducible from date + round alone. */
@@ -1122,12 +1255,12 @@ export default function Cascade() {
       dailyRunDateRef.current = runDate;
       const seed = dailyRoundSeed(1, DAILY_STREAM.board, runDate);
       /* Save "in_progress" state before starting */
-      const st = saveDailyState({
-        status: "in_progress",
-        startedAt: Date.now(),
-        seed,
-      });
+      const st =
+        fresh && fresh.status === "in_progress"
+          ? fresh
+          : saveDailyState({ status: "in_progress", startedAt: Date.now(), seed });
       setDailyState(st);
+      clearDailyRun();
       /* The mount effect schedules a "Today's Cascade is waiting... play
          today's challenge" reminder for later today whenever there's no
          dailyState yet — correct at the time, since it only fires when
@@ -1154,7 +1287,7 @@ export default function Cascade() {
       setShared(false);
       setDailyRun({ rounds: [], totalMoves: 0 });
       setLevel(generateLevel(1, [], 0, seed));
-    } else {
+    } else if (!resumed) {
       restartRun();
     }
     setScreen("game");
@@ -1497,7 +1630,12 @@ export default function Cascade() {
             if (phase === "playing" && (moves > 0 || round > 1)) {
               setConfirmDialog({
                 title: "Exit to Home?",
-                message: "Progress will be lost.",
+                /* A daily run is saved as it's played and resumes from
+                   Home, so "will be lost" would be false there (and the
+                   old, true version of it pushed people to stay in). */
+                message: isDaily
+                  ? "Your daily run is saved. Pick it up from Home any time today."
+                  : "Progress will be lost.",
                 confirmLabel: "Exit",
                 onConfirm: () => {
                   saveBestRound();
@@ -1876,6 +2014,7 @@ export default function Cascade() {
                   localStorage.removeItem("cascade:stats");
                   localStorage.removeItem("cascade:dailyResults");
                   localStorage.removeItem("cascade:dailyState");
+                  localStorage.removeItem("cascade:dailyRun");
                   localStorage.removeItem("cascade:hasPlayedOnce");
                 } catch {}
                 setBest(0);
