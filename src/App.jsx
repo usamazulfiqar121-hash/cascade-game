@@ -10,7 +10,7 @@ import {
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
   dailyRoundSeed, dailyLuckRoll, DAILY_STREAM,
   pickDailyTwist, LUCKY_DAY_BONUS, FEAST_CARD_COUNT, WIND_MOVES,
-  dailyScore, DAILY_BEST_SCORE_KEY,
+  dailyScore, DAILY_BEST_SCORE_KEY, BEST_STREAK_KEY, SHIELD_KEY,
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
 } from "./gameLogic";
 import { S } from "./theme";
@@ -2356,7 +2356,7 @@ export default function Cascade() {
                  A player confirming this had no way to know their streak —
                  the one thing the game otherwise goes out of its way to
                  protect, with shields and reminders — was part of the deal. */
-              message: "This deletes your best score, stats, daily streak, and tutorial.",
+              message: "This deletes your best score, stats, achievements, streaks, and tutorial.",
               confirmLabel: "Reset",
               danger: true,
               onConfirm: () => {
@@ -2370,7 +2370,16 @@ export default function Cascade() {
                   localStorage.removeItem("cascade:dailyState");
                   localStorage.removeItem("cascade:dailyRun");
                   localStorage.removeItem("cascade:hasPlayedOnce");
+                  /* The title says ALL progress, but these three used to survive it: Profile
+                     still showed the old Best Streak and every unlocked achievement, and a
+                     leftover shield record stopped a new one being granted that month. */
+                  localStorage.removeItem(ACH_KEY);
+                  localStorage.removeItem(BEST_STREAK_KEY);
+                  localStorage.removeItem(SHIELD_KEY);
                 } catch {}
+                setAchievements([]);
+                setBestStreak(0);
+                setShieldedDates([]);
                 setBest(0);
                 setDailyBest(0);
                 setDailyBestScore(0);
