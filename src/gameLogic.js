@@ -638,8 +638,11 @@ export function formatCountdown(ms) {
    The flat effects (Extra Tube, Auto-Sort, the +N moves cards) stack, so
    they are never dead; these ones are read with includes() or capped:
    Perfect Clear and Mega Bonus are on/off, Combo Master is covered by Combo
-   Legend (but not the other way round), and Lucky Drop / Super Lucky share
-   the 70% cap in getLuckyChance. Measured over 200 simulated days with
+   Legend (but not the other way round), and Lucky Drop / Super Lucky are
+   judged by whether taking them actually moves the chance — not by
+   getLuckyChance's 0.7 ceiling, which is only ever a CLAMP: the two luck
+   cards sum to 0.2 + 0.35 = 0.55, so the old `>= 0.7` test could never be
+   true and silently filtered nothing. Measured over 200 simulated days with
    random picks, 13.8% of all daily cards and 35.6% of all offers had at
    least one of these, and from round 9 on more than half of the offers. */
 export function isDeadUpgrade(id, owned = []) {
@@ -647,13 +650,19 @@ export function isDeadUpgrade(id, owned = []) {
     case "clear":
     case "mega":
     case "combo2":
-    case "wind":
       return owned.includes(id);
+    /* Second Wind is spent by rewriting its id to "wind_used" in the run's
+       upgrade list (see App.jsx), NOT by removing it — so a plain
+       includes(id) reported a spent card as still un-owned, and the daily
+       picker happily offered it a second time, breaking the "Once" its own
+       description promises. */
+    case "wind":
+      return owned.includes("wind") || owned.includes("wind_used");
     case "combo3":
       return owned.includes("combo3") || owned.includes("combo2");
     case "lucky":
     case "lucky2":
-      return getLuckyChance(owned) >= 0.7;
+      return getLuckyChance([...owned, id]) === getLuckyChance(owned);
     default:
       return false;
   }

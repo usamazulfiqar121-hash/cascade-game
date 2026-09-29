@@ -2410,16 +2410,21 @@ export default function Cascade() {
                    than after a gap or on top of it. */
                 setShowTutorial(true);
                 restartRun();
+                /* Same reason openExitDialog's onConfirm writes this by
+                   hand: the ref-sync effect does NOT flush before
+                   history.back()'s popstate fires in the same tick, so
+                   without it the popstate takes the confirmDialog branch,
+                   re-pushes the entry it just consumed and returns —
+                   leaving Settings open and the back stack one step ahead
+                   of what's on screen. */
+                navStateRef.current = { ...navStateRef.current, confirmDialog: false };
                 popNav();
                 setConfirmDialog(null);
               },
             });
           }}
-          onAwards={() => setShowAchievements(true)}
           onClose={() => popNav()}
           onShowTutorial={() => setShowTutorial(true)}
-          achievements={achievements}
-          ACHIEVEMENTS={ACHIEVEMENTS}
           theme={theme}
           onSetTheme={setTheme}
           isDaily={isDaily}
