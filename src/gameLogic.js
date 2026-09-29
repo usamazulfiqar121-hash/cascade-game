@@ -431,6 +431,85 @@ export function saveDailyState(state) {
   } catch { return state; }
 }
 
+/* ─── Daily run snapshot ───
+   The position of the run in progress, saved as the player plays, so that
+   leaving (Home, app killed, phone call) and coming back RESUMES the same
+   position instead of starting over. Starting over was the loophole in
+   "one attempt a day": the boards are the same for everyone, so a player
+   who saw round 6 going badly could step out before losing (which never
+   records a failure), come back to round 1 knowing every board, and try
+   again. There is no undo in daily runs, so restoring the exact position
+   gives back nothing they didn't have.
+
+   Only the parts that can't be regenerated are stored. The board a round
+   STARTS from, and the three upgrade cards offered after it, are pure
+   functions of (day, round, upgrades taken, leftover moves), so resume
+   rebuilds them with generateLevel/pickDailyUpgrades and lays the saved
+   tubes/moves on top.
+
+   phase "playing": tubes/moves/bonusMoves/combo are the live board.
+   phase "upgrade": the round is cleared and the cards are showing;
+     `round` is the round just cleared, `nextPrevLeft` the leftover moves
+     it finished with (feeds the next round), `tubes` the solved board. */
+export const DAILY_RUN_KEY = "cascade:dailyRun";
+
+export function saveDailyRun(run) {
+  try {
+    localStorage.setItem(DAILY_RUN_KEY, JSON.stringify({ ...run, v: 1 }));
+  } catch {}
+}
+
+export function clearDailyRun() {
+  try {
+    localStorage.removeItem(DAILY_RUN_KEY);
+  } catch {}
+}
+
+/* Returns the saved run only if it is well-formed and belongs to today's
+   puzzle; anything else (yesterday's, hand-edited, half-written) is null
+   and the player simply starts round 1 fresh. */
+export function loadDailyRun() {
+  try {
+    const raw = localStorage.getItem(DAILY_RUN_KEY);
+    if (!raw) return null;
+    const r = JSON.parse(raw);
+    if (!r || r.v !== 1 || r.dateKey !== dailyKey()) return null;
+    if (r.phase !== "playing" && r.phase !== "upgrade") return null;
+    if (!Number.isInteger(r.round) || r.round < 1) return null;
+    if (!Array.isArray(r.upgrades) || !r.upgrades.every((x) => typeof x === "string")) return null;
+    if (!Array.isArray(r.rounds) || !Number.isFinite(r.totalMoves)) return null;
+    for (const k of ["genPrevLeft", "nextPrevLeft", "moves", "bonusMoves", "combo"]) {
+      if (!Number.isFinite(r[k]) || r[k] < 0) return null;
+    }
+    return r;
+  } catch {
+    return null;
+  }
+}
+
+/* True when `saved` could be the round's own board mid-play: same number
+   of tubes, no tube over capacity, and exactly the same balls of each
+   colour as the freshly generated round. A pour only moves balls, so this
+   holds for any real position and rejects anything corrupted or left over
+   from a different board. The solved board of a cleared round passes too. */
+export function tubesMatchLevel(saved, levelTubes) {
+  if (!Array.isArray(saved) || !Array.isArray(levelTubes)) return false;
+  if (saved.length !== levelTubes.length) return false;
+  const count = (tubes) => {
+    const c = new Map();
+    for (const t of tubes) for (const b of t) c.set(b, (c.get(b) || 0) + 1);
+    return c;
+  };
+  for (const t of saved) {
+    if (!Array.isArray(t) || t.length > MAX_HEIGHT) return false;
+    if (!t.every((b) => Number.isInteger(b) && b >= 0)) return false;
+  }
+  const a = count(saved), b = count(levelTubes);
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
+
 /* Milliseconds until next UTC midnight */
 export function msUntilNextDaily() {
   const now = new Date();
