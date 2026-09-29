@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
@@ -19,7 +19,7 @@ import { buildEmojiGrid, buildShareCard, nativeShareText, nativeShareImage } fro
 import { Snd, Haptic, setVibe, Music } from "./sound";
 import { initNotifications, syncDailyReminders } from "./notifications";
 import Particles from "./Particles";
-import Tube, { tubeDims, slotCenter, LIFT_GAP } from "./Tube";
+import Tube, { tubeDims, slotCenter, LIFT_GAP, fitTubeScale } from "./Tube";
 import FlyingBalls, { planFlight } from "./FlyingBalls";
 import UpgradeCard from "./UpgradeCard";
 import HomeScreen from "./HomeScreen";
@@ -333,6 +333,34 @@ export default function Cascade() {
   const [shake, setShake] = useState(0);
   const tubesRowRef = useRef(null);
   const wrongFlashRef = useRef(null);
+  /* Board fit (see fitTubeScale in Tube.jsx): tubeScaleFor() picks a size from
+     the tube count alone, so on a short/narrow screen the board could run off
+     the bottom. The effect measures where the board starts and shrinks the
+     tubes only as far as needed; layouts that already fit are untouched. */
+  const boardRef = useRef(null);
+  const [fitScale, setFitScale] = useState(1);
+  const [vpTick, setVpTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setVpTick((t) => t + 1);
+    window.addEventListener("resize", bump);
+    window.addEventListener("orientationchange", bump);
+    /* Web fonts change the HUD's height once they load. */
+    try { document.fonts && document.fonts.ready.then(bump); } catch {}
+    return () => {
+      window.removeEventListener("resize", bump);
+      window.removeEventListener("orientationchange", bump);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const el = boardRef.current;
+    const root = el && el.offsetParent;
+    if (!el || !root) return;
+    const next = fitTubeScale(tubes.length, tubeScaleFor(tubes.length), el.offsetTop, root.clientHeight, root.clientWidth);
+    setFitScale((prev) => (prev === next ? prev : next));
+  }, [tubes.length, runUpgrades.length, isDaily, dailyTwist, screen, vpTick]);
+  const tubeScale = Math.min(tubeScaleFor(tubes.length), fitScale);
+  const tubeScaleRef = useRef(1);
+  useEffect(() => { tubeScaleRef.current = tubeScale; });
   /* Pour visuals (see FlyingBalls.jsx / Tube.jsx): balls currently in the
      air, and the most recent pour's landing schedule for its target tube
      so the real balls there stay hidden until their flight touches down.
@@ -734,7 +762,7 @@ export default function Cascade() {
       const reduceMotion = reduceMotionRef.current;
       const timeScale = reduceMotion ? 0.6 : 1;
       const t0 = performance.now();
-      const scale = tubeScaleFor(tubes.length);
+      const scale = tubeScaleRef.current;
       const colorIdx = tubes[fromIdx][tubes[fromIdx].length - 1];
       const srcEl = document.querySelector(`[data-tube-idx="${fromIdx}"]`);
       const dstEl = (e && e.currentTarget) || document.querySelector(`[data-tube-idx="${toIdx}"]`);
@@ -1398,6 +1426,14 @@ export default function Cascade() {
   useEffect(() => {
     navStateRef.current = { showSettings, showAchievements, screen, confirmDialog: !!confirmDialog };
   }, [showSettings, showAchievements, screen, confirmDialog]);
+  /* backFromGameRef: what "back" means while a run is on screen (defined
+     further down, next to the HUD Home button's handler, and kept current
+     by an effect). exitConfirmedRef: set by the Exit dialog's confirm just
+     before it pops history, so the popstate that follows goes straight
+     home instead of asking again — navStateRef is stale at that moment
+     (see the note in openExitDialog). */
+  const backFromGameRef = useRef(null);
+  const exitConfirmedRef = useRef(false);
 
   /* Android hardware back / edge-swipe → same logic as the browser
      popstate handler above. Capacitor WebView does NOT fire popstate on
@@ -1473,9 +1509,17 @@ export default function Cascade() {
         if (st.showAchievements) { setShowAchievements(false); return; }
 
         /* Nothing else open but not on home — fires when hardware back
-           pops the game entry. Go home so screen matches history. */
-        if (st.screen !== "home") { setScreen("home"); return; }
-        if (st.screen === "game") { setScreen("home"); return; }
+           pops the game entry. This used to flip straight to Home, which
+           threw the run away with no warning and skipped saveBestRound():
+           back from Round 3 left "Best Round" at 0, where the HUD's own
+           Home button (dialog, then save) leaves it at 3. Now back does
+           what that button does. */
+        if (st.screen !== "home") {
+          if (exitConfirmedRef.current) { exitConfirmedRef.current = false; setScreen("home"); return; }
+          if (backFromGameRef.current) { backFromGameRef.current(); return; }
+          setScreen("home");
+          return;
+        }
       } catch (err) {
         console.warn("[CASCADE] popstate error:", err);
       }
@@ -1497,6 +1541,89 @@ export default function Cascade() {
       console.warn("[CASCADE] history.back failed:", err);
     }
   }, []);
+
+  /* "Exit to Home?" — shared by the HUD Home button and by hardware/gesture
+     back, so the two can't drift apart again. */
+  const openExitDialog = () => {
+    setConfirmDialog({
+      title: "Exit to Home?",
+      /* A daily run is saved as it's played and resumes from
+         Home, so "will be lost" would be false there (and the
+         old, true version of it pushed people to stay in). */
+      message: isDaily
+        ? "Your daily run is saved. Pick it up from Home any time today."
+        : "Progress will be lost.",
+      confirmLabel: "Exit",
+      danger: !isDaily,
+      onConfirm: () => {
+        saveBestRound();
+        restartRun();
+        /* popNav(), not setScreen("home") directly — this "game"
+           screen was pushed via pushNav when the run started (see
+           onPlay/onDaily below), and setScreen alone left that
+           history entry un-consumed, so hardware back afterwards
+           was one press short of matching what's on screen.
+           popNav() pops it, same as the daily game-over "← Home"
+           button and onExitDaily already do — the popstate
+           handler's own fallback branch flips screen to "home"
+           from there.
+           navStateRef is updated here directly, not just via
+           setConfirmDialog(null) — confirmed with a live-React
+           repro that the ref-sync effect does NOT flush before
+           history.back()'s popstate fires in the same tick, so
+           relying on the effect alone left the ref reporting
+           confirmDialog:true when popstate arrived, which hit the
+           hardware-back-while-dialog-open branch instead and
+           silently swallowed this Exit tap (dialog closed, but
+           never navigated home).
+           exitConfirmedRef tells that popstate this pop is the
+           confirmed exit, not a fresh back press to ask about. */
+        navStateRef.current = { ...navStateRef.current, confirmDialog: false };
+        exitConfirmedRef.current = true;
+        /* Belt and braces: if the pop never produces a popstate, don't leave
+           the flag armed to swallow the next real back press. */
+        setTimeout(() => { exitConfirmedRef.current = false; }, 800);
+        setConfirmDialog(null);
+        popNav();
+      },
+    });
+  };
+
+  const onHomePress = () => {
+    if (phase === "playing" && (moves > 0 || round > 1)) {
+      openExitDialog();
+    } else {
+      saveBestRound();
+      restartRun();
+      popNav();
+    }
+  };
+
+  /* Hardware / gesture back while a run is on screen. The press has already
+     popped the game's history entry by the time this runs. */
+  const onBackFromGame = () => {
+    /* Run already over (best saved at the game-over trigger): nothing to lose. */
+    if (phase === "gameover") { setScreen("home"); return; }
+    const inProgress = phase === "upgrade" || moves > 0 || round > 1;
+    if (!inProgress) {
+      /* Fresh round 1 with no moves: same as the Home button's no-dialog path. */
+      saveBestRound();
+      restartRun();
+      setScreen("home");
+      return;
+    }
+    /* Put the game's entry back so history and screen stay in step while
+       the dialog is up, then ask. Confirming pops it again (openExitDialog). */
+    try { window.history.pushState({ page: "game" }, ""); } catch {}
+    openExitDialog();
+  };
+  useEffect(() => { backFromGameRef.current = onBackFromGame; });
+  useEffect(() => {
+    if (!confirmDialog) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setConfirmDialog(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmDialog]);
 
   const shareDaily = useCallback(async () => {
     try {
@@ -1714,63 +1841,21 @@ export default function Cascade() {
         ))}
       </div>
 
-      <div style={S.hud}>
+      <div style={S.hud} className={isDaily ? "hud-daily" : undefined}>
         <div>
-          <div style={S.roundLabel}>
+          <div style={S.roundLabel} className="hud-round">
             {isDaily && <span style={S.dailyBadge}>DAILY</span>}
             Round {round}
           </div>
           <div style={S.colorCount}>{level.colorCount} colors · best {isDaily ? dailyBest : best}</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="hud-right" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ textAlign: "right" }}>
             <div style={{ ...S.movesLabel, color: movesLeft <= 3 ? T.danger : T.ink }}>
-              {Math.max(0, movesLeft)} <span style={S.movesSub}>moves left</span>
+              {Math.max(0, movesLeft)} <span className="hud-moves-sub" style={S.movesSub}>moves left</span>
             </div>
           </div>
-          <button onClick={() => {
-            if (phase === "playing" && (moves > 0 || round > 1)) {
-              setConfirmDialog({
-                title: "Exit to Home?",
-                /* A daily run is saved as it's played and resumes from
-                   Home, so "will be lost" would be false there (and the
-                   old, true version of it pushed people to stay in). */
-                message: isDaily
-                  ? "Your daily run is saved. Pick it up from Home any time today."
-                  : "Progress will be lost.",
-                confirmLabel: "Exit",
-                onConfirm: () => {
-                  saveBestRound();
-                  restartRun();
-                  /* popNav(), not setScreen("home") directly — this "game"
-                     screen was pushed via pushNav when the run started (see
-                     onPlay/onDaily below), and setScreen alone left that
-                     history entry un-consumed, so hardware back afterwards
-                     was one press short of matching what's on screen.
-                     popNav() pops it, same as the daily game-over "← Home"
-                     button and onExitDaily already do — the popstate
-                     handler's own fallback branch flips screen to "home"
-                     from there.
-                     navStateRef is updated here directly, not just via
-                     setConfirmDialog(null) — confirmed with a live-React
-                     repro that the ref-sync effect does NOT flush before
-                     history.back()'s popstate fires in the same tick, so
-                     relying on the effect alone left the ref reporting
-                     confirmDialog:true when popstate arrived, which hit the
-                     hardware-back-while-dialog-open branch instead and
-                     silently swallowed this Exit tap (dialog closed, but
-                     never navigated home). */
-                  navStateRef.current = { ...navStateRef.current, confirmDialog: false };
-                  setConfirmDialog(null);
-                  popNav();
-                },
-              });
-            } else {
-              saveBestRound();
-              restartRun();
-              popNav();
-            }
-          }} aria-label="Home" style={{
+          <button onClick={onHomePress} aria-label="Home" style={{
             /* 40×40, not 34×34 — matches the Back button used on the
                Settings/Profile screens (S.backBtn there) instead of
                being the one smaller icon-only tap target in the app;
@@ -1879,7 +1964,7 @@ export default function Cascade() {
           while a ball lifted from the top row rose 10px into the HUD /
           combo slot. Counting the lift room as part of the board when
           centering it fixes that without shrinking anything. */}
-      <div style={{ ...S.board, paddingTop: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 4), paddingBottom: 8 }}>
+      <div ref={boardRef} style={{ ...S.board, paddingTop: Math.ceil(tubeDims(tubeScale).ballH + LIFT_GAP + 4), paddingBottom: 8 }}>
         {/* rowGap: when the board wraps to two rows, a ball lifted out of a
             bottom-row tube rises one ball-height (+ gap) above its rim. At
             the old uniform 12px gap it came to rest on top of the upper
@@ -1891,9 +1976,9 @@ export default function Cascade() {
             class, so a rapid string of wrong taps can't stack up stale
             transitions and so the animation never needs to remount (and
             thereby reset) the Tube children living inside it. */}
-        <div ref={tubesRowRef} style={{ ...S.tubesRow, position: "relative", rowGap: Math.ceil(tubeDims(tubeScaleFor(tubes.length)).ballH + LIFT_GAP + 10) }}>
+        <div ref={tubesRowRef} style={{ ...S.tubesRow, position: "relative", rowGap: Math.ceil(tubeDims(tubeScale).ballH + LIFT_GAP + 10) }}>
           {tubes.map((balls, i) => (
-            <Tube key={i} idx={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} onPointerDown={(e) => onTubePointerDown(i, e)} onPointerMove={onTubePointerMove} onPointerUp={onTubePointerUp} onPointerCancel={onTubePointerCancel} disabled={phase !== "playing"} scale={tubeScaleFor(tubes.length)} colorBlind={colorBlindOn} landing={landing && landing.tube === i ? landing : null} />
+            <Tube key={i} idx={i} balls={balls} selected={selected === i} hintFrom={hint && hint.from === i} hintTo={hint && hint.to === i} solved={isTubeSolved(balls)} onClick={(e) => onTubeClick(i, e)} onPointerDown={(e) => onTubePointerDown(i, e)} onPointerMove={onTubePointerMove} onPointerUp={onTubePointerUp} onPointerCancel={onTubePointerCancel} disabled={phase !== "playing"} scale={tubeScale} colorBlind={colorBlindOn} landing={landing && landing.tube === i ? landing : null} />
           ))}
           {/* Always mounted (never conditionally rendered) so it has a
               stable ref to animate — opacity 0 at rest, pulsed red by the
@@ -2174,6 +2259,7 @@ export default function Cascade() {
                  protect, with shields and reminders — was part of the deal. */
               message: "This deletes your best score, stats, daily streak, and tutorial.",
               confirmLabel: "Reset",
+              danger: true,
               onConfirm: () => {
                 try {
                   localStorage.removeItem(BEST_KEY);
@@ -2261,15 +2347,21 @@ export default function Cascade() {
       {/* Exit-to-Home confirm — state existed but was never rendered, so the
           Home button silently did nothing whenever moves > 0 || round > 1
           (the confirm-required case, i.e. almost always). */}
+      {/* Tapping the dim area outside the card (or pressing Escape, see the
+          effect near openExitDialog) cancels, as the back-button handler's
+          own comment always said it did. Destructive confirms are red. */}
       {confirmDialog && (
-        <div style={S.overlay}>
-          <div style={{ ...S.ovCard, maxWidth: 340 }}>
+        <div
+          style={S.overlay}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmDialog(null); }}
+        >
+          <div style={{ ...S.ovCard, maxWidth: 340 }} role="alertdialog" aria-modal="true" aria-label={confirmDialog.title}>
             <div style={{ ...S.ovTitle, fontSize: 20 }}>{confirmDialog.title}</div>
             <div style={{ ...S.ovSub, marginBottom: 20 }}>{confirmDialog.message}</div>
-            <button style={S.primary} onClick={confirmDialog.onConfirm}>
+            <button style={confirmDialog.danger ? S.primaryDanger : S.primary} onClick={confirmDialog.onConfirm}>
               {confirmDialog.confirmLabel || "Confirm"}
             </button>
-            <button style={S.ghost} onClick={() => setConfirmDialog(null)}>Cancel</button>
+            <button style={confirmDialog.danger ? S.cancelOutline : S.ghost} onClick={() => setConfirmDialog(null)}>Cancel</button>
           </div>
         </div>
       )}

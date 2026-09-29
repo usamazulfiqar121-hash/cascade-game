@@ -39,6 +39,33 @@ export function tubeDims(scale = 1) {
    run rises as one rigid column. Tube is flex column-reverse, so ball i's
    bottom edge sits (i * slot) above the content box's bottom edge. */
 export const LIFT_GAP = 6;
+
+/* Largest tube scale (at most `base`, the tube-count-based scale) at which
+   the whole board stays on screen. The count-based scale alone ignores the
+   screen: on a 360x640 phone the 5-7 tube rounds wrap to two full-size rows
+   whose bottom row ends 36px below the screen (the lowest ball of each
+   bottom-row tube half hidden), and on 320px-wide screens even 4 tubes wrap.
+   Pure so it can be tested without a browser.
+     boardTop: y of the board's top edge in the game root (HUD + strip above it)
+     viewH/viewW: the game root's size
+   The board is allowed to run down to 10px above the bottom edge: it may
+   overlap the (empty) padding under the footer exactly as it always has, so
+   any layout that already fit is left alone. */
+export const MIN_FIT_SCALE = 0.5;
+export function fitTubeScale(count, base, boardTop, viewH, viewW) {
+  const rowW = Math.min(400, viewW - 40);
+  const avail = viewH - 10 - boardTop;
+  for (let s = base; s >= MIN_FIT_SCALE - 1e-9; s = Math.round((s - 0.02) * 100) / 100) {
+    const d = tubeDims(s);
+    const perRow = Math.max(1, Math.floor((rowW + 12) / (d.width + 12)));
+    const rows = Math.ceil(count / perRow);
+    const need =
+      Math.ceil(d.ballH + LIFT_GAP + 4) + rows * d.height + (rows - 1) * Math.ceil(d.ballH + LIFT_GAP + 10);
+    if (need <= avail) return s;
+  }
+  return MIN_FIT_SCALE;
+}
+
 export function liftFor(ballCount, scale = 1) {
   const d = tubeDims(scale);
   const slot = d.ballH + d.ballMT;

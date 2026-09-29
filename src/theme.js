@@ -26,7 +26,7 @@ export const S = {
   roundLabel: {
     fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
     fontWeight: 900, fontSize: 20, color: "var(--text)",
-    letterSpacing: "-0.02em", lineHeight: 1.1,
+    letterSpacing: "-0.02em", lineHeight: 1.1, whiteSpace: "nowrap",
   },
   colorCount: {
     fontFamily: "'Inter', system-ui, sans-serif",
@@ -37,7 +37,7 @@ export const S = {
     fontFamily: "'JetBrains Mono', monospace",
     fontWeight: 800, fontSize: 22,
     fontVariantNumeric: "tabular-nums",
-    letterSpacing: "-0.02em", lineHeight: 1,
+    letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap",
   },
   movesSub: {
     fontFamily: "'Inter', system-ui, sans-serif",
@@ -78,8 +78,18 @@ export const S = {
     fontSize: 12.5, fontWeight: 600, color: "var(--text-sub)",
     textAlign: "center", letterSpacing: "0.02em",
   },
-  overlay: { position: "fixed", inset: 0, background: "var(--overlay-bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", zIndex: 100 },
-  ovCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 24, padding: 24, textAlign: "center", maxWidth: 320, width: "100%", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" },
+  /* Scrolls, and centres its card with margin: auto instead of
+     align-items: center. With align-items: center a card taller than the
+     screen overflows equally off the top AND the bottom of a container that
+     can't scroll, so nothing past the edge was reachable: the Daily
+     game-over card (score card + ghost field + friends + one-attempt card)
+     is ~960px tall, which cut off its own top on a 390x844 phone and put
+     "Share Result" and "Home" out of reach on a 360x640 one. Auto margins
+     centre the card when there is spare room and collapse to zero when
+     there isn't, so a short card looks exactly as before and a tall one
+     starts at the top and scrolls. */
+  overlay: { position: "fixed", inset: 0, background: "var(--overlay-bg)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 20, overflowY: "auto", overscrollBehavior: "contain", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", zIndex: 100 },
+  ovCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 24, padding: 24, textAlign: "center", maxWidth: 320, width: "100%", margin: "auto", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" },
   ovIconCircle: { width: 64, height: 64, borderRadius: 20, background: `color-mix(in srgb, ${T.danger} 13.3%, transparent)`, border: `2px solid color-mix(in srgb, ${T.danger} 33.3%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" },
   ovBigNum: { fontSize: 72, fontWeight: 900, color: T.ink, letterSpacing: "-0.05em", lineHeight: 1, marginTop: 8 },
   ovBigLabel: { fontSize: 11, fontWeight: 900, letterSpacing: "0.15em", color: T.muted, marginTop: 6, textTransform: "uppercase" },
@@ -118,8 +128,8 @@ export const S = {
      -webkit- prefix S.overlay already carries: without it, backdrop-filter
      silently no-ops on WebKit (Capacitor iOS's webview), leaving a flat
      scrim with no blur at all on that platform. */
-  tutOverlay: { position: "fixed", inset: 0, background: "var(--overlay-bg)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", zIndex: 100 },
-  tutCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 28, padding: 28, maxWidth: 380, width: "100%", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" },
+  tutOverlay: { position: "fixed", inset: 0, background: "var(--overlay-bg)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 20, overflowY: "auto", overscrollBehavior: "contain", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", zIndex: 100 },
+  tutCard: { background: T.card, border: `1px solid ${T.edge}`, borderRadius: 28, padding: 28, maxWidth: 380, width: "100%", margin: "auto", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" },
   tutHeader: { textAlign: "center", marginBottom: 24 },
   tutIconCircle: { width: 64, height: 64, borderRadius: 20, background: `color-mix(in srgb, ${T.accent} 13.3%, transparent)`, border: `2px solid color-mix(in srgb, ${T.accent} 33.3%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" },
   tutTitle: { fontWeight: 900, fontSize: 24, color: T.ink, letterSpacing: "-0.02em" },
@@ -135,4 +145,9 @@ export const S = {
   ovSub: { fontSize: 14, fontWeight: 600, color: T.muted, marginTop: 8, marginBottom: 24 },
   primary: { display: "block", width: "100%", background: T.accent, color: "#fff", border: "none", borderRadius: 999, padding: "14px 24px", fontFamily: "'Nunito', sans-serif", fontWeight: 900, fontSize: 15, cursor: "pointer", boxShadow: `0 8px 24px color-mix(in srgb, ${T.accent} 33.3%, transparent)` },
   ghost: { display: "block", width: "100%", background: "transparent", color: T.muted, border: "none", padding: 12, fontFamily: "'Nunito', sans-serif", fontWeight: 800, fontSize: 13, cursor: "pointer", marginTop: 6 },
+  /* Confirm buttons for actions that destroy something (Exit with progress,
+     Reset): red instead of the friendly accent blue every harmless confirm
+     uses, and a Cancel that reads as a real button rather than faint text. */
+  primaryDanger: { display: "block", width: "100%", background: T.danger, color: "#fff", border: "none", borderRadius: 999, padding: "14px 24px", fontFamily: "'Nunito', sans-serif", fontWeight: 900, fontSize: 15, cursor: "pointer", boxShadow: `0 8px 24px color-mix(in srgb, ${T.danger} 33.3%, transparent)` },
+  cancelOutline: { display: "block", width: "100%", background: "transparent", color: T.ink, border: `1.5px solid ${T.edge}`, borderRadius: 999, padding: "12px 24px", fontFamily: "'Nunito', sans-serif", fontWeight: 800, fontSize: 14, cursor: "pointer", marginTop: 10 },
 };

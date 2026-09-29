@@ -369,6 +369,31 @@ button:active:not(:disabled) { transform: scale(0.97); }
   transform: translateZ(0);
 }
 .press:active { transform: scale(0.965); }
+/* Extra touch area around a small control without changing how it looks:
+   the invisible pseudo-element counts for hit-testing, so the Theme
+   segments (38px wide) get a 46px-tall target instead of 26px. */
+.seg-hit { position: relative; }
+.seg-hit::after {
+  content: "";
+  position: absolute;
+  top: -6px; bottom: -6px; left: -1px; right: -1px;
+}
+
+/* Game HUD on narrow screens. The Daily badge + "Round N" and the
+   "N moves left" label plus two 40px buttons need ~333px; a 360px phone
+   has 320, a 320px phone 280, so the labels used to break mid-phrase
+   ("Round" / "1", "moves" / "left"). Labels are nowrap now (theme.js);
+   here the "moves left" caption drops under its number where the row is
+   too tight for it beside it (Daily from 380px down, the plain HUD from
+   340px down), and at 340px and below the row tightens a little more. */
+@media (max-width: 380px) {
+  .hud-daily .hud-moves-sub { display: block; margin-left: 0 !important; margin-top: 3px; }
+}
+@media (max-width: 340px) {
+  .hud-moves-sub { display: block; margin-left: 0 !important; margin-top: 3px; }
+  .hud-right { gap: 6px !important; }
+  .hud-round { font-size: 18px !important; }
+}
 
 /* ═══════════ TYPE UTILITIES ═══════════ */
 .font-display {

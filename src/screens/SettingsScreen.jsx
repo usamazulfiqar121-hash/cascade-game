@@ -170,7 +170,7 @@ function ThemeRow({ theme, onSetTheme }) {
             <button
               key={opt.id}
               onClick={() => onSetTheme && onSetTheme(opt.id)}
-              className="press"
+              className="press seg-hit"
               style={{
                 ...S.segmentBtn,
                 background: active ? D.accent : "transparent",
@@ -179,7 +179,7 @@ function ThemeRow({ theme, onSetTheme }) {
               }}
               aria-label={opt.label}
             >
-              <Icon active={active} />
+              <Icon active={active} onAccent />
             </button>
           );
         })}
@@ -194,8 +194,16 @@ function ThemeIcon({ theme }) {
   return <MoonIcon active={true} />;
 }
 
-function SunIcon({ active }) {
-  const c = active ? D.accent : D.textSub;
+/* onAccent: drawn on the accent-coloured selected segment, so it has to be
+   white. The row tile on the left uses the same icons on a pale/dark tile,
+   where the accent colour is right. SunIcon used the accent colour for both,
+   so the selected "Light" segment showed a blue sun on a blue pill (invisible);
+   Moon/Auto were white for both, which vanishes on the light tile when Auto
+   resolves to the light theme. */
+const iconColor = (active, onAccent) => (active ? (onAccent ? "#FFFFFF" : D.accent) : D.textSub);
+
+function SunIcon({ active, onAccent }) {
+  const c = iconColor(active, onAccent);
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="12" r="4" fill={c}/>
@@ -205,8 +213,8 @@ function SunIcon({ active }) {
   );
 }
 
-function MoonIcon({ active }) {
-  const c = active ? "#FFFFFF" : D.textSub;
+function MoonIcon({ active, onAccent }) {
+  const c = iconColor(active, onAccent);
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
       <path d="M21 12.79C20.11 13.28 19.11 13.55 18.06 13.55C14.5 13.55 11.61 10.66 11.61 7.1C11.61 6.05 11.88 5.05 12.37 4.16C12.61 3.73 12.29 3.19 11.81 3.25C6.94 3.85 3.14 8.06 3.14 13.14C3.14 18.6 7.55 23 13 23C18.08 23 22.29 19.2 22.89 14.33C22.95 13.85 22.41 13.53 21.98 13.77C21.66 13.94 21.34 14.09 21 14.22Z" fill={c}/>
@@ -214,8 +222,8 @@ function MoonIcon({ active }) {
   );
 }
 
-function AutoIcon({ active }) {
-  const c = active ? "#FFFFFF" : D.textSub;
+function AutoIcon({ active, onAccent }) {
+  const c = iconColor(active, onAccent);
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
       <path d="M12 2L2 7L12 12L22 7L12 2Z" fill={c}/>
@@ -400,7 +408,7 @@ const S = {
     border: "1px solid var(--glass-border)",
   },
   segmentBtn: {
-    width: 30, height: 26,
+    width: 38, height: 34,
     border: "none", borderRadius: 7,
     display: "flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer",
