@@ -158,9 +158,22 @@ function Ball({ colorIdx, d, colorBlind, lift, liftDelay, landAt }) {
      flight faster (App.jsx), it doesn't swap the ball onto a different
      rendering path. */
   const landing = landDelay !== null;
+  /* Whether this ball is still inside its entrance animation, and so still
+     wants its own compositor layer (see .cascade-ball.promoting in
+     globalStyles.js). True from mount — the layer has to exist before the
+     first animated frame, which is the whole reason the promotion is done
+     up front rather than discovered mid-animation — and dropped the moment
+     the animation ends, so a settled ball stops holding a layer open for
+     the rest of the level. */
+  const [promoting, setPromoting] = useState(true);
   return (
     <div
-      className={landing ? "cascade-ball landing" : "cascade-ball"}
+      className={`${landing ? "cascade-ball landing" : "cascade-ball"}${promoting ? " promoting" : ""}`}
+      onAnimationEnd={(e) => {
+        /* Guarded on target: animationend bubbles, and this ball's children
+           could grow an animation of their own later. */
+        if (e.target === e.currentTarget) setPromoting(false);
+      }}
       style={{
         ...BALL_STYLE_BASE,
         width: "88%",

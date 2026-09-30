@@ -2,8 +2,10 @@
    Clean premium landing.
    v3: bottom navigation + custom StreakBadge. */
 
+import { useRef, useState } from "react";
 import { D } from "./constants";
 import { isTubeSolved, pickDailyTwist } from "./gameLogic";
+import { Haptic } from "./sound";
 import BottomNav from "./components/BottomNav";
 import StreakBadge from "./components/StreakBadge";
 import FriendCompare from "./components/FriendCompare";
@@ -21,6 +23,40 @@ import Tube from "./Tube";
    someone who has never opened the app before. */
 const HERO_TUBES = [[2, 0, 2, 0], [1, 1, 1, 1], [3, 3], []];
 const HERO_SCALE = 0.8;
+
+/* ═══════════ B10: DAILY TWIST DISCLOSURE ═══════════
+   The twist row used to be a static line of text inside the daily card. It
+   became a disclosure for one concrete reason: the actual rule — "1 fewer
+   move for every 3 rounds you clear" — is the thing a player most needs
+   before they commit an attempt, and it was being rendered at 11.5px on one
+   line in the middle of a card, sharing that line with the twist's name.
+
+   A stable id, because aria-controls has to point at the same element across
+   re-renders; the panel is always mounted (see .twistPanel in globalStyles)
+   so a module-level constant is the right shape here, not a useId. */
+const TWIST_PANEL_ID = "dailyTwistPanel";
+
+/* `kind` is the one piece of twist metadata that was there and unused. The
+   collapsed row shows it as a category so the expander is offering
+   something the closed state doesn't have. "Trade-off" rather than "Mixed"
+   because mixed is the internal name and trade-off is what it means to the
+   player — Feast & Famine gives and takes in the same breath. */
+const TWIST_KIND_LABEL = { blessing: "Blessing", curse: "Curse", mixed: "Trade-off" };
+
+/* Must match the expand transition in globalStyles.js (300ms, = D.tScreen).
+   Duplicated rather than shared because the stylesheet is a static string
+   with no access to the D tokens; the scroll-into-view below has to wait for
+   the panel to finish growing, and a stale number here would either scroll
+   too early (landing short of the new content) or too late (a visible hitch
+   after the animation landed). */
+const TWIST_EXPAND_MS = 300;
+
+/* Reduce Motion, read the same way AchievementsScreen reads it: from the
+   attribute App.jsx sets on :root, which is also what the CSS keys off, so
+   the JS scroll behaviour and the CSS animation can't disagree. */
+const isCalm = () =>
+  typeof document !== "undefined" &&
+  document.documentElement.getAttribute("data-reduce-motion") === "1";
 
 export default function HomeScreen({
   onPlay, onDaily, onSettings, onAwards,
@@ -46,6 +82,44 @@ export default function HomeScreen({
      open it (see DAILY_TWISTS in constants.js). */
   const twist = pickDailyTwist();
   const twistColor = twist.kind === "curse" ? D.danger : twist.kind === "mixed" ? D.goldText : D.goText;
+
+  const [twistOpen, setTwistOpen] = useState(false);
+  const panelRef = useRef(null);
+  const scrollTimer = useRef(null);
+
+  const toggleTwist = () => {
+    const next = !twistOpen;
+    setTwistOpen(next);
+    /* Haptic.light() and not a new Haptic function, for two reasons.
+       First, fit: a disclosure is a small, reversible state change, and
+       light() is a 14ms tick — success() would be a lie (nothing succeeded)
+       and medium()/heavy() are a whole degree of feedback too much for
+       "a row got taller". Second, and the reason this isn't a
+       notification()-based pattern: light() routes to tick() →
+       Haptics.vibrate(), which is a one-shot effect, and that is the exact
+       call shape that survives Samsung. The two-entry waveform behind
+       impact()/selection() is dropped without an error there (see the note
+       above tick() in sound.js) — which is also why the missing
+       Haptic.selection() was never worth adding back. */
+    Haptic.light();
+    clearTimeout(scrollTimer.current);
+    /* 320x568 is the tight case the Home layout is already tuned for
+       (~588px of content in a 568px viewport, so it scrolls ~20px). The
+       panel adds ~135px below the fold, and "scroll down to read the rule
+       you just expanded" is the failure mode the spec calls out. `nearest`
+       is the right primitive: it scrolls the minimum needed and does
+       nothing at all when the content already fits, so this is invisible
+       on a tall phone instead of yanking the page around. */
+    if (next) {
+      const calm = isCalm();
+      scrollTimer.current = setTimeout(() => {
+        panelRef.current?.scrollIntoView({
+          block: "nearest",
+          behavior: calm ? "auto" : "smooth",
+        });
+      }, calm ? 0 : TWIST_EXPAND_MS);
+    }
+  };
 
   const days = [];
   const today = new Date();
@@ -138,75 +212,151 @@ export default function HomeScreen({
           <span style={S.playText}>Play</span>
         </button>
 
-        {/* Daily card */}
+        {/* Daily card.
+            A <div>, not a <button> — the whole structural cost of B10. The
+            twist row inside is now a real disclosure button, and a button
+            cannot legally contain another button. The play action it used to
+            carry is preserved as two sibling buttons (the header block and
+            the CTA) so "tap anywhere on the card" still works, nothing is
+            nested, and no click can bubble into a second onDaily() — which
+            would push the same history entry twice. This is the same
+            constraint FriendCompare below already had to work around. */}
         {hasPlayedOnce && (
-          <button
-            className="press fade-up"
+          <div
+            className="fade-up"
             style={{
               ...S.dailyCard,
               animationDelay: "220ms",
               borderColor: dailySoft,
             }}
-            onClick={onDaily}
           >
-            {/* Header row */}
-            <div style={S.dailyHeader}>
-              <span style={{ ...S.dailyLabel, color: dailyAccent }}>
-                {dailyLabelText}
-              </span>
-              {streak > 0 && (
-                <StreakBadge streak={streak} complete={streakSafe} size="md" />
-              )}
-            </div>
+            <button
+              className="press dailyCardRegion"
+              style={S.dailyCardRegion}
+              onClick={onDaily}
+            >
+              {/* Header row */}
+              <div style={S.dailyHeader}>
+                <span style={{ ...S.dailyLabel, color: dailyAccent }}>
+                  {dailyLabelText}
+                </span>
+                {streak > 0 && (
+                  <StreakBadge streak={streak} complete={streakSafe} size="md" />
+                )}
+              </div>
 
-            {/* Week strip */}
-            <div style={S.weekRow}>
-              {days.map((d) => {
-                const dotFilled = d.done;
-                const dotToday = d.isToday && !d.done;
-                const labelActive = d.isToday || d.done;
-                return (
-                  <div key={d.key} style={S.dayCol}>
-                    <div style={{
-                      ...S.dayLabel,
-                      color: labelActive ? D.text : `color-mix(in srgb, ${D.textSub} 54.9%, transparent)`,
-                    }}>{d.label}</div>
-                    <div style={{
-                      ...S.dayDot,
-                      background: dotFilled ? D.go : "transparent",
-                      borderColor: dotFilled
-                        ? D.go
-                        : dotToday
-                        ? `color-mix(in srgb, ${D.gold} 70.2%, transparent)`
-                        : D.glassBorder,
-                      boxShadow: dotFilled
-                        ? `0 0 10px color-mix(in srgb, ${D.go} 34.9%, transparent)`
-                        : dotToday
-                        ? `0 0 0 4px color-mix(in srgb, ${D.gold} 10.2%, transparent)`
-                        : "none",
-                    }} />
+              {/* Week strip */}
+              <div style={S.weekRow}>
+                {days.map((d) => {
+                  const dotFilled = d.done;
+                  const dotToday = d.isToday && !d.done;
+                  const labelActive = d.isToday || d.done;
+                  return (
+                    <div key={d.key} style={S.dayCol}>
+                      <div style={{
+                        ...S.dayLabel,
+                        color: labelActive ? D.text : `color-mix(in srgb, ${D.textSub} 54.9%, transparent)`,
+                      }}>{d.label}</div>
+                      <div style={{
+                        ...S.dayDot,
+                        background: dotFilled ? D.go : "transparent",
+                        borderColor: dotFilled
+                          ? D.go
+                          : dotToday
+                          ? `color-mix(in srgb, ${D.gold} 70.2%, transparent)`
+                          : D.glassBorder,
+                        boxShadow: dotFilled
+                          ? `0 0 10px color-mix(in srgb, ${D.go} 34.9%, transparent)`
+                          : dotToday
+                          ? `0 0 0 4px color-mix(in srgb, ${D.gold} 10.2%, transparent)`
+                          : "none",
+                      }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </button>
+
+            {/* Today's twist — the one interactive thing in this card that is
+                NOT "play today", so it gets its own row instead of sharing
+                the card's onClick. Toggle and panel are wrapped in one div so
+                the card's 14px flex gap doesn't open a 28px hole between them
+                while the panel is collapsed to zero height. */}
+            <div style={{ ...S.twistWrap, "--twist-c": twistColor }}>
+              <button
+                className="press twistToggle"
+                style={S.twistToggle}
+                onClick={toggleTwist}
+                aria-expanded={twistOpen}
+                aria-controls={TWIST_PANEL_ID}
+                aria-label={`Today's twist: ${twist.name}, ${TWIST_KIND_LABEL[twist.kind]}. ${twistOpen ? "Hide details" : "Show details"}`}
+              >
+                <span aria-hidden="true" style={S.twistIcon}>{twist.icon}</span>
+                <span style={S.twistText}>
+                  <span style={{ color: twistColor, fontWeight: 800 }}>{twist.name}</span>
+                  <span style={{ color: D.textSub }}>{" · "}{TWIST_KIND_LABEL[twist.kind]}</span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="twistChev"
+                  data-open={twistOpen ? "1" : "0"}
+                  style={S.twistChevron}
+                >▾</span>
+              </button>
+
+              {/* Always mounted, because collapsing is animated and an
+                  animation needs its content still in the DOM to animate
+                  away. .twistPanelClip flips to visibility:hidden once the
+                  collapse finishes, which also takes the content out of the
+                  tab order and the accessibility tree — otherwise a screen
+                  reader could read text the player can no longer see. */}
+              <div
+                id={TWIST_PANEL_ID}
+                ref={panelRef}
+                className="twistPanel"
+                data-open={twistOpen ? "1" : "0"}
+                role="region"
+                aria-label="Today's twist details"
+              >
+                <div className="twistPanelClip">
+                  <div style={S.twistBody}>
+                    <div style={S.twistHeadline}>
+                      <span aria-hidden="true" style={S.twistIcon}>{twist.icon}</span>
+                      <span style={{ color: twistColor }}>{twist.name}</span>
+                    </div>
+                    <div style={S.twistDesc}>{twist.desc}</div>
+                    <div style={S.twistMeta}>
+                      <span style={S.twistBadge}>TODAY ONLY</span>
+                      <span style={S.twistSame}>Same for everyone</span>
+                    </div>
                   </div>
-                );
-              })}
+                </div>
+              </div>
             </div>
 
-            {/* Today's twist */}
-            <div style={S.twistRow}>
-              <span aria-hidden="true">{twist.icon}</span>
-              <span>
-                <span style={{ color: twistColor, fontWeight: 800 }}>{twist.name}</span>
-                <span style={{ color: D.textSub }}>{" \u00b7 "}{twist.desc}</span>
-              </span>
-            </div>
-
-            {/* CTA */}
-            <div style={{
-              ...S.dailyCta,
-              color: dailyPhase === "done" ? D.go : D.textSub,
-            }}>
-              {dailyCtaText}
-            </div>
-          </button>
+            {/* CTA — the same action as the header block above, which is why
+                there are two buttons for one destination. Screen-reader and
+                keyboard users get two stops instead of one, which is a normal
+                card pattern; the alternative was a div with an onClick and no
+                role, which would leave keyboard users no way to start a run
+                at all. */}
+            <button
+              className="press dailyCardRegion"
+              /* The header block above is ~80px tall and needs no help being
+                  a target; this one is a single 16px line of text, which on
+                  its own would be the smallest tap target in the app. 7px
+                  either side puts it at 30px, matching the twist toggle. */
+              style={{ ...S.dailyCardRegion, padding: "7px 0" }}
+              onClick={onDaily}
+            >
+              <div style={{
+                ...S.dailyCta,
+                color: dailyPhase === "done" ? D.go : D.textSub,
+              }}>
+                {dailyCtaText}
+              </div>
+            </button>
+          </div>
         )}
 
         {/* A sibling block, not nested in the button above — a button
@@ -346,6 +496,12 @@ const S = {
     letterSpacing: "-0.02em",
   },
 
+  /* A <div> now, not a <button> — the twist disclosure inside it is a real
+     button and a button can't contain a button (see the markup). The
+     button-only resets that used to live here are removed rather than left
+     behind as no-ops, and the tap affordance moved down to the two child
+     buttons; `cursor: pointer` in particular would have put a pointer over
+     the 14px gaps between them, promising a tap that does nothing. */
   dailyCard: {
     display: "flex", flexDirection: "column",
     gap: 14,
@@ -356,15 +512,35 @@ const S = {
     border: `1px solid color-mix(in srgb, ${D.gold} 22%, transparent)`,
     borderRadius: 18,
     padding: "18px 20px 18px",
-    cursor: "pointer",
     fontFamily: "'Inter', system-ui, sans-serif",
     textAlign: "left",
     color: D.text,
     boxShadow: "0 4px 24px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.05)",
-    appearance: "none", WebkitAppearance: "none",
-    margin: 0, outline: "none",
-    WebkitTapHighlightColor: "transparent",
+    margin: 0,
     transition: `border-color ${D.tQuick}`,
+  },
+  /* The play action, as two of these: the header block and the CTA. They
+     have to be invisible so the card still reads as one surface, which means
+     outline:none here — so the focus ring is drawn from
+     .dailyCardRegion:focus-visible in globalStyles.js. Without it these two
+     would be focusable controls a keyboard user could land on and not see,
+     which is the one thing a button cannot afford. */
+  dailyCardRegion: {
+    display: "flex", flexDirection: "column",
+    gap: 14,
+    width: "100%",
+    background: "none",
+    border: "none",
+    padding: 0,
+    margin: 0,
+    borderRadius: 10,
+    appearance: "none", WebkitAppearance: "none",
+    outline: "none",
+    cursor: "pointer",
+    textAlign: "left",
+    color: D.text,
+    fontFamily: "'Inter', system-ui, sans-serif",
+    WebkitTapHighlightColor: "transparent",
   },
   dailyHeader: {
     display: "flex", alignItems: "center",
@@ -400,12 +576,102 @@ const S = {
     transition: `background ${D.tSpring}, border-color ${D.tQuick}, box-shadow ${D.tQuick}`,
   },
 
-  twistRow: {
+  /* One flex child holding both the toggle and the panel. It has no styles
+     of its own to speak of — it exists so the card's 14px gap is applied
+     once around the pair, instead of also opening up between the toggle and
+     a panel that is currently 0px tall (which would leave a permanent 28px
+     hole in the card). It also carries --twist-c, which has to live on this
+     shared parent rather than on the toggle: a custom property only inherits
+     DOWN the tree, and the panel is the toggle's sibling, so a --twist-c on
+     the button would leave every colour-mix() in twistBody resolving against
+     nothing. */
+  twistWrap: { width: "100%" },
+
+  /* Was S.twistRow — the same centred icon + name row, now a button, and now
+     showing the twist's KIND rather than its desc. The desc is the payoff and
+     it moved into the panel, so the closed row is a label, not a summary.
+
+     The vertical padding is what makes it a target. At 11.5px this row was
+     ~16px tall, under even the 24px WCAG 2.5.5 floor; 7px either side brings
+     it to 30px, which clears AA. Not the 44px AAA figure, which would cost
+     the collapsed card ~14px of a 320x568 budget that already scrolls ~20px
+     (see homeContent). */
+  twistToggle: {
     display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+    width: "100%",
+    background: "none",
+    border: "none",
+    padding: "7px 8px",
+    margin: "6px 0",
+    borderRadius: 10,
+    appearance: "none", WebkitAppearance: "none",
+    outline: "none",
+    cursor: "pointer",
     fontFamily: "'Inter', system-ui, sans-serif",
     fontSize: 11.5, fontWeight: 600, lineHeight: 1.35,
     textAlign: "left",
-    margin: "12px 0 10px",
+    color: D.text,
+    WebkitTapHighlightColor: "transparent",
+  },
+  twistIcon: { fontSize: 15, lineHeight: 1, flexShrink: 0 },
+  twistText: { minWidth: 0 },
+  /* The 180° rotation lives in .twistChev (globalStyles.js) because it has to
+     be a transition, and a transition can't be driven from an inline style
+     object without re-rendering on every frame. */
+  twistChevron: {
+    fontSize: 13, lineHeight: 1, flexShrink: 0,
+    color: D.textSub, display: "inline-block",
+  },
+
+  /* max-height is a text-scaling guard, not the normal case: the panel is
+     ~135px of content, so at any default font size it never clips and never
+     scrolls. It exists so that at a large accessibility font size — where the
+     desc wraps to four or five lines — the panel scrolls inside itself
+     instead of pushing the card off a 320x568 screen. 34vh on the smallest
+     supported viewport is 193px, still above the content's natural height.
+     overscroll-behavior contains that inner scroll from chaining out to the
+     page behind it, which on this screen means yanking the whole Home. */
+  twistBody: {
+    display: "flex", flexDirection: "column", gap: 8,
+    padding: "10px 12px 12px",
+    marginTop: 2,
+    maxHeight: "min(34vh, 200px)",
+    overflowY: "auto",
+    overscrollBehavior: "contain",
+    borderRadius: 12,
+    background: "color-mix(in srgb, var(--twist-c) 7.8%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--twist-c) 20%, transparent)",
+  },
+  twistHeadline: {
+    display: "flex", alignItems: "center", gap: 7,
+    fontSize: 14, fontWeight: 900, letterSpacing: "-0.01em",
+  },
+  /* The rule itself, and the one thing here the player actually came to read
+     — which is why it is 13px and not the 11.5px it was sharing a line with
+     on the collapsed row. */
+  twistDesc: {
+    fontSize: 13, fontWeight: 600, lineHeight: 1.45,
+    color: D.text,
+  },
+  twistMeta: {
+    display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+  },
+  /* Two claims on this badge row, and both are ones the code can keep rather
+     than decoration. "TODAY ONLY" follows from pickDailyTwist being a pure
+     function of the UTC day (gameLogic.js), and "Same for everyone" follows
+     from the same function taking no player input — the order is drawn from
+     the cycle number, so there is nothing local to differ on. The badge
+     reuses twistColor, which is already the colour the twist's name is
+     drawn in, so the two never disagree about what kind of day this is. */
+  twistBadge: {
+    fontSize: 9, fontWeight: 900, letterSpacing: "0.12em",
+    padding: "3px 6px", borderRadius: 999,
+    color: "var(--twist-c)",
+    background: "color-mix(in srgb, var(--twist-c) 14%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--twist-c) 26%, transparent)",
+  },
+  twistSame: {
+    fontSize: 10.5, fontWeight: 600, color: D.textSub,
   },
   dailyCta: {
     fontFamily: "'Inter', system-ui, sans-serif",

@@ -31,8 +31,18 @@ function getHapticsPlugin() {
            of ordinary play. Worse, that alert blurs the window, which the
            music lifecycle listeners above read as "app backgrounded" — so
            the diagnostic would have paused the music every single time it
-           appeared. The numbers are just as readable in a device log. */
-        {
+           appeared. The numbers are just as readable in a device log.
+
+           Now dev-only, and it no longer calls the probe methods
+           unconditionally: hasAmplitudeControl()/hasVibrationEffect()/
+           hasPredefinedEffect() each hit the plugin bridge, and this block
+           runs the first time haptics are used in a session — i.e. in the
+           middle of a tap. Three bridge round-trips plus an
+           Object.keys() dump on that path was real work on the hot path of
+           the first interaction, and it only ever fed a log line nobody
+           reads in a release build. The alert() removal kept the block
+           alive; the production build should not be paying for it. */
+        if (import.meta.env && import.meta.env.DEV) {
           const plugin = hapticsPlugin;
           if (plugin) {
             const info = {
@@ -80,6 +90,36 @@ function tick(duration) {
   });
 }
 
+/* A sequence of one-shot ticks, for celebrations that need to ESCALATE
+   rather than just fire once.
+
+   Capacitor's exposed Haptics.vibrate() takes a single duration — there is
+   no waveform/pattern option on the JS surface — so a multi-pulse pattern
+   has to be walked from JS. That is a real downgrade and is not equivalent
+   to one VibrationEffect.createWaveform() call: every tick is its own
+   bridge round-trip, so the 30ms gap is only accurate to about a frame, and
+   a tick still buzzing when the next one is queued can be cut short by the
+   call that follows.
+
+   It's still the right trade. The alternative is notification("SUCCESS") —
+   a single fixed pattern the OS chooses, which cannot express "climb from
+   40ms to 120ms" at all, and is the same burst for a 7-day streak as for a
+   100-day one. The patterns here are short (1.2s worst case), so the
+   timing error has nowhere to accumulate, and the escalation is the part
+   that's actually doing the communicating.
+
+   Not cancelled on unmount, same as tick() above: a stray vibrate arriving
+   after the toast is gone is harmless, and holding a handle to cancel it
+   would mean this module had to know when the app is going away. */
+function pulse(durations, gap) {
+  if (!VIBE_ON) return;
+  let at = 0;
+  durations.forEach((d) => {
+    setTimeout(() => tick(d), at);
+    at += d + gap;
+  });
+}
+
 /* notification() is left exactly as it was: its longer multi-entry
    waveforms already fire on the devices that dropped the two-entry
    impact ones, so the duration-grading workaround does not apply. */
@@ -102,11 +142,45 @@ export const Haptic = {
   success: () => notification("SUCCESS"),
   warning: () => notification("WARNING"),
   error:   () => notification("ERROR"),
+  /* Streak-milestone ceremony — each entry is a list of PULSE LENGTHS that
+     get longer as the list goes on, separated by a 30ms gap, so the buzz
+     itself reads as building rather than repeating. Scales with the tier
+     (see STREAK_CEREMONY in constants.js) for the same reason the toast
+     does: a century and a week must not feel identical in the hand. */
+  celebrate: (tier = 1) => {
+    const PATTERNS = {
+      1: [40, 80, 120],
+      /* Note the first pulse is SHORTER than tier 1's (35 vs 40). That reads
+         backwards at a glance but is deliberate: the pattern's job is to
+         escalate, and a 4-pulse ladder that started higher than a 3-pulse
+         one would peak lower (150 vs 120) despite doing more work. Starting
+         a notch lower is what makes the extra pulse read as more rather than
+         as a differently-shaped version of the same burst. */
+      2: [35, 70, 110, 150],
+      3: [30, 60, 100, 140, 180, 220],
+    };
+    const p = PATTERNS[tier];
+    if (p) pulse(p, 30);
+  },
 };
 
 /* ─── Web Audio SFX ─── */
+
+/* Transpose a frequency by N semitones. Equal temperament makes a semitone a
+   constant ratio — 2^(1/12) — so this is one Math.pow rather than a table.
+
+   This is what makes a rising combo read as the SAME chord getting higher
+   instead of a different sound each time. Adding a flat 40Hz per step (the
+   alternative) walks the pitch in fixed linear increments, so the interval
+   between consecutive combos shrinks as the numbers climb: 40Hz is a major
+   third at 740Hz but barely a semitone by the time you're near 1.5kHz, and
+   the run's excitement curve flattens exactly when it should be steepest.
+   Semitones keep every step the same interval, and keep the result in tune
+   with the rest of the mix. */
+const semitones = (f, n) => f * Math.pow(2, n / 12);
+
 export const Snd = (() => {
-  let ctx = null, sfxBus = null, sfxOn = true, noiseBuffer = null;
+  let ctx = null, sfxBus = null, sfxOn = true, noiseBuffer = null, reverbSend = null;
 
   function getNoiseBuffer(c) {
     if (noiseBuffer) return noiseBuffer;
@@ -156,12 +230,20 @@ export const Snd = (() => {
         send.connect(convolver);
         convolver.connect(ret);
         ret.connect(m);
+        /* Kept so a voice can ask for MORE wet signal without the whole
+           sfxBus getting wetter (see the `wet` option in tone below). The
+           default reverb every SFX already has is this bus's own 0.25 send;
+           this reference is only for voices that opt in, so it is assigned
+           inside the same try that builds the chain — if the convolver setup
+           ever throws, it stays null and `wet` degrades to "no extra send"
+           instead of connecting into a half-built graph. */
+        reverbSend = send;
       } catch {}
     } catch { ctx = null; }
     return ctx;
   }
 
-  function tone(freq, { type = "sine", dur = 0.15, peak = 0.25, glide = 0, delay = 0 } = {}) {
+  function tone(freq, { type = "sine", dur = 0.15, peak = 0.25, glide = 0, delay = 0, wet = 0 } = {}) {
     const c = ensure();
     if (!c) return;
     const t = c.currentTime + delay;
@@ -175,6 +257,23 @@ export const Snd = (() => {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g);
     g.connect(sfxBus);
+    /* Every voice is ALREADY reverberated: sfxBus has its own 0.25 send into
+       the convolver (see ensure). `wet` is extra send on top of that, for the
+       rare voice that should sit in a bigger space than its neighbours —
+       currently only the 100-day ceremony.
+
+       Default 0 means no new nodes at all, so every other SFX in this file
+       is byte-for-byte unchanged. The per-voice gain is what keeps this
+       additive and correct: without it there would be no way to scale one
+       note's wet contribution, and raising the shared send instead would
+       have made every pour, land and tap in the app wetter as a side effect
+       of adding reverb to a single celebration. */
+    if (wet > 0 && reverbSend) {
+      const w = c.createGain();
+      w.gain.value = wet;
+      g.connect(w);
+      w.connect(reverbSend);
+    }
     o.start(t);
     o.stop(t + dur + 0.05);
   }
@@ -210,12 +309,73 @@ export const Snd = (() => {
     land: (slot = 0, delay = 0) => { if (sfxOn) { transient({ cutoff: 2400, dur: 0.02, peak: 0.09, delay }); tone(190 + slot * 45, { type: "sine", dur: 0.07, peak: 0.14, glide: 0.75, delay }); } },
     bonus: () => { if (sfxOn) { transient({ cutoff: 3200, dur: 0.03, peak: 0.13 }); tone(880, { type: "sine", dur: 0.1, peak: 0.15 }); tone(1174, { type: "sine", dur: 0.1, peak: 0.12, delay: 0.06 }); } },
     /* Combo/mega bonus tiers — same bonus moment as bonus() above, but a
-       bigger combo should sound bigger too, not just add the same ping. */
-    combo: () => { if (!sfxOn) return; [740, 988, 1245].forEach((f, i) => { transient({ cutoff: 2800, dur: 0.03, peak: 0.13, delay: i * 0.045 }); tone(f, { type: "sine", dur: 0.09, peak: 0.16, delay: i * 0.045 }); }); },
-    mega: () => { if (!sfxOn) return; [523.25, 659.25, 880, 1318.5].forEach((f, i) => { transient({ cutoff: 2400, dur: 0.035, peak: 0.15, delay: i * 0.055 }); tone(f, { type: "triangle", dur: 0.14, peak: 0.2, delay: i * 0.055 }); }); },
+       bigger combo should sound bigger too, not just add the same ping.
+       `step` transposes the whole arpeggio up by that many semitones, so a
+       run's combos climb as one recognisable chord instead of repeating an
+       identical one; default 0 keeps any other caller on today's exact
+       pitch. Timbre, note spacing and the transient are deliberately
+       untouched — only the register moves, which is what makes it read as
+       the same reward getting stronger rather than a new sound effect. */
+    combo: (step = 0) => { if (!sfxOn) return; [740, 988, 1245].forEach((f, i) => { const g = semitones(f, step); transient({ cutoff: 2800, dur: 0.03, peak: 0.13, delay: i * 0.045 }); tone(g, { type: "sine", dur: 0.09, peak: 0.16, delay: i * 0.045 }); }); },
+    mega: (step = 0) => { if (!sfxOn) return; [523.25, 659.25, 880, 1318.5].forEach((f, i) => { const g = semitones(f, step); transient({ cutoff: 2400, dur: 0.035, peak: 0.15, delay: i * 0.055 }); tone(g, { type: "triangle", dur: 0.14, peak: 0.2, delay: i * 0.055 }); }); },
     clear: () => { if (!sfxOn) return; transient({ cutoff: 3600, dur: 0.04, peak: 0.16 }); [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.35, peak: 0.18, delay: i * 0.07 })); },
     upgrade: () => { if (!sfxOn) return; transient({ cutoff: 3200, dur: 0.04, peak: 0.15 }); [523.25, 783.99, 1046.5].forEach((f, i) => tone(f, { type: "triangle", dur: 0.4, peak: 0.18, delay: i * 0.08 })); },
     fail: () => { if (!sfxOn) return; transient({ cutoff: 700, dur: 0.05, peak: 0.14 }); [392, 311.13, 261.63].forEach((f, i) => tone(f, { type: "triangle", dur: 0.35, peak: 0.2, delay: i * 0.11 })); },
+    /* Streak-milestone ceremony. Deliberately NOT another pitch-shifted
+       combo(): a combo climbs a major triad to celebrate being good at
+       pouring, and this is the app saying "you came back every day for a
+       week", which is a different claim and needs a different chord — a
+       C major arpeggio, root position, resolving upward. Root-position C is
+       the most widely-recognised "something completed" gesture in
+       Western tonal music, which is the same reason it's the one to reach
+       for when the listener may not be a musician.
+
+       tier 1 — 7-day: C5-E5-G5, the triad, and stop. Not the full octave:
+       a plain triad already says "done", and adding the top octave here
+       would spend the tier-3 gesture on the first week.
+
+       Each note keeps the transient the other arpeggios here use. The decay
+       alone is soft enough that a 0.4s tone with a rounded start reads as a
+       pad swell, and stacking three of them is mush rather than a
+       ceremony; the transient puts the attack back so the notes stay
+       separable as they roll.
+
+       Triangle, not the sine most of the other SFX in this file use: a sine
+       has no harmonic content above its fundamental, so six of them at 110ms
+       spacing turn into one indistinct pitch, whereas the triangle's odd
+       harmonics stay individually audible through the roll — and through
+       tier 3's heavier reverb send, which is exactly where a pure sine would
+       have vanished first. The waveform is deliberately identical across all
+       three tiers so the escalation reads as more notes and more space, never
+       as a different instrument. */
+    celebrate: (tier = 1) => {
+      if (!sfxOn) return;
+      const STEPS = {
+        1: { notes: [523.25, 659.25, 783.99], dur: 0.4, gap: 0.09, peak: 0.2 },
+        /* C5-E5-G5-C6: the octave above the tier-1 triad, which is what makes
+           it audibly "more" rather than just longer. A fourth note from the
+           SAME scale keeps the whole run one gesture, where a different chord
+           at this length would stop reading as a single arpeggio. */
+        2: { notes: [523.25, 659.25, 783.99, 1046.5], dur: 0.5, gap: 0.1, peak: 0.22 },
+        /* Full two octaves for the century, and the one tier that asks for
+           space around it. Every tone already runs through sfxBus's 0.25
+           convolver send, so tiers 1 and 2 are reverberated too and this is
+           about degree, not presence: `wet` adds a second send on top (see
+           tone), landing this run at roughly 0.7 of the send's full range
+           against their 0.25. 0.45 rather than 1.0 because a century should
+           sound bigger, not like it's in a stairwell — and because a 6-note
+           run is where an over-wet mix turns to mud fastest, the top of the
+           arpeggio is the first thing to disappear. */
+        3: { notes: [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98], dur: 0.6, gap: 0.11, peak: 0.24, wet: 0.45 },
+      };
+      const s = STEPS[tier];
+      if (!s) return;
+      s.notes.forEach((f, i) => {
+        const delay = i * s.gap;
+        transient({ cutoff: 3200, dur: 0.04, peak: 0.15, delay });
+        tone(f, { type: "triangle", dur: s.dur, peak: s.peak, delay, wet: s.wet || 0 });
+      });
+    },
     setSfx: (v) => { sfxOn = v; },
   };
 })();
@@ -393,6 +553,19 @@ export const Music = (() => {
     }, Math.max(0, (audibleAt - LEAD - c.currentTime) * 1000));
   }
 
+  /* These listeners fire on the highest-frequency events in the app's life —
+     every tab/app switch, focus change and page hide/show. The per-event
+     console.log that used to sit in each of them was debug scaffolding left
+     in from working out which signal the Android WebView actually delivers,
+     and it costs a real logcat write on every one of them in the shipped
+     APK. Gated rather than deleted: the diagnostic is genuinely useful if
+     pause/resume ever regresses on a new WebView, and `npm run dev` is
+     exactly when you'd want it. Also trimmed to the event name — the
+     previous form dumped Object.keys() of the whole plugin module, which is
+     a module-internals leak into a user-facing log, not a diagnostic. */
+  const DEV = typeof import.meta !== "undefined" && !!import.meta.env && !!import.meta.env.DEV;
+  const trace = (...a) => { if (DEV) console.log("[Music]", ...a); };
+
   /* Bound on the first start(), not at import. Registering at module
      scope would keep two listeners alive for the whole session including
      the ones that never play music, and on web would attach before any
@@ -408,10 +581,10 @@ export const Music = (() => {
 
     if (typeof document !== "undefined" && document.addEventListener) {
       document.addEventListener("visibilitychange", () => {
-        console.log("[Music] visibilitychange fired, hidden=", document.hidden);
+        trace("visibilitychange hidden=", document.hidden);
         if (document.hidden) pause(); else resume();
       });
-      console.log("[Music] visibilitychange bound");
+      trace("visibilitychange bound");
     }
 
     /* blur/focus and pagehide/pageshow as backstops for the case
@@ -422,35 +595,35 @@ export const Music = (() => {
        same backgrounding) collapse into a single teardown. */
     if (typeof window !== "undefined" && window.addEventListener) {
       window.addEventListener("blur", () => {
-        console.log("[Music] blur fired");
+        trace("blur");
         pause();
       });
       window.addEventListener("focus", () => {
-        console.log("[Music] focus fired");
+        trace("focus");
         resume();
       });
       window.addEventListener("pagehide", () => {
-        console.log("[Music] pagehide fired");
+        trace("pagehide");
         pause();
       });
       window.addEventListener("pageshow", () => {
-        console.log("[Music] pageshow fired");
+        trace("pageshow");
         resume();
       });
     }
 
     import("@capacitor/app")
       .then((mod) => {
-        console.log("[Music] App plugin loaded, keys=", Object.keys(mod));
+        trace("App plugin loaded");
         const App = mod && mod.App;
         if (!App || typeof App.addListener !== "function") return;
         appStateListener = App.addListener("appStateChange", ({ isActive }) => {
-          console.log("[Music] appStateChange fired, isActive=", isActive);
+          trace("appStateChange isActive=", isActive);
           if (isActive) resume(); else pause();
         });
       })
       .catch((err) => {
-        console.log("[Music] App plugin FAILED:", err);
+        trace("App plugin FAILED:", err);
       });
   }
 

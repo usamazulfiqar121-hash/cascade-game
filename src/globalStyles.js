@@ -197,6 +197,117 @@ html, body {
 }
 .achSlide { animation: achSlideIn 400ms cubic-bezier(.16,1.1,.3,1); }
 
+/* ═══ STREAK MILESTONE CEREMONY ═══
+   Tier 1 (7-day) is the smallest of the three and deliberately the plainest:
+   the badge bounces, the name shimmers, and that's all. Its job is to be
+   noticeable WITHOUT competing with tiers 2 and 3, which add a ring and a
+   shine. The bounce reuses the app's own overshoot curve (D.tSpring's
+   cubic-bezier) for the same reason tutIconPop and popIn do — it's already
+   established in this codebase as "something snapped into place". */
+@keyframes achIconBounce {
+  0%   { transform: scale(0.4); }
+  55%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+.achIconBounce { animation: achIconBounce 500ms cubic-bezier(.34,1.56,.64,1) both; }
+/* Shimmering gold on the achievement NAME. This is .daily-shimmer's gradient
+   and slide verbatim — that class is only named for where it happened to be
+   introduced, and the effect is a generic two-tone moving highlight over
+   themed --shimmer-* vars, so duplicating 6 lines of gradient to avoid
+   reusing a class would be the worse outcome. */
+.achNameShimmer {
+  background: linear-gradient(120deg, var(--shimmer-a) 0%, var(--shimmer-b) 30%, var(--shimmer-c) 50%, var(--shimmer-b) 70%, var(--shimmer-a) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmerSlide 4s linear infinite;
+}
+
+/* Tier 2's addition over tier 1: a ring that pulses twice off the badge and
+   is gone inside a second, so it's felt rather than watched.
+
+   Two pulses is the whole point. One expansion reads as a selection state,
+   which is a thing the user did rather than a thing that happened TO them;
+   an endlessly repeating one is ambient motion nobody asked for and would
+   sit in the reduce-motion block forever. The 100% keyframe returns to a
+   zero-size, transparent ring so nothing is left painted behind the badge
+   once the animation ends. */
+@keyframes achRingPulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 60%, transparent); }
+  70%  { box-shadow: 0 0 0 10px color-mix(in srgb, var(--gold) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 0%, transparent); }
+}
+.achRingPulse { animation: achRingPulse 500ms cubic-bezier(.16,1,.3,1) 2; }
+
+/* Tier 3's addition: a shine that sweeps across the face of the badge for as
+   long as the toast is up.
+
+   Drawn as a background LAYER on the badge itself rather than as a ::after
+   ring. The ring version looks like the obvious thing to write and is
+   wrong: a conic gradient clipped to a border-radius'd box is a rounded
+   square, not a circle, and hollowing it with a radial mask puts the visible
+   band at a radius the mask has to be hand-tuned to guess (the gradient's
+   default ray is farthest-corner, so the percentages don't mean what they
+   look like they mean) — which leaves a ring that floats off the badge at
+   the edges and vanishes entirely at the corners. As a layer over the flat
+   gold fill it's just a highlight travelling over a rounded square, which is
+   what a shine is, and it can't disagree with the badge's shape because it
+   IS the badge's shape.
+
+   Reuses the already-registered --daily-angle property and the same
+   daily-rotate keyframes as .daily-border-wrap, because it is the same
+   effect: a gold conic gradient swept by an animatable angle. --daily-angle
+   is declared `inherits: false`, so this element's animation is its own and
+   doesn't drag the Daily card's rotation with it.
+
+   The badge's own flat gold is NOT restated as a second background layer
+   here. It is already set as backgroundColor on the badge, and a
+   semi-transparent layer stacked on top of it composites: with the conic
+   sheen at 0 alpha the badge would show gold over gold, landing near 25%
+   instead of the 13.3% the tier-1 badge uses — the tiers would disagree
+   about their own base colour in exactly the corner of the sheen where
+   nothing is supposed to be happening.
+
+   NOTE: this depends on the toast render setting `backgroundColor`
+   (longhand) on the badge rather than the `background` shorthand. The
+   shorthand resets background-image, and an inline shorthand beats a
+   stylesheet rule, so `background: <color>` inline would silently delete
+   the shine with no error anywhere — the same "one bad value kills the whole
+   declaration" trap already documented on the in-app toast above. */
+.achShine {
+  background-image: conic-gradient(
+    from var(--daily-angle),
+    rgba(255,194,75,0.6) 0deg,
+    rgba(255,194,75,0) 90deg,
+    rgba(255,194,75,0.6) 180deg,
+    rgba(255,194,75,0) 270deg,
+    rgba(255,194,75,0.6) 360deg
+  );
+  animation: daily-rotate 2.4s linear infinite;
+}
+/* Tier 3 runs BOTH effects on the one badge, which needs this rule to exist.
+
+   `animation` is a shorthand, not a per-effect property: two classes each
+   setting it on the same element means the later rule in the sheet wins
+   ENTIRELY, and .achShine comes after .achIconBounce — so shipping both
+   classes as-is would have silently deleted the 500ms bounce from the
+   biggest celebration in the app, with nothing thrown and no visible error,
+   just a badge that no longer pops. The two animate different properties
+   (transform vs --daily-angle), so there is no real conflict to resolve —
+   they just have to be declared together.
+
+   Both are listed in one `animation` value. The fill mode stays `both` and
+   applies per-animation-list-item, which is what we want: the bounce must
+   hold its final scale(1), and the rotation must stay infinite, and neither
+   needs to know about the other. Specificity is (0,2,0) — above both single
+   classes — so this wins on order too and needs no defensive !important. */
+.achIconBounce.achShine {
+  animation:
+    achIconBounce 500ms cubic-bezier(.34,1.56,.64,1) both,
+    daily-rotate 2.4s linear infinite;
+}
+
 html, body, #root {
   /* Was a flat #0A0F1F (dark's own --bg-1) regardless of theme — inert
      today only because S.root's own themed div (var(--bg-grad)) always
@@ -338,10 +449,21 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .cascade-ball {
   transform-origin: 50% 100%;
   animation: ballDrop 300ms linear backwards;
-  /* Promote up front rather than making the browser discover mid-animation
-     that this needs its own compositor layer -- every pour mounts several
-     of these, and that discovery cost (Chrome calls it "Layerize") was
-     measurably one of the bigger line items in a pour's frame budget. */
+}
+/* Promote up front rather than making the browser discover mid-animation
+   that this needs its own compositor layer -- every pour mounts several
+   of these, and that discovery cost (Chrome calls it "Layerize") was
+   measurably one of the bigger line items in a pour's frame budget.
+
+   Scoped to .promoting instead of sitting on .cascade-ball itself. It was
+   on every ball for the ball's whole life, which is a compositor layer held
+   open for all 36 balls of a full board long after the 300ms entrance that
+   needed it was over -- will-change is a promise to the compositor, and
+   keeping it unfulfilled on elements that have stopped moving is exactly
+   the accumulation the hint is meant to warn about. Ball.jsx adds the class
+   at mount (so the layer still exists before the first animated frame,
+   which was the point) and drops it on animationend. */
+.cascade-ball.promoting {
   will-change: transform, opacity;
 }
 .cascade-ball.landing { animation: ballLand 260ms linear backwards; }
@@ -427,7 +549,11 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .press {
   transition: transform 120ms cubic-bezier(0.2, 1.1, 0.3, 1);
   will-change: transform;
-  transform: translateZ(0);
+  /* translateZ(0) removed. It was doing the same job as the will-change
+     directly above it — forcing a layer — but by creating a 3D rendering
+     context, which on some mobile GPUs pushes descendants onto a separate
+     text rasterisation path and renders them softer. will-change alone gets
+     the promotion this wanted, without the side effect. */
 }
 .press:active { transform: scale(0.965); }
 /* Extra touch area around a small control without changing how it looks:
@@ -569,6 +695,207 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .dailyDotPulse {
   animation: dailyDotPulse 2s ease-in-out infinite;
 }
+/* The last-hour reset countdown's blink. This used to be an inline
+   `animation: "dailyUrgentPulse ..."` on the element itself, which no
+   stylesheet rule can override — so the reduce-motion block below could
+   never have stopped it, and an infinite 1s loop kept running for anyone
+   who had asked for reduced motion. As a class it sits in the same system
+   as the other daily decorations and is pausable with them. */
+.dailyUrgentPulse {
+  animation: dailyUrgentPulse 1000ms ease-in-out infinite;
+}
+/* ═══ PROFILE: EARLY-GAME ACHIEVEMENT GUIDE ═══
+   Two one-shot effects for the 0-unlocked / 1–3-unlocked guide card
+   (AchievementsScreen.jsx, B8).
+
+   Both are classes rather than inline `animation:` because an inline
+   animation can't be reached by any stylesheet rule, and the reduce-motion
+   block is a stylesheet — the same reasoning the .dailyUrgentPulse comment
+   below already records. */
+
+/* The empty-state trophy's "slight pulse". A halo, not a scale: the card's
+   one call to action sits directly under this trophy, and an element that
+   visibly grows and shrinks 1.12x would draw the eye away from the button
+   that actually does something. 2.4s, not the 1.8s flamePulse uses — this
+   one has to loop indefinitely and a 1.8s pulse next to nothing else
+   moving reads as attention-grabbing rather than ambient. */
+@keyframes achEmptyTrophy {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(255, 194, 75, 0)); }
+  50%      { filter: drop-shadow(0 0 10px rgba(255, 194, 75, 0.45)); }
+}
+.achEmptyTrophy {
+  display: inline-block;
+  fontSize: 32,
+  lineHeight: 1,
+  opacity: 0.7,
+  marginBottom: 12,
+  animation: achEmptyTrophy 2400ms ease-in-out infinite;
+}
+
+/* A one-shot attention flash on the "First Steps" card after the guide
+   scrolls to it. 1400ms, then the class is removed by AchievementsScreen's
+   timer — so it cannot stack up or fight itself if tapped repeatedly. The
+   gold wash rather than a border-only change because the locked card is
+   greyed to 0.6 opacity, and a border that only shifts 2% lighter is not
+   visible against it. */
+@keyframes achCardFlash {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 55%, transparent); }
+  22%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--gold) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 0%, transparent); }
+}
+.achCardFlash { animation: achCardFlash 1400ms cubic-bezier(.16, 1, .3, 1); }
+
+/* ═══ B9: UPGRADE CARD PRESS FEEDBACK ═══
+   Four states, all on the button itself: at rest, pressed, released, and
+   the same for Legendary/Jackpot (data-special). Pure CSS on :active —
+   no React state and no re-render, so the feedback is on screen in the same
+   frame as the finger lands, which is the entire point of press feedback
+   and is the one thing a state-driven version would always be slightly late
+   for.
+
+   Source order matters here and it is deliberate, not luck: the global
+   `button:active:not(:disabled) { transform: scale(0.97) }` above is also
+   specificity (0,2,0), same as .upgCard:active, so the later rule wins.
+   These rules sit ~370 lines below it on purpose. If the block is ever
+   moved above that generic button rule, cards silently go back to 0.97. */
+.upgCard {
+  background: var(--card);
+  border: 2px solid color-mix(in srgb, var(--rarity-c) 40%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  /* RELEASE timings, and deliberately NOT `all`.
+
+     The old inline value was `transition: all 200ms cubic-bezier(.2,1.1,.3,1)`,
+     which quietly made every one of these properties animate on both edges
+     with a springy overshoot curve. That is the opposite of the brief on
+     both counts: a press has to be near-instant or it reads as lag, and an
+     overshoot curve on a press is wrong because the finger is still down
+     and nothing is being released yet.
+
+     Each property also gets its own duration, because they are not the same
+     gesture: transform is the spring the player feels, while the colour and
+     shadow settle faster behind it. One duration for all five would force
+     the slowest one on all of them. */
+  transition:
+    transform 280ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    filter 200ms ease-out,
+    border-color 150ms ease-out,
+    box-shadow 200ms ease-out,
+    background-color 200ms ease-out;
+}
+.upgCard[data-special] {
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 0 0 1px color-mix(in srgb, var(--rarity-c) 20%, transparent),
+    0 0 22px color-mix(in srgb, var(--rarity-c) 25.1%, transparent);
+}
+.upgCard:active {
+  transform: translateY(1px) scale(0.985);
+  filter: brightness(1.06);
+  /* Mixed with --card rather than with `transparent`. A transparent blend
+     would REPLACE the card's own background instead of tinting it, leaving
+     the pressed card see-through and the board visible through it. */
+  background-color: color-mix(in srgb, var(--rarity-c) 4%, var(--card));
+  border-color: color-mix(in srgb, var(--rarity-c) 65%, transparent);
+  /* 16px → 12.8px, i.e. the 20% the brief asked for on the blur only. The
+     4px y-offset is deliberately left alone: it is the card's height above
+     the surface, and shrinking it too would move the shadow as well as fade
+     it, which is a second change wearing the first one's clothes. */
+  box-shadow: 0 4px 12.8px rgba(0, 0, 0, 0.3);
+  /* This rule's own transition governs the PRESS, because it is in effect
+     for as long as the finger is down. The instant it lifts, the base
+     rule's 280ms spring takes over for the release. That handoff is the
+     only reason two different timings exist without any JS. */
+  transition:
+    transform 120ms ease-out,
+    filter 120ms ease-out,
+    border-color 120ms ease-out,
+    box-shadow 120ms ease-out,
+    background-color 120ms ease-out;
+}
+/* Legendary/Jackpot get a bigger response to the same press. (0,3,0) beats
+   .upgCard:active, so this is a genuine override rather than a merge. */
+.upgCard[data-special]:active {
+  background-color: color-mix(in srgb, var(--rarity-c) 8%, var(--card));
+  box-shadow:
+    0 4px 12.8px rgba(0, 0, 0, 0.3),
+    0 0 0 1px color-mix(in srgb, var(--rarity-c) 20%, transparent),
+    0 0 32px color-mix(in srgb, var(--rarity-c) 25.1%, transparent);
+}
+
+/* ═══ B10: DAILY TWIST DISCLOSURE ═══
+
+   Animating to an unknown height. The panel's height is the twist's desc
+   wrapping to two, three or four lines depending on the day, so there is no
+   px value to interpolate to and `height: auto` is not animatable at all.
+   grid-template-rows: 0fr -> 1fr is the one construct that interpolates
+   between "collapsed" and "content height" without measuring anything: the
+   row is sized in fractions of the content's own height, and the clip layer
+   below is what actually hides the overflow.
+
+   Both halves of the spec's timing are here, and they are the same curve at
+   two lengths rather than two curves: 300ms to open (= D.tScreen) and 200ms
+   to close (= D.tQuick), both cubic-bezier(0.16, 1, 0.3, 1) — the app's own
+   "arrived, stop" curve, read here as decelerate for the panel.
+
+   Deliberately NOT a spring, unlike the chevron below. A spring overshoots
+   its target, and a height that overshoots ends up taller than its content
+   for a few frames — the panel would visibly gape open past its own text and
+   snap back. Overshoot only reads as "alive" on a transform, which is
+   exactly what the chevron is. */
+.twistPanel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.twistPanel[data-open="1"] {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* min-height:0 is not optional — a grid item defaults to min-height:auto, so
+   without it the row refuses to go below its content's height and the panel
+   never actually collapses. */
+.twistPanelClip {
+  min-height: 0;
+  overflow: hidden;
+  /* Collapsed content still being in the DOM is what lets it animate away on
+     the way out, but it also leaves text a screen reader can read and, if the
+     panel ever grows a control, something focusable behind a closed panel.
+     visibility:hidden removes it from both — and taking it out of the
+     accessibility tree is the whole reason the panel is not simply
+     unmounted on close. The 200ms delay is the collapse duration: the
+     content stays visible for exactly as long as it is still on screen. */
+  visibility: hidden;
+  transition: visibility 0s linear 200ms;
+}
+.twistPanel[data-open="1"] .twistPanelClip {
+  visibility: visible;
+  transition: visibility 0s;
+}
+
+/* 180° on open. This one IS a spring, and the mild overshoot is the point:
+   the chevron is the affordance, so it should lead the panel and be visibly
+   settled before the content finishes arriving (120ms against 300ms).
+   D.tSpring's 500ms was the other candidate and is wrong here — it would
+   still be wobbling after the panel had landed. cubic-bezier(0.2, 1.1, ...)
+   is the app's existing tPress curve, spring included, at press length. */
+.twistChev {
+  transition: transform 120ms cubic-bezier(0.2, 1.1, 0.3, 1);
+}
+.twistChev[data-open="1"] {
+  transform: rotate(180deg);
+}
+
+/* The daily card is a div whose two play regions are real buttons with
+   outline:none, so without this they are focusable and invisible — a
+   keyboard user could land on "play today's puzzle" with nothing drawn.
+   :focus-visible rather than :focus so a pointer tap doesn't leave a ring
+   behind on a card the player just dismissed. */
+.dailyCardRegion:focus-visible,
+.twistToggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ═══ REDUCE MOTION = CALM MODE ═══
    One animation system for both settings. Reduce Motion used to run a
    completely different path from normal play: balls teleported instead
@@ -590,13 +917,129 @@ button:active:not(:disabled) { transform: scale(0.97); }
 :root[data-reduce-motion="1"] .daily-border-wrap,
 :root[data-reduce-motion="1"] .daily-shimmer,
 :root[data-reduce-motion="1"] .flamePulse,
-:root[data-reduce-motion="1"] .dailyDotPulse {
+:root[data-reduce-motion="1"] .dailyDotPulse,
+:root[data-reduce-motion="1"] .dailyUrgentPulse,
+/* Streak ceremony: the bounce and the shimmer are the motion. The toast
+   itself still appears, still says what was earned, and still gets the
+   confetti — only the movement is dropped, and the icon keeps its gold
+   circle so it doesn't read as an unstyled gap. See CALM_DISCOUNT in
+   constants.js for the matching duration change. */
+:root[data-reduce-motion="1"] .achIconBounce,
+:root[data-reduce-motion="1"] .achNameShimmer,
+:root[data-reduce-motion="1"] .achRingPulse,
+:root[data-reduce-motion="1"] .achShine,
+/* Profile guide (B8): both are ambient or attention-seeking movement, and
+   both have a static equivalent — the trophy keeps its 0.7 opacity (the
+   dimming is what carries "empty" without motion), and the flash becomes a
+   steady ring in the same gold, the same substitution the hint pulse and
+   the reset countdown already get. */
+:root[data-reduce-motion="1"] .achEmptyTrophy,
+:root[data-reduce-motion="1"] .achCardFlash {
   animation: none;
+}
+:root[data-reduce-motion="1"] .achEmptyTrophy { opacity: 0.7; }
+:root[data-reduce-motion="1"] .achCardFlash {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 55%, transparent);
+}
+:root[data-reduce-motion="1"] .achIconBounce { transform: none; }
+:root[data-reduce-motion="1"] .achNameShimmer {
+  /* shimmerSlide off means background-clip:text with a static gradient —
+     which is invisible for most of the cycle if left as a plain fill, so
+     the text colour is restored and the gradient dropped. */
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--gold-text);
+}
+:root[data-reduce-motion="1"] .achRingPulse {
+  /* Same substitution the hint pulse and the reset countdown already get: a
+     steady ring in the same colour carries "this one is different" without
+     anything moving. */
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 60%, transparent);
+}
+:root[data-reduce-motion="1"] .achShine {
+  /* The rotation is the motion, so it goes, and the sheen goes with it —
+     frozen at --daily-angle's 0deg initial it would be one static gold wedge
+     in the top-left of a 40px square, which reads as a lighting bug rather
+     than as a celebration.
+
+     A steady 2px gold ring is the substitute: the same meaning tier 2's
+     static ring carries ("this one is different"), with nothing moving. The
+     badge keeps its backgroundColor fill either way, so the icon still
+     reads against a solid badge. */
+  background-image: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+/* The countdown blink can't just be switched off with the rest: the blink IS
+   the "under an hour left" signal, and the colour is already set to the
+   danger token inline. A steady ring in that same colour keeps the urgency
+   without any motion — the same swap hintPulse gets below. currentColor
+   resolves to whatever the element's themed colour is, so it follows the
+   theme instead of hardcoding a gold. */
+:root[data-reduce-motion="1"] .dailyUrgentPulse {
+  box-shadow: 0 0 0 1px currentColor;
+  border-radius: 4px;
 }
 /* Hint pulse loops forever -- replace with a steady glow instead. */
 :root[data-reduce-motion="1"] .tube-btn[data-state="hintFrom"] {
   animation: none;
   box-shadow: 0 0 0 4px var(--go-soft);
+}
+
+/* ─── B9: upgrade card under Reduce Motion ───
+   Press feedback reduced to the scale alone, and the base transition
+   flattened too — the spring's 0.34,1.4 overshoot IS a spring, so there is
+   no reduced form of it to keep; what is left is a 0.985 scale on a linear
+   120ms, which still confirms the touch registered without animating
+   anything toward or past its resting state.
+
+   The 1px nudge, the brighten, the border lift, the wash and the glow
+   growth all go. They are additive decoration on a gesture, not the
+   gesture, which is why the scale alone is an honest reduction rather than
+   a lossy one.
+
+   These have to restate the resting values explicitly rather than just
+   "not overriding" them: they are overrides of the .upgCard rules further
+   up, so removing the override would fall back to whatever the cascade
+   happens to pick, not to the resting state. */
+:root[data-reduce-motion="1"] .upgCard,
+:root[data-reduce-motion="1"] .upgCard:active {
+  transition: transform 120ms linear;
+}
+:root[data-reduce-motion="1"] .upgCard:active {
+  transform: scale(0.985);
+  filter: none;
+  background-color: var(--card);
+  border-color: color-mix(in srgb, var(--rarity-c) 40%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+:root[data-reduce-motion="1"] .upgCard[data-special]:active {
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 0 0 1px color-mix(in srgb, var(--rarity-c) 20%, transparent),
+    0 0 22px color-mix(in srgb, var(--rarity-c) 25.1%, transparent);
+}
+
+/* ─── B10: twist disclosure, no motion ───
+   Instant in both directions, per the brief.
+
+   The clip's delayed visibility switch has to go with the panel transition,
+   not just alongside it: `transition: none` collapses the 200ms delay to 0
+   as well, which is correct here — with nothing animating there is no window
+   during which the collapsed content needs to stay visible. Leaving the
+   delay in place would hide the text 200ms after it stopped being on screen
+   anyway, which for an instant expand means the text vanishes after the fact.
+
+   The chevron is the one thing deliberately NOT instant. It is not movement,
+   it is state: it points down when the panel is closed and up when it is
+   open, and dropping the rotation would leave it pointing the wrong way with
+   no way for the player to read which way it went. A 180° flip that appears
+   instantly is a change of glyph, not an animation — it is the same
+   information the expansion itself already gives. */
+:root[data-reduce-motion="1"] .twistPanel,
+:root[data-reduce-motion="1"] .twistPanel[data-open="1"],
+:root[data-reduce-motion="1"] .twistPanelClip,
+:root[data-reduce-motion="1"] .twistPanel[data-open="1"] .twistPanelClip {
+  transition: none;
 }
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */

@@ -3,18 +3,23 @@
    canvas, but only receives plain args.
    Extracted from App.jsx during cleanup pass. */
 
-import { UPGRADES, RARITY } from "./constants";
+import { UPGRADES } from "./constants";
 
-export function estimateRank(moves, rounds) {
-  if (rounds < 1 || moves < 1) return { label: "Complete" };
-  const avg = moves / rounds;
-  if (avg <= 4) return { label: "Top 5%" };
-  if (avg <= 5) return { label: "Top 12%" };
-  if (avg <= 6) return { label: "Top 25%" };
-  if (avg <= 7.5) return { label: "Top 40%" };
-  if (avg <= 9) return { label: "Top 60%" };
-  return { label: "Top 80%" };
-}
+/* RARITY's colours are theme tokens ("var(--rarity-N)"), and canvas can't
+   resolve var() — assigning one silently leaves the previous fill/stroke in
+   place. So the rarity borders below can't come from RARITY. These mirror
+   the DARK block of --rarity-N in globalStyles.js, which is the palette this
+   whole card is already drawn in (see the literal #EAF0FF / #7A85A8 /
+   rgba(255,194,75,…) literals throughout). Kept next to its one use instead
+   of in constants.js because nothing outside this file needs a hex.
+   If a tier's colour ever changes, this and --rarity-N change together. */
+const RARITY_HEX = {
+  1: "#8592BC",  // Common      — --rarity-1
+  2: "#22C58A",  // Uncommon    — --rarity-2
+  3: "#4C8DFF",  // Rare        — --rarity-3
+  4: "#FFC24B",  // Legendary   — --rarity-4
+  5: "#FF3DAF",  // Jackpot     — --rarity-5
+};
 
 /* `extra` is optional: { twist, score } of the run being shared.
    `dateKey` is the day of the puzzle that was played. It defaults to today,
@@ -190,7 +195,7 @@ export function buildShareCard({ round, upgrades, best }) {
       items.forEach((id, i) => {
         const u = UPGRADES.find((x) => x.id === id);
         if (!u) return;
-        const rColor = (RARITY && RARITY[u.rarity]) ? RARITY[u.rarity].color : "#8592BC";
+        const rColor = RARITY_HEX[u.rarity] || RARITY_HEX[1];
         const row = Math.floor(i / PER_ROW);
         const col = i % PER_ROW;
         const itemsInRow = Math.min(PER_ROW, items.length - row * PER_ROW);
@@ -202,10 +207,20 @@ export function buildShareCard({ round, upgrades, best }) {
         ctx.fillStyle = "rgba(15, 21, 40, 0.75)";
         rr(x, y, CHIP, CHIP, 32);
         ctx.fill();
-        ctx.strokeStyle = rColor + "80";
+        /* 50% alpha via globalAlpha, not a "…80" suffix glued onto the hex.
+           The old code did `rColor + "80"`, which worked back when RARITY
+           held literal hexes; once the tiers became var() references that
+           produced "var(--rarity-4)80" — not a colour — so canvas rejected
+           the assignment and every chip kept whatever strokeStyle the
+           previous one had set. All eight borders came out identical, and
+           none of them the tier's actual colour. */
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = rColor;
         ctx.lineWidth = 2.5;
         rr(x, y, CHIP, CHIP, 32);
         ctx.stroke();
+        ctx.restore();
 
         ctx.font = body(52);
         ctx.textBaseline = "middle";

@@ -15,16 +15,31 @@ export default function UpgradeCard({ upgrade, onPick }) {
      pink too, not just Legendary's gold. */
   const isSpecial = upgrade.rarity >= 4;
   return (
-    <button onClick={onPick} style={{
-      width: "100%", background: T.card, border: `2px solid ${rarityTint(r.color, 40)}`,
-      borderRadius: 16, padding: "16px 14px", display: "flex", alignItems: "center",
-      gap: 14, cursor: "pointer", textAlign: "left",
-      fontFamily: "'Nunito', sans-serif", color: T.ink,
-      transition: "all 200ms cubic-bezier(.2,1.1,.3,1)",
-      boxShadow: isSpecial
-        ? `0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px ${rarityTint(r.color, 20)}, 0 0 22px ${rarityTint(r.color, 25.1)}`
-        : `0 4px 16px rgba(0,0,0,0.3)`,
-    }}>
+    <button
+      onClick={onPick}
+      /* B9 note — the press states live in .upgCard (globalStyles.js), and
+         every property they animate has to be REACHABLE from there. It used
+         to set `border`, `background` and `boxShadow` inline, and an inline
+         shorthand outranks any stylesheet rule: adding `:active` tints on
+         top would have dropped the border 40→65% and the glow change
+         silently, with nothing thrown and no visual clue why, leaving only
+         transform/filter alive.
+
+         So what stays inline is layout and typography — none of which change
+         on press — and the rarity colour is handed over as a custom
+         property for the stylesheet to build its own tints from. That also
+         means the resting appearance is defined in exactly one place now
+         instead of two that can disagree. */
+      className="upgCard"
+      data-special={isSpecial ? "" : undefined}
+      style={{
+        "--rarity-c": r.color,
+        width: "100%", borderRadius: 16, padding: "16px 14px",
+        display: "flex", alignItems: "center", gap: 14,
+        cursor: "pointer", textAlign: "left",
+        fontFamily: "'Nunito', sans-serif", color: T.ink,
+      }}
+    >
       <div style={{
         width: 52, height: 52, borderRadius: 14, flexShrink: 0,
         background: rarityTint(r.color, 13.3), border: `2px solid ${rarityTint(r.color, 33.3)}`,

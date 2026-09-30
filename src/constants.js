@@ -75,10 +75,82 @@ export const ACHIEVEMENTS = [
   { id: "upgrades_10", name: "Collector", desc: "Hold 10 upgrades in one run", icon: "🎁" },
   { id: "combo_10", name: "Chain Master", desc: "Hit a 10× combo", icon: "🔥" },
   { id: "no_undo_5", name: "Purist", desc: "Clear 5 rounds without undo", icon: "🛡" },
-  { id: "streak_7", name: "Week Streak", desc: "7-day daily streak", icon: "📅" },
-  { id: "streak_30", name: "Month Streak", desc: "30-day daily streak", icon: "🌙" },
-  { id: "streak_100", name: "Century Streak", desc: "100-day daily streak", icon: "💯" },
+  { id: "streak_7", name: "Week Streak", desc: "7-day daily streak", icon: "📅", tier: 1 },
+  { id: "streak_30", name: "Month Streak", desc: "30-day daily streak", icon: "🌙", tier: 2 },
+  { id: "streak_100", name: "Century Streak", desc: "100-day daily streak", icon: "💯", tier: 3 },
 ];
+
+/* Streak milestone ceremony — one entry per tier, keyed by ACHIEVEMENTS[].tier.
+
+   A 100-day streak is not "more of" a 7-day one, and it shouldn't be
+   celebrated the way it is: a toast that looks, sounds and lasts the same
+   whether you hit a week or a century trains the player to stop reading
+   their streak toast entirely. Schell's point is that a milestone wants
+   ceremony that is DIFFERENT, not merely bigger, and the escalation has to
+   be visible before it's read — which is why duration, particle count and
+   confetti spread are part of the same scale rather than one multiplier
+   applied to a single toast.
+
+   `label` replaces the toast's generic "Achievement" eyebrow at the higher
+   tiers, so the toast announces what it is before the player reads the
+   name. `duration` is the toast's on-screen time; the reduce-motion path in
+   App.jsx subtracts CALM_DISCOUNT from it rather than skipping the toast,
+   because the information is in the toast and the motion is not.
+
+   `colors` is the confetti palette, and it lives HERE rather than in
+   App.jsx/Particles so that every number describing a ceremony is in one
+   readable block. null means "use the single colour the caller passed",
+   which is tier 1's monochrome burst.
+
+   The tier-3 palette reuses the game's own COLORS rather than inventing new
+   hexes: the tube colours are the palette the player has already learned to
+   read as "this game", so a century's confetti landing in those exact hues
+   is legible without a legend, and if the tube palette is ever retuned the
+   confetti follows it for free. The index order is chosen so consecutive
+   pieces (Particles.jsx walks this with i % length) never land on two
+   similar hues — at 6-10px, a red next to a pink is two red dots. Gold is
+   `var(--gold)` and not COLORS[3] so the streak ceremony still uses the
+   darker, readable light-theme gold the rest of the UI uses. */
+export const STREAK_CEREMONY = {
+  1: {
+    label: "7-Day Streak",
+    duration: 3500,
+    particles: 8,
+    dist: 60,
+    colors: null,
+    life: 600,
+  },
+  2: {
+    label: "30-Day Streak",
+    duration: 4200,
+    particles: 16,
+    dist: 80,
+    /* Gold plus white, not two golds. A second gold piece at 8-10px on a
+       gold-glowing toast is invisible — the burst reads as a slightly lumpy
+       gold cloud. White is the nearest colour that actually separates at
+       that size while still belonging to the ceremony; the tier-3 rainbow
+       is what earns a real hue range. */
+    colors: ["#FFC24B", "#FFFFFF"],
+    life: 600,
+  },
+  3: {
+    label: "Century Streak",
+    duration: 5500,
+    particles: 24,
+    dist: 100,
+    colors: ["var(--gold)", COLORS[0], COLORS[6], COLORS[4], COLORS[2], COLORS[7], COLORS[5], COLORS[1]],
+    /* "Longer gravity" — the pieces hang around past the 600ms a pour burst
+       gets, so a hundred days feels like it's still raining confetti after
+       the other tiers have finished. `life` also sets how long the burst
+       stays mounted (see spawnParticles in App.jsx), so the two can't drift
+       apart and leave particles hanging in mid-air. */
+    life: 950,
+  },
+};
+
+/* Reduce Motion shortens the streak ceremony by this much rather than
+   removing it — see `duration` above. */
+export const CALM_DISCOUNT = 2000;
 
 /* Rarity tiers. 5 (Jackpot) sits above Legendary — a distinct color so the
    rare roll in pickRandomUpgrades is instantly recognizable as a step up,

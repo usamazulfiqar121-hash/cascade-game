@@ -31,6 +31,37 @@ const A = 0.35;
 const arcU = (t) => (t < A ? (t * t) / (A * (2 - A)) : (2 * t - A) / (2 - A));
 const ARC_END_SPEED = 2 / (2 - A); // du/dt at t = 1
 
+/* Solve for the uniform time-scale that makes a flight exactly `extra` ms
+   longer than it would otherwise take.
+
+   The obvious implementation — hand the extra time to the drop — is wrong,
+   and wrong in a way that only shows up on screen. The drop's duration is
+   derived from the speed the ball leaves the arc at, so lengthening it
+   without re-deriving that speed overshoots the slot badly; and because
+   buildKeyframes pins the final frame to the slot regardless, a bad drop
+   doesn't error, it renders as the ball visibly decelerating in mid-air
+   right before it reaches the tube. Scaling the arc and the drop together
+   and re-deriving the drop keeps the path geometrically identical and
+   changes only the clock, which is what slow motion is. The function is
+   monotonic in k, so bisection converges on the exact figure in a few
+   steps. */
+function scaleForExtra(extra, arcMs0, v00, d) {
+  const totalFor = (k) => {
+    const v = v00 / k;
+    return arcMs0 * k + Math.max(1, Math.round((-v + Math.sqrt(v * v + 2 * G * d)) / G));
+  };
+  if (extra <= 0) return 1;
+  const base = totalFor(1);
+  let lo = 1;
+  let hi = 8;
+  for (let i = 0; i < 32; i++) {
+    const mid = (lo + hi) / 2;
+    if (totalFor(mid) < base + extra) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 /* Plan one ball's flight: start (x0,y0) → a hop up, over, and straight
    down to the hover point above the target (x1, rimY) → a gravity drop to
    its slot (x1, y1). The arc is a cubic bezier whose first control point
@@ -40,18 +71,26 @@ const ARC_END_SPEED = 2 / (2 - A); // du/dt at t = 1
    starts at the exact speed the arc ended with (v0), so the whole path is
    one continuous motion.
 
+   `slowBy` stretches the whole flight by that many ms (see scaleForExtra);
+   it's how the round-winning ball is given time to be watched. Default 0
+   reproduces the previous timing exactly, k stays 1 and the maths below
+   collapses to the original expression.
+
    Exported so App schedules the landing, the impact sound and the
    particle burst from the same numbers the animation uses. */
-export function planFlight(x0, y0, x1, rimY, y1) {
+export function planFlight(x0, y0, x1, rimY, y1, slowBy = 0) {
   const arcH = clamp(Math.abs(x1 - x0) * 0.22, 16, 46);
   const topY = Math.min(y0, rimY) - arcH;
   /* rough path length: up + across + down */
   const len = (y0 - topY) + Math.abs(x1 - x0) + (rimY - topY);
-  const arcMs = Math.round(clamp(140 + len * 0.24, 190, 330));
+  const arcMs0 = Math.round(clamp(140 + len * 0.24, 190, 330));
   /* vertical speed at the end of the arc: dB/du at u=1 is 3·(P3 − P2),
      which here is purely vertical (P2 sits right above P3) */
-  const v0 = (3 * (rimY - topY) * ARC_END_SPEED) / arcMs;
+  const v00 = (3 * (rimY - topY) * ARC_END_SPEED) / arcMs0;
   const d = Math.max(0, y1 - rimY);
+  const k = scaleForExtra(slowBy, arcMs0, v00, d);
+  const arcMs = Math.round(arcMs0 * k);
+  const v0 = v00 / k;
   const dropMs = Math.max(1, Math.round((-v0 + Math.sqrt(v0 * v0 + 2 * G * d)) / G));
   return { arcMs, dropMs, topY, v0 };
 }

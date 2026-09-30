@@ -3,10 +3,16 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
+# Build-only job: it assembles an APK and uploads it as an artifact, and
+# never pushes, tags, or publishes. contents: read is all it needs —
+# contents: write was a blanket grant that made a compromised build step
+# (npm ci runs install scripts) able to push to the repo.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-debug:
@@ -22,15 +28,22 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci || npm install
+        # `npm ci` only, no `|| npm install` fallback. The fallback turned a
+        # package.json / package-lock.json mismatch — the one thing a lockfile
+        # exists to catch — into a silent non-reproducible resolve, so the APK
+        # could be built from a dependency tree nobody ever pinned or tested.
+        run: npm ci
 
       - name: Build web
         run: npm run build
 
       - name: Add Android platform
+        # No `|| true`. Silencing this made a genuine platform-creation
+        # failure surface much later as an opaque `cap sync android` error
+        # with no Android directory to point at.
         run: |
           npm install @capacitor/android @capacitor/assets
-          npx cap add android || true
+          npx cap add android
 
       - name: Generate icons and splash
         run: |

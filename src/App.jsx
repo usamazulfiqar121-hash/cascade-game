@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, rarityText, rarityTint } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, rarityText, rarityTint, STREAK_CEREMONY, CALM_DISCOUNT } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -136,6 +136,66 @@ const WRONG_FLASH_KEYFRAMES = [
   { opacity: 0 },
 ];
 
+/* Celebration shake — the "yes!" counterpart to SHAKE_KEYFRAMES. Same
+   mechanism (WAAPI on the board row, so it can re-fire on every pour without
+   remounting anything) but the opposite meaning: SHAKE_KEYFRAMES is a
+   refusal, a left-right stutter that decays over 420ms and ends where it
+   started. This one is a thump — a single sharp displacement that peaks
+   almost immediately and is home again inside ~150ms, so it reads as impact
+   rather than rejection. Built from `amp`/`rot` instead of being a fixed
+   constant because the tiers need to be distinguishable at a glance (2px vs
+   6px on a phone-sized board is otherwise the same nudge), and because
+   hardcoding three near-identical keyframe arrays is how they drift apart.
+
+   Damped alternating offsets rather than a sine: the first swing is the
+   one that carries the weight, and each subsequent one is a smaller
+   correction, which is what a struck object actually does.
+
+   Research: Jan Willem Nijman's "Art of Screenshake" (GDC 2019, Vlambeer)
+   — screen shake's value is that it's the cheapest possible way to make a
+   system feel like it has mass, and that it must be reserved for moments
+   that deserve it. That's the rule applied here: the wrong-move shake is
+   punishment, this is reward, and neither fires for a plain +1 bonus. */
+function cheerKeyframes(amp, rot) {
+  return [
+    { transform: "translate(0, 0) rotate(0deg)" },
+    { transform: `translate(${-amp * 0.6}px, ${amp * 0.25}px) rotate(${-rot * 0.6}deg)` },
+    { transform: `translate(${amp * 0.45}px, ${-amp * 0.2}px) rotate(${rot * 0.45}deg)` },
+    { transform: `translate(${-amp * 0.25}px, ${amp * 0.1}px) rotate(${-rot * 0.25}deg)` },
+    { transform: `translate(${amp * 0.12}px, 0) rotate(${rot * 0.12}deg)` },
+    { transform: "translate(0, 0) rotate(0deg)" },
+  ];
+}
+
+/* ms of celebration shake per amplitude — a bigger hit is allowed to take
+   slightly longer to settle. Kept in the 120-180ms band: long enough to be
+   felt, short enough that it never delays the pour you're still making. */
+const CHEER_MS = { small: 130, mid: 150, big: 180 };
+
+/* Extra flight time given to the last ball of the pour that finishes a
+   level, so the win can be watched landing. Tuned against the 85ms
+   inter-ball stagger in attemptPour: 250ms is roughly three gaps, so the
+   slow ball clearly separates from the cascade behind it without leaving a
+   gap long enough to read as a stall. Purely visual — game state has
+   already committed by the time this applies. */
+const WIN_BALL_SLOW_MS = 250;
+
+/* How long an achievement toast stays up when it isn't a streak milestone. */
+const ACH_TOAST_MS = 2600;
+
+/* How long an achievement toast stays up. A milestone uses its own ceremony
+   duration instead of the flat 2.6s above — the whole point of a milestone
+   is that it outlasts the moment you earned it. Under Reduce Motion the extra
+   time comes OFF (CALM_DISCOUNT) rather than the toast being suppressed: the
+   achievement's name is information, and reduce motion asks for things to
+   stop MOVING, not to stop being shown. The 1200ms floor stops a short
+   ceremony from being subtracted into something too quick to read. */
+function achToastMs(meta, reduceMotion) {
+  const tier = meta && meta.tier;
+  const base = (tier && STREAK_CEREMONY[tier] && STREAK_CEREMONY[tier].duration) || ACH_TOAST_MS;
+  return Math.max(1200, base - (reduceMotion ? CALM_DISCOUNT : 0));
+}
+
 /* ═══════════  COMPONENTS  ═══════════ */
 
 /* The daily challenge's "next puzzle in HH:MM:SS" label, on the daily
@@ -156,15 +216,23 @@ function DailyResetCountdown() {
      the reset, not evenly all day. */
   const urgent = ms > 0 && ms < 3600000;
   return (
-    <div style={{
-      fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 16, fontWeight: 800,
-      color: urgent ? T.danger : T.goldText,
-      marginTop: 4,
-      fontVariantNumeric: "tabular-nums",
-      letterSpacing: "-0.02em",
-      animation: urgent ? "dailyUrgentPulse 1000ms ease-in-out infinite" : "none",
-    }}>
+    <div
+      className={urgent ? "dailyUrgentPulse" : undefined}
+      style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 16, fontWeight: 800,
+        color: urgent ? T.danger : T.goldText,
+        marginTop: 4,
+        fontVariantNumeric: "tabular-nums",
+        letterSpacing: "-0.02em",
+        /* The blink moved to a class (see .dailyUrgentPulse in
+           globalStyles.js). As an inline `animation` shorthand it outranked
+           every stylesheet rule, so the reduce-motion block had no way to
+           stop this infinite 1s loop — it kept blinking for players who had
+           asked for reduced motion. The class is pausable with the rest of
+           the daily decorations, and gets a static ring instead. */
+      }}
+    >
       {formatCountdown(ms)}
     </div>
   );
@@ -366,6 +434,14 @@ export default function Cascade() {
   const [selected, setSelected] = useState(null);
   const [phase, setPhase] = useState("playing");
   const [comboCount, setComboCount] = useState(0);
+  /* Whether the run that just ended set a new personal best. Captured at
+     the game-over trigger rather than re-derived where it's drawn: that
+     trigger bumps `best` to `round` BEFORE the results card renders, so
+     every comparison available at render time is already too late —
+     `round > best` reads false for a genuine record (best was just raised
+     to match it) and `round >= best` reads true for a plain tie. The
+     answer is only knowable at the one place it's decided. */
+  const [newBestThisRun, setNewBestThisRun] = useState(false);
   const [undoLeft, setUndoLeft] = useState(2);
   /* Whole-RUN undo tracking for the "Purist" achievement (no_undo_5),
      separate from undoLeft — undoLeft is a per-ROUND allowance (reset
@@ -726,6 +802,126 @@ export default function Cascade() {
     } catch {}
   }, [shake]);
 
+  /* Celebration thump for a combo/mega bonus — the positive twin of the
+     effect above. Called from attemptPour at the same instant as
+     Snd.mega()/Snd.combo(), inside the same armEphemeral deferral, so the
+     shake, the sound, the particle burst and the "+N" all land together —
+     after the ball has actually arrived, which is the only moment a thump
+     reads as "that pour" instead of "the screen glitched".
+
+     Driven imperatively rather than through a counter + effect like the
+     wrong-move shake, because this one needs no re-render at all: `tier` is
+     set only on the pour that earned it, so there's no stale value that
+     could replay on an unrelated re-render. That's the one advantage the
+     wrong-move shake's counter buys and this doesn't need.
+
+     Skipped outright under Reduce Motion, rather than softened the way the
+     wrong-flash is: that one keeps a plain opacity fade because it is the
+     only "that didn't work" signal left once the shake is gone, and there's
+     no such dependency here — a combo still gets its arpeggio, its doubled
+     particle burst, its Haptic.heavy() and its floating "+2". Nothing is
+     lost by dropping the motion.
+
+     The board row is the target, not the whole screen: the HUD (round
+     number, moves left) sits directly above it, and shaking that would
+     blur exactly the two numbers a player is looking at on the pour that
+     just rewarded them. */
+  const celebrate = useCallback((amp, rot, ms) => {
+    if (reduceMotionRef.current) return;
+    const row = tubesRowRef.current;
+    try {
+      if (row && typeof row.animate === "function") {
+        row.animate(cheerKeyframes(amp, rot), { duration: ms, easing: "cubic-bezier(.16,1,.3,1)" });
+      }
+    } catch {}
+  }, []);
+
+  /* Short-lived one-shot timers whose only job is to fire a setState and
+     die. They were scattered bare setTimeouts with no handle anyone kept,
+     so nothing could cancel them and each one fired into a tree that had
+     already unmounted. Tracked in one set, dropped by one cleanup.
+
+     These two are declared HERE, above unlockAch, and that ordering is load-
+     bearing. unlockAch runs the streak ceremony and needs spawnParticles; a
+     useCallback's dependency array is evaluated where the call is written,
+     so a deps list mentioning spawnParticles from above its own `const` is
+     a temporal-dead-zone read on every single render. Neither of these
+     depends on anything defined further down the component, so moving them
+     up is free — the alternative was routing around it with a ref. */
+  const ephemeralTimersRef = useRef(new Set());
+  const armEphemeral = useCallback((fn, ms) => {
+    const id = setTimeout(() => {
+      ephemeralTimersRef.current.delete(id);
+      fn();
+    }, ms);
+    ephemeralTimersRef.current.add(id);
+    return id;
+  }, []);
+
+  /* `count` and `dist` are the two knobs a pour burst exposes: a few sparks
+     close by, versus a lot of confetti thrown wide. `colors` (a palette the
+     pieces cycle through) and `life` (how long they hang around) exist for
+     the streak ceremonies. All four default to the pour-burst values, so
+     every existing call site is unchanged.
+
+     `life` is passed down rather than hardcoded 600 here on purpose: it sets
+     BOTH the particle animation's duration (inline, in Particles.jsx) and
+     when the burst is unmounted. Deriving the two from one number is the
+     only way they can't drift apart — a longer-flying piece dropped from the
+     tree early would vanish mid-air, which is exactly the "longer gravity"
+     tier 3 is asking for. */
+  const spawnParticles = useCallback((x, y, color, count = 6, dist = 30, colors = null, life = 600) => {
+    const id = Date.now() + Math.random();
+    const seed = Math.random() * Math.PI;
+    setParticles((p) => [...p, { id, x, y, color, seed, count, dist, colors, life }]);
+    armEphemeral(() => setParticles((p) => p.filter((q) => q.id !== id)), life);
+  }, [armEphemeral]);
+
+  /* One ceremony per batch, for the highest tier in it.
+
+     The streak effect calls unlockAch("streak_7"), then "streak_30", then
+     "streak_100" in the same synchronous tick, and at a 100-day streak all
+     three are true at once. Left alone, each would run its own ceremony on
+     the spot: three arpeggios stacked on each other, three haptic patterns
+     fighting, three confetti bursts. None of those is wrong on its own —
+     together they're noise, and the tier the player actually earned ends up
+     buried under the two smaller ones.
+
+     Checking the toast queue for a higher tier instead does NOT work here,
+     and it's worth being explicit about why: the unlocks are pushed in
+     ASCENDING order, so when streak_7 is processed the queue contains only
+     streak_7 — streak_30 and streak_100 haven't been added yet. The batch
+     isn't knowable until the tick is over, which is what the deferral is
+     for. A microtask rather than setTimeout(0) because a microtask runs as
+     soon as the current synchronous block finishes: by then all three calls
+     have been seen, and it still lands inside the same frame the unlock
+     happened in. setTimeout(0) would wait for the next frame and read as a
+     visible stutter between the toast appearing and the sound arriving.
+
+     The lower tiers keep their toasts in the queue — the player still sees
+     all three unlocks scroll past in order. What's dropped is the
+     overlapping sound, buzz and confetti, not the information. */
+  const ceremonyTierRef = useRef(0);
+  const flushCeremony = useCallback(() => {
+    const tier = ceremonyTierRef.current;
+    ceremonyTierRef.current = 0;
+    if (!tier) return;
+    const c = STREAK_CEREMONY[tier];
+    Snd.celebrate(tier);
+    Haptic.celebrate(tier);
+    /* Confetti from the toast's own badge rather than from the board. The
+       toast renders at top:60 centred, so this is the middle of its 40px
+       icon (60 + 40/2, plus a few px of the card's own padding). Spawning
+       at the tube the player just used would throw the celebration
+       somewhere they aren't looking.
+
+       Palette, spread, count and lifetime are all read off the ceremony in
+       constants.js rather than being decided here, so a tier's whole feel
+       lives in one readable block. `T.gold` is still passed as the base
+       colour for the tier-1 case, whose `colors` is null. */
+    spawnParticles(window.innerWidth / 2, 86, T.gold, c.particles, c.dist, c.colors, c.life);
+  }, [spawnParticles]);
+
   /* achToast shows one achievement at a time, but unlockAch can be called
      several times in the same synchronous tick — e.g. clearing round 10
      on a 10x combo fires both round_10 and combo_10 together, and a
@@ -739,14 +935,19 @@ export default function Cascade() {
      a player was good enough to earn two unlocks at once — arguably the
      moment most worth celebrating — they'd reliably see only one toast,
      or a truncated one. A small queue instead shows every unlock, each
-     for its own full 2600ms, in the order they were earned. */
+     for its own full duration (achToastMs below — the flat 2600ms for a
+     normal unlock, longer for a streak milestone), in the order they were
+     earned. */
   const achToastQueueRef = useRef([]);
   const achToastTimerRef = useRef(null);
 
   const showNextAchToast = useCallback(() => {
     const next = achToastQueueRef.current.shift();
     setAchToast(next || null);
-    achToastTimerRef.current = next ? setTimeout(showNextAchToast, 2600) : null;
+    /* reduceMotionRef, not the `reduceMotionOn` state: this timer is armed
+       once when a toast is shown and read whenever it later fires, so it must
+       see the setting as it is now, not as it was when it was armed. */
+    achToastTimerRef.current = next ? setTimeout(showNextAchToast, achToastMs(next, reduceMotionRef.current)) : null;
   }, []);
 
   const unlockAch = useCallback((id) => {
@@ -774,8 +975,35 @@ export default function Cascade() {
     if (meta) {
       achToastQueueRef.current.push(meta);
       if (!achToastTimerRef.current) showNextAchToast();
+      /* Streak milestone, scaled off the achievement's own `tier` (see
+         ACHIEVEMENTS[].tier and STREAK_CEREMONY in constants.js). Two guards
+         matter: an achievement with no tier, and a tier with no ceremony
+         entry, both fall through to exactly the plain unlock this used to
+         be. That's what keeps the other eight achievements on the 2.6s
+         toast with no sound, no buzz and no confetti.
+
+         This is safe to run on every call because of the localStorage
+         early-return above — the streak effect re-runs on every
+         dailyResults change, and only the call that actually writes a NEW id
+         gets this far.
+
+         The ceremony itself is NOT fired here. See flushCeremony: at a
+         100-day streak this function runs three times in one tick, and the
+         decision of which one gets to be loud can only be made once the
+         whole batch is known. */
+      const tier = meta.tier && STREAK_CEREMONY[meta.tier] ? meta.tier : 0;
+      if (tier > ceremonyTierRef.current) {
+        /* `wasIdle` schedules exactly one microtask per batch. Without it
+           each upgrade in the batch would queue its own flush, and while
+           the ref-zeroing in flushCeremony would make the extras harmless
+           no-ops, three scheduled callbacks to do one job is three chances
+           to be surprised later. */
+        const wasIdle = ceremonyTierRef.current === 0;
+        ceremonyTierRef.current = tier;
+        if (wasIdle) queueMicrotask(flushCeremony);
+      }
     }
-  }, [showNextAchToast]);
+  }, [showNextAchToast, flushCeremony]);
 
   /* Streak milestones — same unlock/toast path as any other achievement.
      Re-checked whenever dailyResults or shieldedDates changes (i.e. right
@@ -788,27 +1016,6 @@ export default function Cascade() {
     if (streak >= 30) unlockAch("streak_30");
     if (streak >= 100) unlockAch("streak_100");
   }, [dailyResults, shieldedDates, unlockAch]);
-
-  /* Short-lived one-shot timers whose only job is to fire a setState and
-     die. They were scattered bare setTimeouts with no handle anyone kept,
-     so nothing could cancel them and each one fired into a tree that had
-     already unmounted. Tracked in one set, dropped by one cleanup. */
-  const ephemeralTimersRef = useRef(new Set());
-  const armEphemeral = useCallback((fn, ms) => {
-    const id = setTimeout(() => {
-      ephemeralTimersRef.current.delete(id);
-      fn();
-    }, ms);
-    ephemeralTimersRef.current.add(id);
-    return id;
-  }, []);
-
-  const spawnParticles = useCallback((x, y, color, count = 6) => {
-    const id = Date.now() + Math.random();
-    const seed = Math.random() * Math.PI;
-    setParticles((p) => [...p, { id, x, y, color, seed, count }]);
-    armEphemeral(() => setParticles((p) => p.filter((q) => q.id !== id)), 600);
-  }, [armEphemeral]);
 
   /* `screen` inside a callback's closure is the value it had when the
      callback was created, so the deferred round transitions below can't
@@ -870,6 +1077,21 @@ export default function Cascade() {
       if (srcEl && dstRect) {
         const srcBalls = srcEl.querySelectorAll(".cascade-ball"); // DOM order = bottom → top
         const rimY = dstRect.top - LIFT_GAP - tubeDims(scale).ballH / 2;
+        /* The pour that finishes the level gets its LAST ball flown slowly
+           (WIN_BALL_SLOW_MS) so the round-winning moment can actually be
+           seen landing — everything up to that point is a cascade at speed,
+           and the ball that wins the level is the one you most want to
+           watch arrive. Scoped to that single ball on purpose: slowing the
+           whole pour turns the win into a queue, and slowing it globally
+           makes every ordinary move feel sluggish. Nothing else reads this
+           — the level's own clear check stays the single source of truth.
+
+           The extra time is added inside planFlight as a uniform time-scale
+           and re-derived, so the arc keeps its shape, and because the
+           landing times below are read off these same numbers the landing
+           sound, the particle burst and the upgrade cards all wait for the
+           slower ball automatically. */
+        const isWinPour = isSolved(next);
         const newFlights = [];
         const lands = [];
         for (let k = 0; k < movedCount; k++) {
@@ -878,7 +1100,8 @@ export default function Cascade() {
           const r = ballEl.getBoundingClientRect();
           const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
           const { x: x1, y: y1 } = slotCenter(dstRect, beforeLen + k, scale);
-          const { arcMs, dropMs, topY, v0 } = planFlight(x0, y0, x1, rimY, y1);
+          const slowBy = isWinPour && k === movedCount - 1 ? WIN_BALL_SLOW_MS : 0;
+          const { arcMs, dropMs, topY, v0 } = planFlight(x0, y0, x1, rimY, y1, slowBy);
           const delay = Math.round(k * 85 * timeScale);
           const flightMs = (arcMs + dropMs) * timeScale;
           newFlights.push({ id: `${t0}-${fromIdx}-${k}`, t0, delay, timeScale, x0, y0, x1, rimY, y1, topY, v0, arcMs, dropMs, colorIdx, scale, colorBlind: colorBlindOn });
@@ -931,6 +1154,19 @@ export default function Cascade() {
       if (meaningful && comboEvery && newCombo % comboEvery === 0) { bonus += 1; tier = Math.max(tier, 2); }
       const megaEvery = getMegaEvery(runUpgrades);
       if (meaningful && megaEvery && newCombo % megaEvery === 0) { bonus += 2; tier = Math.max(tier, 3); }
+      /* How many semitones to transpose this bonus's arpeggio up by (see
+         semitones() in sound.js). Two per combo earned, so every rung of the
+         ladder is the same musical interval and the run climbs in tune;
+         capped at an octave because past that a sine turns thin and shrill
+         instead of triumphant, and a good run really does reach ten-plus
+         combos. Normalised by comboEvery/megaEvery rather than keyed on the
+         raw combo number, because those intervals scale with upgrades — the
+         same "third combo" is nine pours in with a slow combo upgrade and
+         three without, and it should land in the same place on the ladder
+         either way. First combo comes out at 0, so the very first one is
+         exactly the pitch this shipped with. */
+      const comboStep = (every, count) =>
+        every ? Math.min(12, (Math.max(1, Math.round(count / every)) - 1) * 2) : 0;
 
       // Particle burst where the last ball actually comes to rest, at the
       // moment it does — it used to fire from the tube's geometric center
@@ -983,8 +1219,8 @@ export default function Cascade() {
       if (bonus > 0) {
         setBonusMoves(newBonus);
         armEphemeral(() => {
-          if (tier >= 3) { Snd.mega(); Haptic.heavy(); Music.pulse("mega"); }
-          else if (tier >= 2) { Snd.combo(); Haptic.medium(); Music.pulse("combo"); }
+          if (tier >= 3) { Snd.mega(comboStep(megaEvery, newCombo)); Haptic.heavy(); Music.pulse("mega"); celebrate(6, 0.9, CHEER_MS.big); }
+          else if (tier >= 2) { Snd.combo(comboStep(comboEvery, newCombo)); Haptic.medium(); Music.pulse("combo"); celebrate(4, 0.6, CHEER_MS.mid); }
           else Snd.bonus();
         }, 120);
         /* Fire a floating "+N" so the player can actually see the bonus
@@ -1167,6 +1403,13 @@ export default function Cascade() {
           // Save best if this is a new best (main game only -- see dailyBest)
           if (!isDaily && round > best) {
             setBest(round);
+            /* Record the verdict here, where `round > best` is still a
+               real comparison — the results card reads this flag instead of
+               recomputing it, because by the time it draws, the setBest
+               above has made `round > best` false and `round >= best` true
+               for a tie. `round > 1` because dying on round 1 cleared
+               nothing, so there's no record to claim. */
+            setNewBestThisRun(round > 1);
             try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
           }
 
@@ -1201,7 +1444,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -1252,6 +1495,25 @@ export default function Cascade() {
     if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
       draggingRef.current = true;
       Snd.select();
+      /* A haptic for the pick-up, at the one moment we know a drag has
+         actually started. Firing it on pointerdown instead isn't possible:
+         down can't tell a drag from a tap yet, and taps are this game's
+         most common interaction by far — select a tube, deselect it, pour
+         by tap. Every one of those would have buzzed, and the buzz would
+         have said "you're holding a ball" about the majority of moves that
+         never hold one.
+
+         This frame is the transition, not the motion: the guard above
+         bails on every later move event once draggingRef is set, so the
+         buzz fires exactly once per drag no matter how far the finger
+         travels, and needs no ref of its own to enforce that.
+
+         light() deliberately, not medium(): it pairs with Snd.select() on
+         this same frame to say "ball lifted", while medium/ and heavy() are
+         spoken for elsewhere in the pour — Haptic.medium() is the combo
+         tier and heavy() the mega tier, and spending medium on a pick-up
+         would blunt the payoff those are there to deliver. */
+      Haptic.light();
       setSelected(dragSourceRef.current);
     }
   }, []);
@@ -1435,6 +1697,11 @@ export default function Cascade() {
     setDailyTwist(null);
     setRetriedThisRound(false);
     setUndoUsedThisRun(false);
+    /* Cleared here too, not just at the game-over trigger: the flag has to
+       start false for every run, or a run that never beat the old best
+       would inherit the previous run's verdict and the results card would
+       claim a record that wasn't set. */
+    setNewBestThisRun(false);
     setLevel(generateLevel(1, [], 0));
   }, []);
 
@@ -1570,6 +1837,7 @@ export default function Cascade() {
       setLastRoundMovesLeft(0);
       setRetriedThisRound(false);
       setUndoUsedThisRun(false);
+      setNewBestThisRun(false);
       setShareImage(null);
       setShared(false);
       setDailyRun({ rounds: [], totalMoves: 0 });
@@ -1615,17 +1883,33 @@ export default function Cascade() {
         if (!CapApp || !CapApp.addListener) return;
         listener = await CapApp.addListener("backButton", () => {
           const st = navStateRef.current;
+          /* A confirm dialog is the one layer that never owns a history
+             entry — it deliberately doesn't push one (see the popstate
+             handler), and the popstate handler has to re-push a
+             compensating entry every time it closes one from a back press.
+             Routing it through history.back() from here is what makes back
+             fragile: that call is a SILENT no-op once the stack is at its
+             floor, and no popstate fires, so nothing closes the dialog and
+             the press looks like a dead button. The dialog has no entry to
+             consume, so there is nothing to keep in step — just close it. */
+          if (st.confirmDialog) {
+            setConfirmDialog(null);
+            return;
+          }
           const anyLayerOpen =
-            st.confirmDialog || st.showSettings || st.showAchievements || st.screen !== "home";
+            st.showSettings || st.showAchievements || st.screen !== "home";
           if (anyLayerOpen) {
             /* Reuse the exact same history machinery: this pushes a
                popstate the existing handler will pick up and use to
                close the topmost layer. */
             try { window.history.back(); } catch {}
           } else {
-            /* Nothing on top of Home → let the OS close the app, which
-               matches every other Android app's back behaviour. */
-            try { CapApp.exitApp(); } catch {}
+            /* Nothing on top of Home. minimizeApp() backgrounds the app
+               instead of killing it, which is what Android's own back
+               behaviour spec asks for (a back press at the root of an app
+               should not destroy the user's session) and what a player
+               expects — exitApp() here tore the process down outright. */
+            try { CapApp.minimizeApp(); } catch { try { CapApp.exitApp(); } catch {} }
           }
         });
         /* Unmounted while the import -- and the plugin call inside it --
@@ -1919,33 +2203,77 @@ export default function Cascade() {
           text inside it), so achSlideIn never restarts for anything
           past the first toast in a queue — it would just silently
           change content mid-air with no entrance at all. */}
-      {achToast && (
-        <div key={achToast.id} style={{
-          position: "fixed", top: 60, left: 0, right: 0,
-          display: "flex", justifyContent: "center",
-          pointerEvents: "none", zIndex: 200,
-        }} className="achSlide">
-          <div style={{
-            display: "flex", alignItems: "center", gap: 12,
-            background: T.card,
-            border: `1.5px solid color-mix(in srgb, ${T.gold} 40%, transparent)`,
-            borderRadius: 16,
-            padding: "12px 18px",
-            boxShadow: `0 12px 40px color-mix(in srgb, ${T.gold} 26.7%, transparent), 0 4px 12px rgba(0,0,0,0.4)`,
-          }}>
+      {achToast && (() => {
+        /* Same two guards as unlockAch: a milestone is an achievement that
+           has BOTH a tier and a ceremony entry, and `c` (the ceremony) being
+           non-null is what the render keys off. Testing `achToast.tier` on
+           its own would let an achievement carrying a tier number with no
+           ceremony data get the milestone treatment and the milestone
+           styling while still timing out at the default 2.6s. */
+        const tier = achToast.tier && STREAK_CEREMONY[achToast.tier] ? achToast.tier : 0;
+        const c = tier ? STREAK_CEREMONY[tier] : null;
+        return (
+          <div key={achToast.id} style={{
+            position: "fixed", top: 60, left: 0, right: 0,
+            display: "flex", justifyContent: "center",
+            pointerEvents: "none", zIndex: 200,
+          }} className="achSlide">
             <div style={{
-              width: 40, height: 40, borderRadius: 12,
-              background: `color-mix(in srgb, ${T.gold} 13.3%, transparent)`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 22,
-            }}>{achToast.icon}</div>
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", color: T.goldText, textTransform: "uppercase" }}>Achievement</div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: T.ink }}>{achToast.name}</div>
+              display: "flex", alignItems: "center", gap: 12,
+              background: T.card,
+              border: `1.5px solid color-mix(in srgb, ${T.gold} 40%, transparent)`,
+              borderRadius: 16,
+              padding: "12px 18px",
+              boxShadow: `0 12px 40px color-mix(in srgb, ${T.gold} 26.7%, transparent), 0 4px 12px rgba(0,0,0,0.4)`,
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 12,
+                /* backgroundColor (longhand), NOT `background`. Tier 3's
+                   .achShine supplies a conic-gradient `background-image`, and
+                   the inline shorthand would reset background-image while
+                   still winning the cascade over the class — silently
+                   deleting the shine with no error anywhere. The shorthand is
+                   a background *reset*, not just a background colour. */
+                backgroundColor: `color-mix(in srgb, ${T.gold} 13.3%, transparent)`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 22,
+                /* position: relative so the ring below anchors to the badge
+                   itself. It's absolutely positioned, which takes it out of
+                   flow — without this it would resolve against the toast card
+                   and you would get a ring the width of the whole toast. */
+                position: "relative",
+              }}
+                className={[c ? "achIconBounce" : "", tier >= 3 ? "achShine" : ""].filter(Boolean).join(" ") || undefined}
+              >
+                {achToast.icon}
+                {/* Tier 2+. A separate span rather than a box-shadow on the
+                    badge itself: the badge is a flex container, and an
+                    absolutely-positioned pseudo-element inside it would be
+                    laid out as a flex item, nudging the emoji off-centre as
+                    it appeared and disappeared. Out of flow here, it costs
+                    the layout nothing. aria-hidden because it carries no
+                    information the label doesn't already. */}
+                {tier >= 2 && (
+                  <span
+                    aria-hidden="true"
+                    className="achRingPulse"
+                    style={{ position: "absolute", inset: -3, borderRadius: 14, pointerEvents: "none" }}
+                  />
+                )}
+              </div>
+              <div>
+                {/* The eyebrow says what KIND of thing this is before the
+                    name is read. A generic "Achievement" over "Week Streak"
+                    makes the player do the classification themselves; the
+                    label is the same string the player would otherwise have
+                    to infer from the icon. */}
+                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", color: T.goldText, textTransform: "uppercase" }}>{c ? c.label : "Achievement"}</div>
+                <div className={c ? "achNameShimmer" : undefined} style={{ fontSize: 14, fontWeight: 900, color: T.ink }}>{achToast.name}</div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {!isDaily && (
       <button
@@ -2199,12 +2527,12 @@ export default function Cascade() {
                     whole result landing on screen in one flat block, since
                     this is the one moment that sums up the entire run. */}
                 <div style={{ ...S.ovIconCircle, animationDelay: "80ms" }} className="fade-up">
-                  <span style={{ fontSize: 32 }}>{(isDaily ? dailyNewBest : round >= best && round > 1) ? "🏆" : "💥"}</span>
+                  <span style={{ fontSize: 32 }}>{(isDaily ? dailyNewBest : newBestThisRun) ? "🏆" : "💥"}</span>
                 </div>
                 <div style={{ ...S.ovTitle, animationDelay: "140ms" }} className="fade-up">Run Over</div>
                 <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">{gameOverDisplayRound}</div>
                 <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 0 ? "NO ROUNDS CLEARED" : todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : (round === 1 ? "ROUND SURVIVED" : "ROUNDS SURVIVED")}</div>
-                {(isDaily ? dailyNewBest : round >= best && round > 1) && (
+                {(isDaily ? dailyNewBest : newBestThisRun) && (
                   <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">
                     {isDaily ? "✨ New Daily Best" : "✨ New Personal Best"}
                   </div>
@@ -2502,14 +2830,43 @@ export default function Cascade() {
                    than after a gap or on top of it. */
                 setShowTutorial(true);
                 restartRun();
-                /* Same reason openExitDialog's onConfirm writes this by
-                   hand: the ref-sync effect does NOT flush before
-                   history.back()'s popstate fires in the same tick, so
-                   without it the popstate takes the confirmDialog branch,
-                   re-pushes the entry it just consumed and returns —
-                   leaving Settings open and the back stack one step ahead
-                   of what's on screen. */
-                navStateRef.current = { ...navStateRef.current, confirmDialog: false };
+                /* Reset has to LAND on Home, not just wipe the data.
+                   restartRun() only rebuilds the run (round 1, fresh
+                   level) — it never touches `screen` or `phase`. That
+                   was invisible while Reset was only reachable from Home,
+                   but the Settings gear sits in the game HUD too (it does
+                   setShowSettings(true) + pushNav("settings")), so Reset
+                   is reachable from inside a live run. Confirming it there
+                   left screen: "game" with a brand-new round-1 board and
+                   the old run's phase still stacked on top: a "Run Over"
+                   card over a board nobody ever played, or stale upgrade
+                   cards over a level that no longer matches them. The
+                   How-to-Play modal just above compounded it by opening a
+                   Home-screen concept on top of a game board. So this
+                   clears the run-phase overlays and navigates home, the
+                   same way openExitDialog's onConfirm does. */
+                setPhase("playing");
+                setScreen("home");
+                setShowSettings(false);
+                setShowAchievements(false);
+                setPendingUpgrades([]);
+                setJackpotNearMiss(false);
+                setComboCount(0);
+                /* navStateRef is written by hand, for the same reason
+                   openExitDialog's does: the ref-sync effect does NOT flush
+                   before history.back()'s popstate fires in the same tick,
+                   so without it the popstate still reads showSettings:true,
+                   takes the "just close the settings layer" branch and
+                   returns — which would leave Settings open on top of the
+                   Home screen this just navigated to, and the back stack a
+                   step ahead of the UI. */
+                navStateRef.current = {
+                  ...navStateRef.current,
+                  confirmDialog: false,
+                  showSettings: false,
+                  showAchievements: false,
+                  screen: "home",
+                };
                 popNav();
                 setConfirmDialog(null);
               },
