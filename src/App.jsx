@@ -262,7 +262,7 @@ export default function Cascade() {
       if (ds) setDailyState(ds);
       /* Permission first, then let notifications.js rebuild the reminders
          from what is true right now (see planDailyReminders there). */
-      initNotifications().then((granted) => { if (granted) syncDailyReminders(); });
+      initNotifications().then((granted) => { if (granted) syncDailyReminders(); }).catch(() => {});  /* a rejected plugin promise escapes the try above */
     } catch {}
   }, []);
 
@@ -644,12 +644,16 @@ export default function Cascade() {
 
   /* ═══ STATS HELPERS ═══ */
   const recordStats = useCallback((updater) => {
-    setStats((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
-      try { localStorage.setItem("cascade:stats", JSON.stringify(next)); } catch {}
-      return next;
-    });
+    setStats((prev) => (typeof updater === "function" ? updater(prev) : { ...prev, ...updater }));
   }, []);
+  /* Storage is written here, one commit after the state it mirrors, rather
+     than inside the setStats updater above. An updater has to be pure:
+     React is free to run one more than once (StrictMode runs every one
+     twice in dev) and free to discard a render outright, so a write inside
+     it happened twice, or happened for state that was never committed. */
+  useEffect(() => {
+    try { localStorage.setItem("cascade:stats", JSON.stringify(stats)); } catch {}
+  }, [stats]);
   const recordGameStart = useCallback(() => recordStats((p) => ({ ...p, gamesPlayed: p.gamesPlayed + 1 })), [recordStats]);
 
   const showToast = useCallback((config) => {
@@ -748,7 +752,18 @@ export default function Cascade() {
   const unlockAch = useCallback((id) => {
     /* Read from localStorage first — early return prevents repeat toasts */
     let current = [];
-    try { current = JSON.parse(localStorage.getItem(ACH_KEY) || "[]"); } catch {}
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ACH_KEY) || "[]");
+      /* Anything that parses but isn't an array of ids -- a hand-edited
+         value, a truncated write, a bare number -- used to fall straight
+         through to current.includes() below and throw a TypeError. From
+         chooseUpgrade that fired BEFORE setRunUpgrades/setLevel, so the
+         pick aborted and the game stayed stuck on the upgrade overlay for
+         good (every retry threw again); from the streak effect below it
+         threw inside a useEffect with no error boundary above it, which
+         blanks the app. Unusable data reads as "nothing unlocked yet". */
+      if (Array.isArray(parsed)) current = parsed.filter((x) => typeof x === "string");
+    } catch {}
     if (current.includes(id)) return;
 
     const next = [...current, id];
@@ -774,12 +789,38 @@ export default function Cascade() {
     if (streak >= 100) unlockAch("streak_100");
   }, [dailyResults, shieldedDates, unlockAch]);
 
+  /* Short-lived one-shot timers whose only job is to fire a setState and
+     die. They were scattered bare setTimeouts with no handle anyone kept,
+     so nothing could cancel them and each one fired into a tree that had
+     already unmounted. Tracked in one set, dropped by one cleanup. */
+  const ephemeralTimersRef = useRef(new Set());
+  const armEphemeral = useCallback((fn, ms) => {
+    const id = setTimeout(() => {
+      ephemeralTimersRef.current.delete(id);
+      fn();
+    }, ms);
+    ephemeralTimersRef.current.add(id);
+    return id;
+  }, []);
+
   const spawnParticles = useCallback((x, y, color, count = 6) => {
     const id = Date.now() + Math.random();
     const seed = Math.random() * Math.PI;
     setParticles((p) => [...p, { id, x, y, color, seed, count }]);
-    setTimeout(() => setParticles((p) => p.filter((q) => q.id !== id)), 600);
-  }, []);
+    armEphemeral(() => setParticles((p) => p.filter((q) => q.id !== id)), 600);
+  }, [armEphemeral]);
+
+  /* `screen` inside a callback's closure is the value it had when the
+     callback was created, so the deferred round transitions below can't
+     ask it whether the game is still the thing on screen. This is the
+     live answer. */
+  const screenRef = useRef(screen);
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  /* The one pending "what happens when this round ends" timer.
+     attemptPour arms exactly one: the upgrade screen and the game over
+     card live in the same if/else, so they can never both be queued. */
+  const roundTransitionRef = useRef(null);
 
   const attemptPour = useCallback((fromIdx, toIdx, e) => {
     if (roundDecidedRef.current) return;
@@ -906,7 +947,7 @@ export default function Cascade() {
         const destJustSolved = isTubeSolved(next[toIdx]) && !isTubeSolved(tubes[toIdx]);
         const burstAt = impactMs + (destJustSolved ? 120 : 0);
         const { x: px, y: py } = impact;
-        if (burstAt > 0) setTimeout(() => spawnParticles(px, py, color, burstCount), burstAt);
+        if (burstAt > 0) armEphemeral(() => spawnParticles(px, py, color, burstCount), burstAt);
         else spawnParticles(px, py, color, burstCount);
       }
 
@@ -941,7 +982,7 @@ export default function Cascade() {
       setMoves(newMovesUsed);
       if (bonus > 0) {
         setBonusMoves(newBonus);
-        setTimeout(() => {
+        armEphemeral(() => {
           if (tier >= 3) { Snd.mega(); Haptic.heavy(); Music.pulse("mega"); }
           else if (tier >= 2) { Snd.combo(); Haptic.medium(); Music.pulse("combo"); }
           else Snd.bonus();
@@ -951,7 +992,7 @@ export default function Cascade() {
            and the only signal was the sound. */
         const id = Date.now() + Math.random();
         setBonusPops((p) => [...p, { id, text: `+${bonus}` }]);
-        setTimeout(() => setBonusPops((p) => p.filter((q) => q.id !== id)), 900);
+        armEphemeral(() => setBonusPops((p) => p.filter((q) => q.id !== id)), 900);
       }
 
       const newMovesLeft = level.moveLimit + newBonus - newMovesUsed;
@@ -1040,7 +1081,15 @@ export default function Cascade() {
         }
         /* Schedule the round transition FIRST — an achievement hiccup
            must never block the player from advancing to the upgrade. */
-        setTimeout(() => {
+        roundTransitionRef.current = setTimeout(() => {
+          /* The run can end inside this window: Home pressed and
+             confirmed, the app reloaded. Everything below belongs to a
+             run that is no longer on screen -- the state it sets has
+             already been reset, and Snd/Haptic/Music would play over
+             whatever took its place. The daily position and the streak
+             day were both written synchronously above, so bailing here
+             loses nothing. */
+          if (screenRef.current !== "game") return;
           setLastRoundMovesLeft(remainingAtClear);
           /* Daily upgrade choices must be identical for every player too —
              pickRandomUpgrades() alone used Math.random even in daily mode,
@@ -1107,7 +1156,14 @@ export default function Cascade() {
               })
             : null;
         if (failedState) clearDailyRun();
-        setTimeout(() => {
+        roundTransitionRef.current = setTimeout(() => {
+          /* Unlike the upgrade transition above, the work here has to
+             happen even if the player already walked away: the attempt
+             really did just end, and Home's daily card is computed from
+             dailyState (skip this and the card reads "Daily In Progress"
+             while tapping it answers "One Attempt Used"). Only the
+             presentation is conditional. */
+          const stillOnGame = screenRef.current === "game";
           // Save best if this is a new best (main game only -- see dailyBest)
           if (!isDaily && round > best) {
             setBest(round);
@@ -1131,6 +1187,7 @@ export default function Cascade() {
             syncDailyReminders();
           }
 
+          if (!stillOnGame) return;
           setPhase("gameover");
           Snd.fail();
           Haptic.error();
@@ -1239,6 +1296,17 @@ export default function Cascade() {
   const armHintTimer = useCallback(() => {
     clearTimeout(hintTimerRef.current);
     hintTimerRef.current = setTimeout(() => setHint(null), 1600);
+  }, []);
+
+  /* The one place the remaining timers get dropped on unmount. The ones
+     that already carry their own cleanup (toast, screen shield, upgrade
+     tap guard, exit transition) are deliberately left alone. */
+  useEffect(() => () => {
+    clearTimeout(achToastTimerRef.current);
+    clearTimeout(hintTimerRef.current);
+    clearTimeout(roundTransitionRef.current);
+    ephemeralTimersRef.current.forEach(clearTimeout);
+    ephemeralTimersRef.current.clear();
   }, []);
 
   const useHint = useCallback(() => {
@@ -1539,6 +1607,7 @@ export default function Cascade() {
      in-app arrow tap, Chrome's hardware back, or an Android edge swipe. */
   useEffect(() => {
     let listener = null;
+    let cancelled = false;
     (async () => {
       try {
         const mod = await import("@capacitor/app");
@@ -1559,12 +1628,20 @@ export default function Cascade() {
             try { CapApp.exitApp(); } catch {}
           }
         });
+        /* Unmounted while the import -- and the plugin call inside it --
+           was still in flight: the cleanup has already run and saw
+           listener === null, so nothing removed it. Remove it here or it
+           stays attached for the rest of the process. */
+        if (cancelled) { try { listener.remove(); } catch {} listener = null; }
       } catch {
         /* @capacitor/app not present (web build) — browser back already
            works via popstate there, nothing to install. */
       }
     })();
-    return () => { if (listener) try { listener.remove(); } catch {} };
+    return () => {
+      cancelled = true;
+      if (listener) try { listener.remove(); } catch {}
+    };
   }, []);
 
   useEffect(() => {
@@ -2126,7 +2203,7 @@ export default function Cascade() {
                 </div>
                 <div style={{ ...S.ovTitle, animationDelay: "140ms" }} className="fade-up">Run Over</div>
                 <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">{gameOverDisplayRound}</div>
-                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : (round === 1 ? "ROUND SURVIVED" : "ROUNDS SURVIVED")}</div>
+                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 0 ? "NO ROUNDS CLEARED" : todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : (round === 1 ? "ROUND SURVIVED" : "ROUNDS SURVIVED")}</div>
                 {(isDaily ? dailyNewBest : round >= best && round > 1) && (
                   <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">
                     {isDaily ? "✨ New Daily Best" : "✨ New Personal Best"}
