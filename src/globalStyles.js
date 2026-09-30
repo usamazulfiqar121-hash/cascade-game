@@ -258,7 +258,7 @@ html, body {
    Reuses the already-registered --daily-angle property and the same
    daily-rotate keyframes as .daily-border-wrap, because it is the same
    effect: a gold conic gradient swept by an animatable angle. --daily-angle
-   is declared `inherits: false`, so this element's animation is its own and
+   is declared inherits: false, so this element's animation is its own and
    doesn't drag the Daily card's rotation with it.
 
    The badge's own flat gold is NOT restated as a second background layer
@@ -269,10 +269,10 @@ html, body {
    about their own base colour in exactly the corner of the sheen where
    nothing is supposed to be happening.
 
-   NOTE: this depends on the toast render setting `backgroundColor`
-   (longhand) on the badge rather than the `background` shorthand. The
+   NOTE: this depends on the toast render setting 'backgroundColor'
+   (longhand) on the badge rather than the 'background' shorthand. The
    shorthand resets background-image, and an inline shorthand beats a
-   stylesheet rule, so `background: <color>` inline would silently delete
+   stylesheet rule, so 'background: <color>' inline would silently delete
    the shine with no error anywhere — the same "one bad value kills the whole
    declaration" trap already documented on the in-app toast above. */
 .achShine {
@@ -288,7 +288,7 @@ html, body {
 }
 /* Tier 3 runs BOTH effects on the one badge, which needs this rule to exist.
 
-   `animation` is a shorthand, not a per-effect property: two classes each
+   'animation' is a shorthand, not a per-effect property: two classes each
    setting it on the same element means the later rule in the sheet wins
    ENTIRELY, and .achShine comes after .achIconBounce — so shipping both
    classes as-is would have silently deleted the 500ms bounce from the
@@ -297,7 +297,7 @@ html, body {
    (transform vs --daily-angle), so there is no real conflict to resolve —
    they just have to be declared together.
 
-   Both are listed in one `animation` value. The fill mode stays `both` and
+   Both are listed in one 'animation' value. The fill mode stays 'both' and
    applies per-animation-list-item, which is what we want: the bounce must
    hold its final scale(1), and the rotation must stay infinite, and neither
    needs to know about the other. Specificity is (0,2,0) — above both single
@@ -696,7 +696,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
   animation: dailyDotPulse 2s ease-in-out infinite;
 }
 /* The last-hour reset countdown's blink. This used to be an inline
-   `animation: "dailyUrgentPulse ..."` on the element itself, which no
+   'animation: "dailyUrgentPulse ..."' on the element itself, which no
    stylesheet rule can override — so the reduce-motion block below could
    never have stopped it, and an infinite 1s loop kept running for anyone
    who had asked for reduced motion. As a class it sits in the same system
@@ -708,7 +708,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
    Two one-shot effects for the 0-unlocked / 1–3-unlocked guide card
    (AchievementsScreen.jsx, B8).
 
-   Both are classes rather than inline `animation:` because an inline
+   Both are classes rather than inline 'animation:' because an inline
    animation can't be reached by any stylesheet rule, and the reduce-motion
    block is a stylesheet — the same reasoning the .dailyUrgentPulse comment
    below already records. */
@@ -754,7 +754,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
    for.
 
    Source order matters here and it is deliberate, not luck: the global
-   `button:active:not(:disabled) { transform: scale(0.97) }` above is also
+   'button:active:not(:disabled) { transform: scale(0.97) }' above is also
    specificity (0,2,0), same as .upgCard:active, so the later rule wins.
    These rules sit ~370 lines below it on purpose. If the block is ever
    moved above that generic button rule, cards silently go back to 0.97. */
@@ -762,9 +762,9 @@ button:active:not(:disabled) { transform: scale(0.97); }
   background: var(--card);
   border: 2px solid color-mix(in srgb, var(--rarity-c) 40%, transparent);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  /* RELEASE timings, and deliberately NOT `all`.
+  /* RELEASE timings, and deliberately NOT 'all'.
 
-     The old inline value was `transition: all 200ms cubic-bezier(.2,1.1,.3,1)`,
+     The old inline value was 'transition: all 200ms cubic-bezier(.2,1.1,.3,1)',
      which quietly made every one of these properties animate on both edges
      with a springy overshoot curve. That is the opposite of the brief on
      both counts: a press has to be near-instant or it reads as lag, and an
@@ -791,7 +791,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .upgCard:active {
   transform: translateY(1px) scale(0.985);
   filter: brightness(1.06);
-  /* Mixed with --card rather than with `transparent`. A transparent blend
+  /* Mixed with --card rather than with 'transparent'. A transparent blend
      would REPLACE the card's own background instead of tinting it, leaving
      the pressed card see-through and the board visible through it. */
   background-color: color-mix(in srgb, var(--rarity-c) 4%, var(--card));
@@ -826,7 +826,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
    Animating to an unknown height. The panel's height is the twist's desc
    wrapping to two, three or four lines depending on the day, so there is no
-   px value to interpolate to and `height: auto` is not animatable at all.
+   px value to interpolate to and 'height: auto' is not animatable at all.
    grid-template-rows: 0fr -> 1fr is the one construct that interpolates
    between "collapsed" and "content height" without measuring anything: the
    row is sized in fractions of the content's own height, and the clip layer
@@ -1023,7 +1023,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
    Instant in both directions, per the brief.
 
    The clip's delayed visibility switch has to go with the panel transition,
-   not just alongside it: `transition: none` collapses the 200ms delay to 0
+   not just alongside it: 'transition: none' collapses the 200ms delay to 0
    as well, which is correct here — with nothing animating there is no window
    during which the collapsed content needs to stay visible. Leaving the
    delay in place would hide the text 200ms after it stopped being on screen
