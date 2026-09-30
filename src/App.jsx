@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, rarityText } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, rarityText, rarityTint } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -2120,7 +2120,7 @@ export default function Cascade() {
             return (
               <div key={i} title={u.name} style={{
                 width: 26, height: 26, borderRadius: 8,
-                background: `${r.color}22`, border: `1.5px solid ${r.color}66`,
+                background: rarityTint(r.color, 13.3), border: `1.5px solid ${rarityTint(r.color, 40)}`,
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
               }}>{u.icon}</div>
             );
@@ -2267,8 +2267,14 @@ export default function Cascade() {
                     <div style={{
                       textAlign: "center",
                       padding: "16px 20px",
-                      background: "rgba(255, 194, 75, 0.08)",
-                      border: "1px solid rgba(255, 194, 75, 0.25)",
+                      /* rgba(255, 194, 75, …) is the DARK theme's --gold
+                         copied in as a literal, so on Light this card kept
+                         the dark amber wash and border while its own label
+                         below (T.gold → var(--gold)) had already flipped.
+                         Same "hardcoded to one theme" bug already fixed in
+                         icons/index.jsx. */
+                      background: "color-mix(in srgb, var(--gold) 8%, transparent)",
+                      border: "1px solid color-mix(in srgb, var(--gold) 25%, transparent)",
                       borderRadius: 14,
                       marginBottom: 12,
                     }}>
@@ -2351,10 +2357,19 @@ export default function Cascade() {
             background: "var(--glass-modal)",
             backdropFilter: "blur(24px) saturate(160%)",
             WebkitBackdropFilter: "blur(24px) saturate(160%)",
-            border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
+            /* var() + hex-alpha is INVALID: toast.color is always a
+               "var(--gold)"-style string, so appending "55" built
+               "var(--gold)55", which is not a colour at all. An invalid
+               value invalidates the WHOLE declaration — so the border
+               vanished, and so did both halves of the box-shadow, since a
+               single bad value in a comma list kills the entire property.
+               color-mix() is the theme-aware way to get the same alpha
+               (0x55/255 = 33.3%, 0x33/255 = 20%). Same idiom as the daily
+               twist button below. */
+            border: `1.5px solid color-mix(in srgb, ${toast.color || "var(--accent)"} 33.3%, transparent)`,
             borderRadius: 18,
             padding: "13px 20px 13px 14px",
-            boxShadow: "0 12px 40px " + (toast.color || "var(--accent)") + "33, 0 4px 12px rgba(0,0,0,0.35)",
+            boxShadow: `0 12px 40px color-mix(in srgb, ${toast.color || "var(--accent)"} 20%, transparent), 0 4px 12px rgba(0,0,0,0.35)`,
             fontFamily: "'Inter', system-ui, sans-serif",
             maxWidth: 380,
             width: "100%",
@@ -2362,7 +2377,7 @@ export default function Cascade() {
             <div style={{
               width: 40, height: 40, borderRadius: 12, flexShrink: 0,
               background: "transparent",
-              border: "1.5px solid " + (toast.color || "var(--accent)") + "55",
+              border: `1.5px solid color-mix(in srgb, ${toast.color || "var(--accent)"} 33.3%, transparent)`,
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 18, fontWeight: 900,
               color: toast.color || "var(--accent)",

@@ -24,7 +24,14 @@ function getHapticsPlugin() {
     hapticsPromise = import("@capacitor/haptics")
       .then((mod) => {
         hapticsPlugin = mod.Haptics || null;
-        /* TEMP DIAGNOSTIC 1 — capability probe, remove after collecting logs */
+        /* Capability probe — LOG ONLY. This used to also raise a blocking
+           alert() showing the same JSON, left behind from a device-log
+           collection pass and never removed: it fired on the first haptic
+           tap of every session, so a native modal popped up in the middle
+           of ordinary play. Worse, that alert blurs the window, which the
+           music lifecycle listeners above read as "app backgrounded" — so
+           the diagnostic would have paused the music every single time it
+           appeared. The numbers are just as readable in a device log. */
         {
           const plugin = hapticsPlugin;
           if (plugin) {
@@ -35,10 +42,8 @@ function getHapticsPlugin() {
               pluginKeys: Object.keys(plugin),
             };
             console.log("HAPTICS DEBUG:", info);
-            try { alert("HAPTICS DEBUG:\n" + JSON.stringify(info, null, 2)); } catch {}
           }
         }
-        /* END TEMP DIAGNOSTIC 1 */
         return hapticsPlugin;
       })
       .catch(() => {
@@ -409,6 +414,31 @@ export const Music = (() => {
       console.log("[Music] visibilitychange bound");
     }
 
+    /* blur/focus and pagehide/pageshow as backstops for the case
+       visibilitychange misses — window losing focus is the signal an
+       Android WebView gives more reliably when the app is minimised.
+       All four funnel through pause()/resume(), which are both
+       idempotent, so overlapping signals (pagehide AND blur on the
+       same backgrounding) collapse into a single teardown. */
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("blur", () => {
+        console.log("[Music] blur fired");
+        pause();
+      });
+      window.addEventListener("focus", () => {
+        console.log("[Music] focus fired");
+        resume();
+      });
+      window.addEventListener("pagehide", () => {
+        console.log("[Music] pagehide fired");
+        pause();
+      });
+      window.addEventListener("pageshow", () => {
+        console.log("[Music] pageshow fired");
+        resume();
+      });
+    }
+
     import("@capacitor/app")
       .then((mod) => {
         console.log("[Music] App plugin loaded, keys=", Object.keys(mod));
@@ -456,7 +486,19 @@ export const Music = (() => {
     if (wantPlaying) return;
     wantPlaying = true;
     paused = false;
+    /* The lifecycle listeners (visibilitychange, blur/focus, pagehide/
+       pageshow and the Capacitor appStateChange) are bound HERE, on the
+       first start() — not at import, see bindLifecycle's own note. This
+       call was simply missing: bindLifecycle was defined and then never
+       invoked from anywhere in the module, so not one listener ever
+       attached and the entire music-lifecycle fix was inert — the bed
+       kept playing after the app was minimised, tab hidden or the phone
+       locked. Bound only once a start() actually got off the ground, so
+       a first start() that bails on a missing AudioContext doesn't pay
+       for listeners it has no use for. bindLifecycle's own
+       lifecycleBound guard makes repeat starts a no-op. */
     if (!begin()) wantPlaying = false;   // no AudioContext at all — stay retryable
+    else bindLifecycle();
   }
 
   /* Real stop — shared by the user-facing stop() and by pause(), so

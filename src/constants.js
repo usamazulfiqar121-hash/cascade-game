@@ -82,18 +82,37 @@ export const ACHIEVEMENTS = [
 
 /* Rarity tiers. 5 (Jackpot) sits above Legendary — a distinct color so the
    rare roll in pickRandomUpgrades is instantly recognizable as a step up,
-   not just another Legendary. */
+   not just another Legendary.
+
+   `color` is a var() reference, not a literal hex, so each tier has its own
+   value per theme (see --rarity-N in globalStyles.js). They used to be
+   literals, which pinned every tier to the dark palette: on Light the
+   Legendary/Jackpot washes, borders and glows stayed #FFC24B / #FF3DAF while
+   the rarityText() label beside them and every other themed surface had
+   already flipped. One knock-on: because the value is now a var(), the old
+   `${r.color}22` hex-suffix trick is invalid (that's the same var()+hex-alpha
+   bug the toast had). Use rarityTint() below instead. */
 export const RARITY = {
-  1: { name: "Common", color: "#8592BC" },
-  2: { name: "Uncommon", color: "#22C58A" },
-  3: { name: "Rare", color: "#4C8DFF" },
-  4: { name: "Legendary", color: "#FFC24B" },
-  5: { name: "Jackpot", color: "#FF3DAF" },
+  1: { name: "Common", color: "var(--rarity-1)" },
+  2: { name: "Uncommon", color: "var(--rarity-2)" },
+  3: { name: "Rare", color: "var(--rarity-3)" },
+  4: { name: "Legendary", color: "var(--rarity-4)" },
+  5: { name: "Jackpot", color: "var(--rarity-5)" },
 };
+
+/* A rarity colour as a translucent fill/border/glow. color-mix() rather than
+   appending a hex byte: RARITY colours are var()s now, and "var(--rarity-4)22"
+   is not a colour, so the whole declaration would be dropped. `pct` is the
+   alpha as a percentage — 0x22/255 = 13.3%, 0x33/255 = 20%, 0x40/255 = 25.1%,
+   0x55/255 = 33.3%, 0x66/255 = 40%. */
+export const rarityTint = (color, pct) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 
 /* A rarity colour as *text*. The raw colours are right for fills, borders and glows
    but only 1.6-3.2:1 as 9-12px text on the light theme; --rarity-ink is 0% in dark
-   (colour unchanged) and 50% in light (globalStyles.js). */
+   (colour unchanged) and 50% in light (globalStyles.js). Since the light --rarity-N
+   values are already darkened, this mix is a second nudge on top of that — it only
+   ever adds contrast, so a tier label reads slightly deeper than strictly needed
+   rather than falling short. */
 export const rarityText = (color) => `color-mix(in srgb, ${color}, var(--ink) var(--rarity-ink))`;
 
 /* Roguelike upgrades pool.

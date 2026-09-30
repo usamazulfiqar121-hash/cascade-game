@@ -104,15 +104,24 @@ export default function AchievementsScreen({
                 aria-label={unlocked ? "Unlocked" : "Locked"}
                 style={{
                   ...S.card,
-                  borderColor: unlocked ? "rgba(255, 194, 75, 0.35)" : "var(--glass-border)",
+                  /* These were rgba(255, 194, 75, …) — the dark theme's
+                     --gold — and rgba(122, 133, 168, …) the dark theme's
+                     --muted, as literals. On Light the locked/unlocked card
+                     kept the dark amber wash, border and icon tile while
+                     every neighbouring var(--…) sibling had already flipped.
+                     Same hardcoded-to-one-theme bug already fixed in
+                     icons/index.jsx. */
+                  borderColor: unlocked ? "color-mix(in srgb, var(--gold) 35%, transparent)" : "var(--glass-border)",
                   background: unlocked
-                    ? "linear-gradient(135deg, rgba(255, 194, 75, 0.08) 0%, rgba(255, 194, 75, 0.02) 100%)"
+                    ? "linear-gradient(135deg, color-mix(in srgb, var(--gold) 8%, transparent) 0%, color-mix(in srgb, var(--gold) 2%, transparent) 100%)"
                     : "var(--glass)",
                 }}>
                 <div style={{
                   ...S.icon,
-                  background: unlocked ? "rgba(255, 194, 75, 0.15)" : "rgba(122, 133, 168, 0.08)",
-                  borderColor: unlocked ? "rgba(255, 194, 75, 0.35)" : "var(--glass-border)",
+                  background: unlocked
+                    ? "color-mix(in srgb, var(--gold) 15%, transparent)"
+                    : "color-mix(in srgb, var(--muted) 8%, transparent)",
+                  borderColor: unlocked ? "color-mix(in srgb, var(--gold) 35%, transparent)" : "var(--glass-border)",
                   filter: unlocked ? "none" : "grayscale(1)",
                   // Only the lock icon is dimmed. The whole card used to sit at 55% opacity, which
                   // left "how to unlock this" at ~1.6:1 contrast; the text must stay readable.

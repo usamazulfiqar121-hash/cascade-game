@@ -71,6 +71,18 @@ export const CSS = `
   --accent-glow: 0 12px 32px rgba(76, 141, 255, 0.4);
   --gold: #FFC24B;
   --gold-text: #FFC24B;
+  /* Rarity tier colours (see RARITY in constants.js). These used to be
+     literal hexes inside RARITY itself, which pinned every tier to the dark
+     palette: on Light the Legendary/Jackpot washes, borders and glows stayed
+     #FFC24B / #FF3DAF while the label beside them (rarityText) and every
+     other themed surface had already flipped. The light block below
+     darkens each tier the same way --gold and --accent are darkened there,
+     so a tint keeps enough contrast against a white card. */
+  --rarity-1: #8592BC;
+  --rarity-2: #22C58A;
+  --rarity-3: #4C8DFF;
+  --rarity-4: #FFC24B;
+  --rarity-5: #FF3DAF;
   --rarity-ink: 0%;
   --gold-soft: rgba(255, 194, 75, 0.35);
   --gold-glow: 0 12px 32px rgba(255, 194, 75, 0.35);
@@ -123,6 +135,18 @@ export const CSS = `
   /* Text-safe variants: --gold / --go are too light to read as small text on the
      light theme (3.1:1 / 3.7:1). Same value as the fill colour in dark. */
   --gold-text: #B45309;
+  /* Light-theme rarity tiers — each darkened from its dark counterpart, the
+     same move --gold (#FFC24B → #D97706) and --accent (#4C8DFF → #2563EB)
+     already make here. Uncommon and Rare deliberately land on the same values
+     as --go and --accent: in dark those tiers were already identical to those
+     tokens, so this keeps the pairing intact rather than inventing a second
+     green and a second blue. Jackpot has no themed twin, so #C41E86 is
+     #FF3DAF pulled down far enough to hold its own against white. */
+  --rarity-1: #5B6788;
+  --rarity-2: #059669;
+  --rarity-3: #2563EB;
+  --rarity-4: #D97706;
+  --rarity-5: #C41E86;
   /* How much --ink is mixed into a rarity colour when it is used as small text (see
      rarityText in constants.js): none in dark, half in light so Legendary gold and
      Uncommon green stay above 4.5:1 on white. */
