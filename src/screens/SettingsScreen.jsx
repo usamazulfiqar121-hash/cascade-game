@@ -45,6 +45,7 @@ export default function SettingsScreen({
             sub="SFX and effects"
             right={<Toggle on={soundOn} />}
             onClick={onToggleSound}
+            role="switch" checked={!!soundOn}
           />
           <Row
             icon={<VibeIcon on={vibeOn} />}
@@ -52,6 +53,7 @@ export default function SettingsScreen({
             sub="Haptic feedback"
             right={<Toggle on={vibeOn} />}
             onClick={onToggleVibe}
+            role="switch" checked={!!vibeOn}
           />
           <Row
             icon={<MusicIcon on={musicOn} />}
@@ -59,6 +61,7 @@ export default function SettingsScreen({
             sub="Adaptive background music"
             right={<Toggle on={musicOn} />}
             onClick={onToggleMusic}
+            role="switch" checked={!!musicOn}
           />
           <ThemeRow theme={theme} onSetTheme={onSetTheme} />
 
@@ -69,6 +72,7 @@ export default function SettingsScreen({
             sub="Show a number on every ball"
             right={<Toggle on={colorBlindOn} />}
             onClick={onToggleColorBlind}
+            role="switch" checked={!!colorBlindOn}
           />
           <Row
             icon={<ReduceMotionIcon on={reduceMotionOn} />}
@@ -76,6 +80,7 @@ export default function SettingsScreen({
             sub="Calmer, quicker animations"
             right={<Toggle on={reduceMotionOn} />}
             onClick={onToggleReduceMotion}
+            role="switch" checked={!!reduceMotionOn}
           />
 
           {isDaily && (
@@ -120,11 +125,14 @@ function Section({ label }) {
   return <div style={S.sectionLabel}>{label}</div>;
 }
 
-function Row({ icon, label, sub, right, onClick, danger, disabled }) {
+function Row({ icon, label, sub, right, onClick, danger, disabled, role, checked }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       className={disabled ? "" : "press"}
+      role={role}
+      aria-checked={role === "switch" ? !!checked : undefined}
+      aria-disabled={disabled || undefined}
       style={{
         ...S.row,
         cursor: disabled ? "default" : "pointer",

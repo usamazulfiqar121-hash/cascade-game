@@ -65,24 +65,37 @@ export async function initNotifications() {
    `now` is epoch ms. Returns [{ id, at: Date, title, body }]. */
 export function planDailyReminders({ now, todayNeedsPlay, streak }) {
   const n = new Date(now);
-  const nextReset = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1);
   const plan = [];
   for (let k = 0; k < REMINDER_COUNT; k++) {
     if (k === 0 && !todayNeedsPlay) continue;
-    const reset = nextReset + k * 24 * HOUR;
-    const lead = new Date(reset - HOUR);
-    let at = lead;
+    /* Per-day Date.UTC, not `nextReset + k * 24h`: adding a fixed 24 hours
+       walks off UTC midnight by an hour across a DST change, so k=1/k=2
+       drifted to 23:00/01:00 local and the quiet-hours test below read the
+       wrong hour. */
+    const reset = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1 + k);
+    const lead = reset - HOUR;
+    let at = new Date(lead);
     let lastHour = true;
-    if (lead.getHours() >= QUIET_START || lead.getHours() < QUIET_END) {
+    if (at.getHours() >= QUIET_START || at.getHours() < QUIET_END) {
       /* the hour before the reset is the middle of the night here: use the
-         latest 20:00 local before it, as long as it is still inside the
-         same puzzle day */
-      at = new Date(lead);
-      at.setHours(EVENING, 0, 0, 0);
-      if (at.getTime() > lead.getTime()) at.setDate(at.getDate() - 1);
+         latest 20:00 local before it, as long as it is still inside the same
+         puzzle day. Which day that 20:00 falls on is decided by the RESET,
+         not by the lead time: east of UTC+1 the reset lands at 01:00-09:00
+         local, so tonight's 20:00 is still before the reset and still belongs
+         to this puzzle. Measuring against the lead instead pushed it back a
+         day, and the guard below then dropped it outright -- leaving every
+         player from UTC+1 to UTC+9 (India +5:30, Pakistan +5, SE Asia +7/+8)
+         with no same-day reminder at all, and the k=1/k=2 nudges landing on
+         the wrong day's puzzle. */
+      const evening = new Date(at);
+      evening.setHours(EVENING, 0, 0, 0);
+      if (evening.getTime() >= reset) evening.setDate(evening.getDate() - 1);
+      at = evening;
       lastHour = false;
-      if (at.getTime() <= reset - 24 * HOUR) continue;
     }
+    /* Safety net: never let a reminder land before its own puzzle day began
+       (only reachable now through a DST edge). */
+    if (at.getTime() <= reset - 24 * HOUR) continue;
     if (at.getTime() < now + MIN_LEAD_MS) continue;
     let body;
     if (k === 0) {
@@ -109,7 +122,15 @@ async function doSync() {
     const perm = await plugin.checkPermissions();
     if (perm.display !== "granted") return;
     let results = {};
-    try { results = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}"); } catch {}
+    try {
+      const parsed = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+      /* Valid JSON is not automatically a usable record: a stored "null" (or a
+         number, or a bare array) parses without throwing, and the `results[key]`
+         lookup below then throws a TypeError that the outer catch swallows --
+         silently leaving no reminders scheduled at all. Only a plain object
+         counts, so anything else falls back to "no plays yet". */
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) results = parsed;
+    } catch {}
     const streak = computeStreak(results, loadShieldedDates());
     const st = loadDailyState();
     const todayNeedsPlay =

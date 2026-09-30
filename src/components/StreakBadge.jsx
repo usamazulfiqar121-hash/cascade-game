@@ -35,23 +35,36 @@ export default function StreakBadge({ streak = 0, complete = false, size = "md" 
   const border = complete ? `color-mix(in srgb, ${D.go} 34.9%, transparent)` : `color-mix(in srgb, ${D.gold} 34.9%, transparent)`;
 
   return (
-    <div className={pop ? "value-pop" : undefined} style={{
-      display: "flex",
-      alignItems: "center",
-      gap: s.gap,
-      padding: s.padding,
-      background: soft,
-      border: `1px solid ${border}`,
-      /* Custom shape: rounded square with asymmetric corners */
-      borderRadius: 10,
-      boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.2)",
-      fontFamily: "'Inter', system-ui, sans-serif",
-    }}>
-      {complete ? (
-        <CheckIcon size={s.icon} color={D.go} />
-      ) : (
-        <FireIcon size={s.icon} color={D.gold} />
-      )}
+    /* role="img" is load-bearing, not decoration: aria-label on a plain div
+       with no role is ignored by most screen readers, and this badge is a
+       composite (icon + number) that should be announced as ONE labelled
+       thing rather than a bare "12" followed by an unnameable graphic. */
+    <div
+      className={pop ? "value-pop" : undefined}
+      role="img"
+      aria-label={`${streak}-day streak${complete ? ", today's puzzle complete" : ""}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: s.gap,
+        padding: s.padding,
+        background: soft,
+        border: `1px solid ${border}`,
+        /* Custom shape: rounded square with asymmetric corners */
+        borderRadius: 10,
+        boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.2)",
+        fontFamily: "'Inter', system-ui, sans-serif",
+      }}>
+      {/* The icons carry no information the label above doesn't already say,
+          so they're hidden from the tree. FireIcon/CheckIcon don't forward
+          props, hence the wrapper. */}
+      <span aria-hidden="true" style={{ display: "flex" }}>
+        {complete ? (
+          <CheckIcon size={s.icon} color={D.go} />
+        ) : (
+          <FireIcon size={s.icon} color={D.gold} />
+        )}
+      </span>
       <span style={{
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: s.font,

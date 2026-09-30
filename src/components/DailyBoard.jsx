@@ -18,6 +18,12 @@ import { generateDailyBoard } from "../leaderboard";
 export default function DailyBoard({ rounds, dateSeed }) {
   const board = generateDailyBoard(dateSeed, rounds);
   const player = board.find((e) => e.isPlayer);
+  /* An empty field, or a board whose entries never carry the player's own
+     row, would leave `player` undefined and take out `player.rank` below --
+     a render-time TypeError on a card that is otherwise entirely optional.
+     Say nothing rather than crash the game-over screen. */
+  if (!player) return null;
+
   const top3 = board.slice(0, 3);
   const playerInTop3 = player.rank <= 3;
 

@@ -74,6 +74,11 @@ export const CSS = `
   --rarity-ink: 0%;
   --gold-soft: rgba(255, 194, 75, 0.35);
   --gold-glow: 0 12px 32px rgba(255, 194, 75, 0.35);
+  /* Daily badge shimmer stops (see .daily-shimmer). Only ever visible as
+     background-clip:text, so every stop has to be readable as text itself. */
+  --shimmer-a: #FFD86B;
+  --shimmer-b: #FFF2C4;
+  --shimmer-c: #FFC24B;
   --go: #22C58A;
   --go-text: #22C58A;
   --go-soft: rgba(34, 197, 138, 0.4);
@@ -124,6 +129,13 @@ export const CSS = `
   --rarity-ink: 50%;
   --gold-soft: rgba(217, 119, 6, 0.28);
   --gold-glow: 0 12px 32px rgba(217, 119, 6, 0.25);
+  /* The dark shimmer gradient was hardcoded, so on this theme its lightest
+     stop (#FFF2C4) landed at roughly 1.1:1 against --bg-0 — the daily badge
+     label was effectively invisible. These are the readable amber band
+     instead: still a two-tone moving gradient, but every stop clears 4.5:1. */
+  --shimmer-a: #B45309;
+  --shimmer-b: #92400E;
+  --shimmer-c: #B45309;
   --go: #059669;
   --go-text: #047857;
   --go-soft: rgba(5, 150, 105, 0.28);
@@ -519,7 +531,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
   box-shadow: 0 8px 32px rgba(255, 194, 75, 0.12);
 }
 .daily-shimmer {
-  background: linear-gradient(120deg, #FFD86B 0%, #FFF2C4 30%, #FFC24B 50%, #FFF2C4 70%, #FFD86B 100%);
+  background: linear-gradient(120deg, var(--shimmer-a) 0%, var(--shimmer-b) 30%, var(--shimmer-c) 50%, var(--shimmer-b) 70%, var(--shimmer-a) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;

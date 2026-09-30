@@ -13,7 +13,7 @@ export default function BottomNav({ activeTab, onTabChange, onAwards, onSettings
     <div style={S.navWrap}>
       <div style={S.navGlass}>
         <div style={S.navGlow} aria-hidden="true" />
-        <div style={S.navInner}>
+        <div style={S.navInner} role="tablist" aria-label="Main">
           <TabButton
             label="Home"
             active={activeTab === "home"}
@@ -42,10 +42,20 @@ export default function BottomNav({ activeTab, onTabChange, onAwards, onSettings
 
 function TabButton({ label, active, onClick, renderIcon }) {
   return (
+    /* aria-selected is what the tab pattern actually keys off, so the
+       screen reader announces "selected" for the current tab instead of
+       three equally-weighted buttons. aria-current="page" is kept
+       alongside it because these also navigate away from the screen (they
+       push a history entry and open a full-page view) — and omitted, not
+       set to "false", when inactive: aria-current's "false" is a real
+       value that some readers still announce. */
     <button
       onClick={onClick}
       className="press"
       style={S.tabBtn}
+      role="tab"
+      aria-selected={active}
+      aria-current={active ? "page" : undefined}
       aria-label={label}
     >
       <div style={{
@@ -69,7 +79,26 @@ const S = {
     position: "fixed",
     bottom: 0, left: 0, right: 0,
     padding: "0 16px 20px",
-    zIndex: 100,
+    /* 50, not 100. Settings (screens/SettingsScreen.jsx) and Profile
+       (AchievementsScreen.jsx) are both zIndex 80, so at 100 this bar
+       painted OVER them — the glass bar sat on top of the open page and
+       swallowed the taps on Settings' bottom rows, including "Reset
+       Progress". Dropping it below 80 puts the nav behind both screens,
+       which is the whole point: they are full-page views that cover the
+       Home screen this bar belongs to.
+
+       Lowered here rather than raising the two screens to 120 on purpose.
+       Everything else that has to sit ABOVE a full-page view is a modal on
+       the same 100: the upgrade picker, the game-over card, the
+       Exit/Reset confirm dialog (theme.js S.overlay) and the Tutorial
+       (S.tutOverlay) — and the first two of those are opened *from*
+       Settings. Raising Settings past 100 would have buried the very
+       "Reset All Progress?" confirm it spawns, and the Tutorial behind it.
+       At 50 the nav keeps every relationship it needs: above the Home
+       content it floats over (which has no z-index of its own), below the
+       80 screens, below the 100 modals, and well below the toast (300)
+       and the tap shield (400). */
+    zIndex: 50,
     pointerEvents: "none",
   },
   navGlass: {

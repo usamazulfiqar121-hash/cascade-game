@@ -26,10 +26,25 @@ export default function Tutorial({ onClose }) {
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef(null);
   const openedAt = useRef(performance.now());
+  const closeBtn = useRef(null);
 
   // Guards against the timer still being in flight if something force-
   // unmounts this component before "Got it" itself gets clicked.
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
+  /* Put focus on "Got it" the moment the card opens. As a modal, the card
+     is the only thing that should be reachable, and before this the focused
+     element was still whatever the player had tapped to open it (the
+     Settings "How to Play" row) — behind the scrim, on a different
+     screen — so a screen-reader user landed with focus outside the dialog
+     and had to hunt back in, and the first Tab press walked the page
+     behind it instead of the dialog's one control. `.focus()` (not
+     focus-visible) is deliberate: this is programmatic focus, not a
+     keyboard user arriving by Tab, so the focus ring is suppressed
+     rather than flashing on a card that just animated in. */
+  useEffect(() => {
+    if (closeBtn.current) closeBtn.current.focus();
+  }, []);
 
   const handleClose = () => {
     if (closing) return; // one tap during the exit shouldn't queue a second onClose
@@ -48,7 +63,18 @@ export default function Tutorial({ onClose }) {
       style={{ ...S.tutOverlay, pointerEvents: closing ? "none" : "auto" }}
       className={closing ? "fade-out" : "fade-in"}
     >
-      <div style={S.tutCard} className={closing ? "tutOut" : "tutIn"}>
+      {/* role="dialog" + aria-modal on the CARD, not the scrim: same
+          pairing the upgrade picker and game-over card already use
+          (App.jsx). Announcing the full-screen scrim as the dialog would
+          hand the screen reader a label-free element sized to the whole
+          viewport. */}
+      <div
+        style={S.tutCard}
+        className={closing ? "tutOut" : "tutIn"}
+        role="dialog"
+        aria-modal="true"
+        aria-label="How to Play"
+      >
         <div style={S.tutHeader}>
           <div style={S.tutIconCircle} className={closing ? "" : "tutIconPop"}>
             <span style={{ fontSize: 28 }}>🎯</span>
@@ -88,7 +114,7 @@ export default function Tutorial({ onClose }) {
           <span>Each pour costs a move. You have a limited number.</span>
         </div>
 
-        <button style={S.primary} onClick={handleClose}>
+        <button ref={closeBtn} style={S.primary} onClick={handleClose}>
           Got it
         </button>
       </div>

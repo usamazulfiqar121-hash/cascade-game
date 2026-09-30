@@ -61,34 +61,76 @@ export function loadFriends() {
   try {
     const raw = localStorage.getItem(FRIENDS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    /* Being an array is not enough. FriendCompare reads f.id / f.label /
+       f.rounds / f.dateKey straight off every entry while rendering, so one
+       null or half-written record is a render-time TypeError that takes the
+       whole game-over card down with it — a corruption the old
+       Array.isArray check happily passed through. Only complete records
+       survive. `f &&` matters here: typeof null is "object", so the type
+       check alone would let a null through and then throw on the next
+       property read. */
+    return parsed.filter(
+      (f) =>
+        f &&
+        typeof f === "object" &&
+        typeof f.id === "string" &&
+        typeof f.dateKey === "string" &&
+        Number.isFinite(f.rounds)
+    );
   } catch {
     return [];
   }
 }
 
+/* Write the list, and report whether it actually stuck. setItem throws for
+   reasons a caller can neither see nor prevent — a full quota, a
+   private-mode/blocked-storage WebView — and both mutators used to swallow
+   that and hand back the list they had *meant* to store. The caller then
+   painted the new friend on screen, cleared the paste box and reported
+   "Added", while the entry was never saved and disappeared the moment
+   anything re-read storage. A failed write now returns the CURRENT stored
+   list (unchanged) plus a flag: the panel renders what's actually stored,
+   and the player is told the write didn't happen. */
+function persist(list) {
+  try {
+    localStorage.setItem(FRIENDS_KEY, JSON.stringify(list));
+    return { friends: list, writeFailed: false };
+  } catch {
+    return { friends: loadFriends(), writeFailed: true };
+  }
+}
+
 export function saveFriend({ label, dateKey, rounds }) {
   const friends = loadFriends();
-  const entry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    label: (label || "Friend").trim().slice(0, 24) || "Friend",
-    dateKey,
-    rounds: Math.max(0, Math.round(rounds) || 0),
-    savedAt: Date.now(),
-  };
-  const updated = [entry, ...friends].slice(0, MAX_FRIENDS);
-  try {
-    localStorage.setItem(FRIENDS_KEY, JSON.stringify(updated));
-  } catch {}
-  return updated;
+  const score = Math.max(0, Math.round(rounds) || 0);
+  /* Pasting the same message twice used to add the same friend twice: a
+     second identical row, and at MAX_FRIENDS a duplicate could push the
+     oldest real entry out just to make room for a copy of something already
+     there. The code's entire payload is date + rounds, so match on exactly
+     that and relabel the entry that already holds it — which is what
+     re-pasting the same result under a different name actually means. An
+     existing entry keeps its id (and therefore its row order and its
+     savedAt), and an empty label keeps the name it already has rather than
+     resetting to "Friend". */
+  const existing = friends.find((f) => f.dateKey === dateKey && f.rounds === score);
+  const entry = existing
+    ? { ...existing, label: (label || "").trim().slice(0, 24) || existing.label }
+    : {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: (label || "Friend").trim().slice(0, 24) || "Friend",
+        dateKey,
+        rounds: score,
+        savedAt: Date.now(),
+      };
+  const updated = existing
+    ? friends.map((f) => (f.id === existing.id ? entry : f))
+    : [entry, ...friends].slice(0, MAX_FRIENDS);
+  return { ...persist(updated), duplicate: Boolean(existing) };
 }
 
 export function removeFriend(id) {
-  const updated = loadFriends().filter((f) => f.id !== id);
-  try {
-    localStorage.setItem(FRIENDS_KEY, JSON.stringify(updated));
-  } catch {}
-  return updated;
+  return persist(loadFriends().filter((f) => f.id !== id));
 }
 
 /* Head-to-head against the player's own result for `myDateKey`. Only

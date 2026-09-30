@@ -81,19 +81,33 @@ export default function FriendCompare({ rounds, dateKey }) {
       flash("err", "Couldn't find a Cascade code in that");
       return false;
     }
-    const updated = saveFriend({
+    const res = saveFriend({
       label: labelText,
       dateKey: decoded.dateKey,
       rounds: decoded.rounds,
     });
-    setFriends(updated);
+    /* Storage rejected the write. res.friends is what is actually stored, so
+       the list on screen stays truthful; the pasted text is deliberately KEPT
+       in the box (and the keyboard stays up) so Add can just be pressed again
+       once there's room. Claiming "Added" here is what used to happen. */
+    if (res.writeFailed) {
+      flash("err", "Couldn't save — try again");
+      return false;
+    }
+    setFriends(res.friends);
     setPasteText("");
     setLabelText("");
-    flash("ok", "Added");
+    flash("ok", res.duplicate ? "Already added — name updated" : "Added");
     return true;
   };
 
-  const remove = (id) => setFriends(removeFriend(id));
+  const remove = (id) => {
+    const res = removeFriend(id);
+    setFriends(res.friends);
+    /* Same as above: the row stays put because it is still in storage, so
+       the ✕ has to say why rather than look like it did nothing. */
+    if (res.writeFailed) flash("err", "Couldn't save — try again");
+  };
 
   return (
     <div style={s.wrap}>
@@ -116,6 +130,9 @@ export default function FriendCompare({ rounds, dateKey }) {
             <input
               style={s.input}
               placeholder="Paste a friend's message"
+              /* A placeholder is a hint, not a label — without this the two
+                 fields were both announced as just "text field". */
+              aria-label="Friend's shared Cascade message"
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && addFriend()) e.currentTarget.blur(); }}
@@ -125,6 +142,7 @@ export default function FriendCompare({ rounds, dateKey }) {
             <input
               style={s.input}
               placeholder="Their name (optional)"
+              aria-label="Friend's name (optional)"
               value={labelText}
               onChange={(e) => setLabelText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && addFriend()) e.currentTarget.blur(); }}

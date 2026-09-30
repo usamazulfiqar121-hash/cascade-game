@@ -47,7 +47,14 @@ export function SettingsIcon({ size = 24, active = false }) {
   );
 }
 
-export function FireIcon({ size = 20, color = "#FFC24B" }) {
+/* var(--gold) / var(--go), not the dark theme's own #FFC24B / #22C58A
+   copied in as literals — the same fixed-to-dark-theme bug already fixed
+   on HomeIcon and SettingsIcon above, which left these two as the last
+   hardcoded colors in this file. Any caller relying on the default (rather
+   than passing a color) was rendering the dark palette's gold and green
+   after the surrounding text, background and border had all flipped to the
+   light one. */
+export function FireIcon({ size = 20, color = "var(--gold)" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <path d="M12 2C12 2 14 6 14 9C14 10.1 13.1 11 12 11C10.9 11 10 10.1 10 9C10 8.5 10.2 8 10.5 7.5C9 8.5 7 10.5 7 13C7 15.5 8.5 17.5 10 18.5V20H14V18.5C15.5 17.5 17 15.5 17 13C17 10 15 7 12 2Z"
@@ -56,7 +63,7 @@ export function FireIcon({ size = 20, color = "#FFC24B" }) {
   );
 }
 
-export function CheckIcon({ size = 18, color = "#22C58A" }) {
+export function CheckIcon({ size = 18, color = "var(--go)" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <path d="M5 12L10 17L19 8" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>

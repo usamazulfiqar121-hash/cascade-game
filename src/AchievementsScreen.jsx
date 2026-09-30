@@ -6,7 +6,7 @@ import { D, ACHIEVEMENTS } from "./constants";
 import { useEnterShield } from "./useEnterShield";
 
 export default function AchievementsScreen({
-  achievements,
+  achievements = [],
   stats = { gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 },
   best = 0,
   streak = 0,
@@ -93,13 +93,22 @@ export default function AchievementsScreen({
           {ACHIEVEMENTS.map((a) => {
             const unlocked = achievements.includes(a.id);
             return (
-              <div key={a.id} style={{
-                ...S.card,
-                borderColor: unlocked ? "rgba(255, 194, 75, 0.35)" : "var(--glass-border)",
-                background: unlocked
-                  ? "linear-gradient(135deg, rgba(255, 194, 75, 0.08) 0%, rgba(255, 194, 75, 0.02) 100%)"
-                  : "var(--glass)",
-              }}>
+              <div
+                key={a.id}
+                role="group"
+                /* Unlocked vs locked was carried entirely by the gold border and
+                   the ✓/🔒 glyph, so a screen reader announced both states with
+                   the exact same words. State it in text. Name is left out of
+                   the label on purpose: the card's own text still reads as the
+                   group's contents, and repeating it would just double-speak. */
+                aria-label={unlocked ? "Unlocked" : "Locked"}
+                style={{
+                  ...S.card,
+                  borderColor: unlocked ? "rgba(255, 194, 75, 0.35)" : "var(--glass-border)",
+                  background: unlocked
+                    ? "linear-gradient(135deg, rgba(255, 194, 75, 0.08) 0%, rgba(255, 194, 75, 0.02) 100%)"
+                    : "var(--glass)",
+                }}>
                 <div style={{
                   ...S.icon,
                   background: unlocked ? "rgba(255, 194, 75, 0.15)" : "rgba(122, 133, 168, 0.08)",
