@@ -24,6 +24,21 @@ function getHapticsPlugin() {
     hapticsPromise = import("@capacitor/haptics")
       .then((mod) => {
         hapticsPlugin = mod.Haptics || null;
+        /* TEMP DIAGNOSTIC 1 — capability probe, remove after collecting logs */
+        {
+          const plugin = hapticsPlugin;
+          if (plugin) {
+            const info = {
+              hasAmplitudeControl: plugin.hasAmplitudeControl ? plugin.hasAmplitudeControl() : "N/A",
+              hasVibrationEffect: plugin.hasVibrationEffect ? plugin.hasVibrationEffect() : "N/A",
+              hasPredefinedEffect: plugin.hasPredefinedEffect ? plugin.hasPredefinedEffect() : "N/A",
+              pluginKeys: Object.keys(plugin),
+            };
+            console.log("HAPTICS DEBUG:", info);
+            try { alert("HAPTICS DEBUG:\n" + JSON.stringify(info, null, 2)); } catch {}
+          }
+        }
+        /* END TEMP DIAGNOSTIC 1 */
         return hapticsPlugin;
       })
       .catch(() => {
@@ -388,19 +403,25 @@ export const Music = (() => {
 
     if (typeof document !== "undefined" && document.addEventListener) {
       document.addEventListener("visibilitychange", () => {
+        console.log("[Music] visibilitychange fired, hidden=", document.hidden);
         if (document.hidden) pause(); else resume();
       });
+      console.log("[Music] visibilitychange bound");
     }
 
     import("@capacitor/app")
       .then((mod) => {
+        console.log("[Music] App plugin loaded, keys=", Object.keys(mod));
         const App = mod && mod.App;
         if (!App || typeof App.addListener !== "function") return;
         appStateListener = App.addListener("appStateChange", ({ isActive }) => {
+          console.log("[Music] appStateChange fired, isActive=", isActive);
           if (isActive) resume(); else pause();
         });
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.log("[Music] App plugin FAILED:", err);
+      });
   }
 
   /* Real start. Split out of start() so resume() can re-enter it without
@@ -473,6 +494,7 @@ export const Music = (() => {
      otherwise the next appStateChange would resurrect a bed nobody
      asked for, which is the bug in reverse. */
   function pause() {
+    console.log("[Music] pause() called, wantPlaying=", wantPlaying, "playing=", playing);
     if (!wantPlaying || paused) return;
     paused = true;
     teardown();
