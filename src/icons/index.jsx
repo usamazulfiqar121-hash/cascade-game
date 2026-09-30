@@ -47,6 +47,24 @@ export function SettingsIcon({ size = 24, active = false }) {
   );
 }
 
+/* An open book, for the Codex. Same two-tone convention as the three
+   above: var(--accent) when the tab is the one you're on, var(--muted)
+   otherwise, so it follows the theme rather than carrying its own colours.
+   Both halves are stroked and only lightly filled when active — a filled
+   book at 22px loses the spine and reads as a solid blob. */
+export function CodexIcon({ size = 24, active = false }) {
+  const c = active ? "var(--accent)" : "var(--muted)";
+  const fill = active ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "none";
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M4 5.5C4 4.67 4.67 4 5.5 4H10a2 2 0 0 1 2 2v13a1.5 1.5 0 0 0-1.5-1.5h-5A1.5 1.5 0 0 1 4 16V5.5Z"
+        stroke={c} strokeWidth="1.8" strokeLinejoin="round" fill={fill}/>
+      <path d="M20 5.5C20 4.67 19.33 4 18.5 4H14a2 2 0 0 0-2 2v13a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 0 20 16V5.5Z"
+        stroke={c} strokeWidth="1.8" strokeLinejoin="round" fill={fill}/>
+    </svg>
+  );
+}
+
 /* var(--gold) / var(--go), not the dark theme's own #FFC24B / #22C58A
    copied in as literals — the same fixed-to-dark-theme bug already fixed
    on HomeIcon and SettingsIcon above, which left these two as the last

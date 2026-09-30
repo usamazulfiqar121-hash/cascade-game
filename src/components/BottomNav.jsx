@@ -1,14 +1,22 @@
 /* ═══════════ BOTTOM NAVIGATION ═══════════
-   Floating glass bar with custom SVG icons. 3 items, thumb-zone
+   Floating glass bar with custom SVG icons. 4 items, thumb-zone
    optimized. (A center Play FAB was here once — removed in cd710f0
    once Play got its own big button on Home, so onPlay/PlayIcon/
    centerFab below aren't dead weight left for someone else to trip
-   over wondering what wires into them.) */
+   over wondering what wires into them.)
+
+   Four tabs where there were three (Codex joined the row). The bar's
+   inner layout is a flex with every TabButton at flex:1, so a fourth
+   item takes its own share of the same fixed width rather than
+   squeezing the others — the 320px case, the tightest the Home layout
+   is tuned for, leaves ~66px per tab, comfortably more than the
+   10px "Profile" and "Settings" labels need. Nothing was resized to
+   make room. */
 
 import { D } from "../constants";
-import { HomeIcon, TrophyIcon, SettingsIcon } from "../icons";
+import { HomeIcon, TrophyIcon, SettingsIcon, CodexIcon } from "../icons";
 
-export default function BottomNav({ activeTab, onTabChange, onAwards, onSettings }) {
+export default function BottomNav({ activeTab, onTabChange, onAwards, onCodex, onSettings }) {
   return (
     <div style={S.navWrap}>
       <div style={S.navGlass}>
@@ -26,6 +34,18 @@ export default function BottomNav({ activeTab, onTabChange, onAwards, onSettings
             active={activeTab === "awards"}
             onClick={() => onAwards && onAwards()}
             renderIcon={(a) => <TrophyIcon size={22} active={a} />}
+          />
+
+          {/* Codex sits next to Profile rather than after Settings: both are
+              "what have I done / what does this game contain" reference
+              destinations, while Settings is a fixed set of toggles, and
+              grouping the two lookups together keeps the far tab — the one
+              a player visits least — out of the middle of the row. */}
+          <TabButton
+            label="Codex"
+            active={activeTab === "codex"}
+            onClick={() => onCodex && onCodex()}
+            renderIcon={(a) => <CodexIcon size={22} active={a} />}
           />
 
           <TabButton

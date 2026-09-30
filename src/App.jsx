@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, rarityText, rarityTint, STREAK_CEREMONY, CALM_DISCOUNT } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, rarityText, rarityTint, STREAK_CEREMONY, CALM_DISCOUNT } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -12,6 +12,8 @@ import {
   pickDailyTwist, LUCKY_DAY_BONUS, FEAST_CARD_COUNT, WIND_MOVES,
   dailyScore, DAILY_BEST_SCORE_KEY, BEST_STREAK_KEY, SHIELD_KEY,
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
+  saveNormalRun, clearNormalRun, loadNormalRun,
+  pityActive, runArchetype, pickArchetypes, dailyArchetype,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -24,6 +26,8 @@ import FlyingBalls, { planFlight } from "./FlyingBalls";
 import UpgradeCard from "./UpgradeCard";
 import HomeScreen from "./HomeScreen";
 import AchievementsScreen from "./AchievementsScreen";
+import CodexScreen from "./CodexScreen";
+import { recordCodexPath, recordCodexCard, recordCodexTwist, clearCodex } from "./codex";
 import Tutorial from "./Tutorial";
 import SettingsScreen from "./screens/SettingsScreen";
 import DailyBoard from "./components/DailyBoard";
@@ -70,7 +74,7 @@ function tubeScaleFor(tubeCount) {
   return 0.56;
 }
 
-/* Keeps a full-screen page (Settings, Profile/Achievements) mounted for
+/* Keeps a full-screen page (Settings, Profile/Achievements, Codex) mounted for
    `exitMs` after its own `isOpen` flag goes false, so it has time to play
    a slide-OUT instead of just vanishing the instant the flag flips — which
    is what closing did before, since {isOpen && <Screen/>} unmounts on the
@@ -419,6 +423,25 @@ export default function Cascade() {
   const [shieldedDates, setShieldedDates] = useState([]);
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
+  /* Opening archetype. `archOffer` is non-null exactly while the run-start
+     picker is on screen; `runPath` is what the run actually opened with.
+     In a normal run the player chooses it (archOffer), in a daily it is
+     derived from the date (see dailyArchetype) and archOffer stays null, so
+     nothing about it has to be saved — a resumed daily run recomputes the
+     same path it started with. Both are reset by restartRun. */
+  const [archOffer, setArchOffer] = useState(null);
+  const [runPath, setRunPath] = useState(null);
+  /* Escape cancels the picker, same as the Exit dialog — but WITHOUT saving
+     or resetting anything. The pick is optional by design (see
+     chooseArchetype), so dismissing it means "let me just play", and the run
+     continues with no focus at all. */
+  const [archOfferClosed, setArchOfferClosed] = useState(false);
+  useEffect(() => {
+    if (!archOffer) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setArchOfferClosed(true); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [archOffer]);
   /* True when a Jackpot roll just missed but landed close — surfaced on the
      upgrade-choice screen instead of silently discarded (research: seeing a
      near-miss is part of what keeps variable-reward systems compelling). */
@@ -542,12 +565,19 @@ export default function Cascade() {
   const [tutorialSeen, setTutorialSeen] = useState(true); // default true = don't flash
   const [showSettings, setShowSettings] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
+  /* Codex — a third full-page view, on exactly the same terms as the two
+     above: it pushes its own history entry, so the popstate/back-button
+     machinery below closes it the same way. It carries no live state of its
+     own (see CodexScreen, which reads localStorage on mount), so all that
+     is needed here is the open flag and the exit transition. */
+  const [showCodex, setShowCodex] = useState(false);
   /* Purely visual — see useExitTransition's own comment. showSettings/
      showAchievements above stay the single source of truth for the
      nav-stack; these two just decide how long the screen stays mounted
      after that flag goes false, so it can slide out instead of vanishing. */
   const settingsExit = useExitTransition(showSettings);
   const achievementsExit = useExitTransition(showAchievements);
+  const codexExit = useExitTransition(showCodex);
   const [soundOn, setSoundOn] = useState(true);
   const [vibeOn, setVibeOn] = useState(true);
   const [musicOn, setMusicOn] = useState(true);
@@ -565,6 +595,29 @@ export default function Cascade() {
   const reduceMotionRef = useRef(reduceMotion);
 
   const movesLeft = level.moveLimit + bonusMoves - moves;
+
+  /* What the upgrade screen reports back about the run. Both are pure
+     functions of the run's own card list (runArchetype / pityActive in
+     gameLogic.js), so there is no state here to fall out of sync and nothing
+     extra to persist — the offer rules and the offer screen cannot disagree
+     about what the run is, because they read the same list. Recomputed on
+     every render, which is three array walks over at most a few dozen ids. */
+  const runArch = runArchetype(runUpgrades);
+  const offerPity = pityActive(runUpgrades);
+  /* While the opening bias is still live the run's own archetype is the one
+     the player picked (or, in a daily, the day's), reported against the
+     categories they actually chose — so the picker screen can say "your pick
+     is working" or, just as usefully, "your pick is going unused". Once the
+     bias expires this falls back to the organic leader and the run is
+     whatever the cards in hand made it. */
+  const openingPath = runPath && runUpgrades.length < FOCUS_OFFERS ? runPath : null;
+  const runFocus = runPath ? runPath.cats : null;
+  /* Same FOCUS_OFFERS gate as activeFocus() in gameLogic, kept in step by
+     both reading the one constant — if they ever disagreed, the pill would
+     claim a bias the draw was no longer applying (or hide one it was). */
+  const shownArch = openingPath
+    ? { cat: openingPath.cats[0], count: (runArchetype(runUpgrades, openingPath.cats) || { count: 0 }).count }
+    : runArch;
 
   // Load best from localStorage
   useEffect(() => {
@@ -1336,11 +1389,12 @@ export default function Cascade() {
                 dailyRoundSeed(round, DAILY_STREAM.upgrades, dailyRunDateRef.current || new Date()),
                 dailyTwist?.id === "feast" ? FEAST_CARD_COUNT : 3,
                 runUpgrades,
+                runFocus,
               ),
             );
             setJackpotNearMiss(false);
           } else {
-            const { upgrades, jackpotNearMiss } = pickRandomUpgrades(3);
+            const { upgrades, jackpotNearMiss } = pickRandomUpgrades(3, runUpgrades, Math.random, runFocus);
             setPendingUpgrades(upgrades);
             setJackpotNearMiss(jackpotNearMiss);
           }
@@ -1444,7 +1498,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, runFocus]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -1638,6 +1692,16 @@ export default function Cascade() {
        possible pull in the game was the one pull that DIDN'T count. */
     if (upgrade.rarity >= 4) unlockAch("legendary");
     if (newUpgrades.length >= 10) unlockAch("upgrades_10");
+    /* Codex: a lifetime tally of every card ever taken, which is what the
+       per-category counts on that screen are derived from. Recorded here
+       rather than at the offer, so it counts cards actually TAKEN and not
+       cards merely shown — a run where a player turned down every Lucky
+       card has taken no luck cards, and the Codex should say so.
+
+       Deliberately not gated on the run surviving: the card is theirs, and
+       "how many of these have I ever held" is a question about history, not
+       about whether that particular run went well. */
+    recordCodexCard(upgrade.id);
     /* Reset the combo indicator here as well as in the level effect — the
        effect runs a tick later, and for that one frame the old combo badge
        would still be on screen while the new board was being built. */
@@ -1674,10 +1738,33 @@ export default function Cascade() {
         rounds: dailyRun.rounds,
         totalMoves: dailyRun.totalMoves,
       });
+    } else {
+      /* The "Continue" save, written at the same instant the daily writes
+         its own. Round boundary, untouched board — see saveNormalRun for why
+         it is stored here and not on every pour.
+
+         `path` is written rather than re-derived because unlike the daily's
+         there is nothing to re-derive FROM: a normal run's opening is the
+         player's own pick, it is not a function of anything, and it expires
+         after FOCUS_OFFERS picks, so by the time a late run is saved the
+         bias may already be over. Restoring the run means restoring the
+         decision that was still in force when it was left.
+
+         Not credited to the Codex here either, and for a different reason
+         than the daily's: a path is credited once, at the moment it is
+         chosen (chooseArchetype), and re-saving it on every round boundary
+         would multiply that count by the length of the run. */
+      saveNormalRun({
+        round: nextRound,
+        upgrades: newUpgrades,
+        level: nextLevel,
+        lastRoundMovesLeft,
+        path: runPath,
+      });
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath]);
 
   const retry = useCallback(() => {
     const seed = isDaily
@@ -1686,6 +1773,27 @@ export default function Cascade() {
     setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed, false, isDaily ? dailyTwist : null));
     setRetriedThisRound(true);
   }, [round, runUpgrades, lastRoundMovesLeft, isDaily, dailyTwist]);
+
+  /* Takes the opening archetype. Deliberately does NOT touch the board: the
+     round-1 level was already generated from (round, upgrades) and the
+     archetypes only bias the upgrade DRAW, so a path change can never have to
+     regenerate anything — which is also why the picker could be an overlay on
+     a live board instead of a gate in front of run start.
+
+     Guarded the same way chooseUpgrade is (the offer empties on pick): two
+     fast taps would otherwise set two different paths, and the second would
+     silently overwrite the first. */
+  const chooseArchetype = useCallback((a) => {
+    if (!archOffer) return;
+    setRunPath(a);
+    setArchOfferClosed(false);
+    setArchOffer(null);
+    recordCodexPath(a.id);
+    Snd.upgrade();
+    Haptic.light();
+  }, [archOffer]);
+
+  const skipArchetype = useCallback(() => setArchOfferClosed(true), []);
 
   const restartRun = useCallback(() => {
     setRound(1);
@@ -1702,6 +1810,14 @@ export default function Cascade() {
        would inherit the previous run's verdict and the results card would
        claim a record that wasn't set. */
     setNewBestThisRun(false);
+    /* Both cleared unconditionally: this is the reset for every path that
+       abandons a run (Home, back, Exit, Settings > Reset, and the normal
+       run-start below), so a stale archOffer can never be left armed over a
+       run that never got to pick one. The normal run-start sets a fresh
+       offer right after calling this. */
+    setArchOffer(null);
+    setArchOfferClosed(false);
+    setRunPath(null);
     setLevel(generateLevel(1, [], 0));
   }, []);
 
@@ -1771,6 +1887,17 @@ export default function Cascade() {
         );
         if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
           dailyRunDateRef.current = runDate;
+          /* Recomputed, not stored: dailyArchetype is a pure function of the
+             date, so a resumed run re-derives exactly the path it started
+             with. That is also why nothing about the opening pick is written
+             to the daily save — there is no state here that could go stale
+             against the date, and no field for an older save to be missing. */
+          const resumedPath = dailyArchetype(runDate);
+          /* Deliberately NOT credited to the Codex here. This attempt already
+             recorded its path and its rule when it first started, and
+             startNewGame only ever reaches this resume branch downstream of
+             that fresh start — so recording again would count one day twice
+             for a player who simply left and came back. */
           pendingResumeRef.current = {
             phase: saved.phase,
             tubes: saved.tubes,
@@ -1783,6 +1910,7 @@ export default function Cascade() {
                     dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate),
                     twist.id === "feast" ? FEAST_CARD_COUNT : 3,
                     saved.upgrades,
+                    resumedPath.cats,
                   )
                 : [],
           };
@@ -1799,6 +1927,12 @@ export default function Cascade() {
           setShareImage(null);
           setShared(false);
           setDailyRun({ rounds: saved.rounds, totalMoves: saved.totalMoves });
+          setRunPath(resumedPath);
+          setArchOffer(null);
+          /* Redundant while a resumed run has no picker at all, but it means
+             no run-start path can leave the "dismissed" flag set from an
+             earlier run, whatever order the flows are called in. */
+          setArchOfferClosed(false);
           setLevel(lvl);
           resumed = true;
         }
@@ -1825,12 +1959,19 @@ export default function Cascade() {
       setIsDaily(true);
       setDailyTwist(twist);
       setDailyScoreResult(null);
+      /* The twist and the path are both stated up front, in one toast rather
+         than two back to back: the path is a fixed part of today's puzzle (see
+         dailyArchetype) rather than a choice, so it belongs in the same
+         briefing as the rule it modifies, not in a separate modal. */
+      const path = dailyArchetype(runDate);
+      recordCodexTwist(twist.id);
+      recordCodexPath(path.id);
       showToast({
         icon: twist.icon,
         color: twist.kind === "curse" ? "var(--danger)" : twist.kind === "mixed" ? "var(--gold)" : "var(--go)",
         title: `Today's twist: ${twist.name}`,
-        message: twist.desc,
-        duration: 4200,
+        message: `${twist.desc}\n\nToday's path: ${path.icon} ${path.name} — ${path.desc}`,
+        duration: 5200,
       });
       setRound(1);
       setRunUpgrades([]);
@@ -1841,9 +1982,23 @@ export default function Cascade() {
       setShareImage(null);
       setShared(false);
       setDailyRun({ rounds: [], totalMoves: 0 });
+      /* The daily's opening path is the day's, not the player's — see
+         dailyArchetype for why (a choice here would give two players on the
+         same cards different offers). No picker, so the run starts straight
+         into round 1; it's named in the toast above, and repeated as a pill on
+         the first upgrade screen, which is the first place it actually bites. */
+      setRunPath(path);
+      setArchOffer(null);
+      setArchOfferClosed(false);
       setLevel(generateLevel(1, [], 0, seed, false, twist));
     } else if (!resumed) {
+      /* Normal run: offer the opening archetypes. Note the round-1 board is
+         already built by restartRun() and is identical either way — it
+         depends only on the round, never on the upgrades — so the picker can
+         sit on top of a live board instead of the run start being deferred,
+         which is what keeps every existing run-start path below untouched. */
       restartRun();
+      setArchOffer(pickArchetypes());
     }
     setScreen("game");
     return true;
@@ -1853,10 +2008,10 @@ export default function Cascade() {
      Phase 1: only infrastructure. Nothing wired yet.
      Refs hold latest state so popstate handler never goes stale. */
 
-  const navStateRef = useRef({ showSettings: false, showAchievements: false, screen: "home", confirmDialog: false });
+  const navStateRef = useRef({ showSettings: false, showAchievements: false, showCodex: false, screen: "home", confirmDialog: false });
   useEffect(() => {
-    navStateRef.current = { showSettings, showAchievements, screen, confirmDialog: !!confirmDialog };
-  }, [showSettings, showAchievements, screen, confirmDialog]);
+    navStateRef.current = { showSettings, showAchievements, showCodex, screen, confirmDialog: !!confirmDialog };
+  }, [showSettings, showAchievements, showCodex, screen, confirmDialog]);
   /* backFromGameRef: what "back" means while a run is on screen (defined
      further down, next to the HUD Home button's handler, and kept current
      by an effect). exitConfirmedRef: set by the Exit dialog's confirm just
@@ -1897,7 +2052,7 @@ export default function Cascade() {
             return;
           }
           const anyLayerOpen =
-            st.showSettings || st.showAchievements || st.screen !== "home";
+            st.showSettings || st.showAchievements || st.showCodex || st.screen !== "home";
           if (anyLayerOpen) {
             /* Reuse the exact same history machinery: this pushes a
                popstate the existing handler will pick up and use to
@@ -1951,6 +2106,7 @@ export default function Cascade() {
         if (page === "home") {
           setShowSettings(false);
           setShowAchievements(false);
+          setShowCodex(false);
           setScreen("home");
           return;
         }
@@ -1963,6 +2119,7 @@ export default function Cascade() {
         const st = navStateRef.current;
         if (st.showSettings) { setShowSettings(false); return; }
         if (st.showAchievements) { setShowAchievements(false); return; }
+        if (st.showCodex) { setShowCodex(false); return; }
 
         /* Nothing else open but not on home — fires when hardware back
            pops the game entry. This used to flip straight to Home, which
@@ -2167,6 +2324,7 @@ export default function Cascade() {
         <HomeScreen
           onPlay={() => { if (startNewGame(false)) pushNav("game"); }}
           onAwards={() => { setShowAchievements(true); pushNav("awards"); }}
+          onCodex={() => { setShowCodex(true); pushNav("codex"); }}
           onDaily={() => {
             /* pushNav only when startNewGame actually starts a run — it
                returns false when today's daily is already used up and it
@@ -2497,13 +2655,67 @@ export default function Cascade() {
         <div style={S.overlay} className="fade-in">
           <div style={{ ...S.ovCard, maxWidth: 360 }} className="popIn" role="dialog" aria-modal="true" aria-label={`Round ${round} cleared. Choose an upgrade`}>
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
-            <div style={{ ...S.ovSub, marginBottom: jackpotNearMiss ? 8 : 20 }}>Choose an upgrade</div>
+            <div style={{ ...S.ovSub, marginBottom: (jackpotNearMiss || shownArch || offerPity) ? 8 : 20 }}>Choose an upgrade</div>
             {jackpotNearMiss && (
               <div style={{
                 fontSize: 12, fontWeight: 800, textAlign: "center",
                 color: rarityText(RARITY[5].color), marginBottom: 12,
               }}>
                 ✨ A Jackpot almost dropped!
+              </div>
+            )}
+            {/* Run status — what the draw is doing, said out loud. Every line
+                here is derived from runUpgrades and runPath (see shownArch
+                and pityActive above), so it can't claim something the draw
+                didn't actually do.
+
+                The pill changes meaning while the opening bias is live: it
+                names the player's own pick and counts cards inside it, so a
+                run that opened as Momentum and then took three Luck cards
+                is told "Path ×0" rather than being congratulated on a Luck
+                build it never chose. Once FOCUS_OFFERS picks are behind it,
+                it switches to the organic leader.
+
+                The pity line matters most: an offer guaranteed to hold a
+                Rare looks identical to one that rolled one by chance, and a
+                player who can't tell those apart has no reason to believe
+                either. Uses the same fade-up class as the cards below, which
+                globalStyles already pauses under data-reduce-motion — so this
+                is still legible with motion off, it just arrives without
+                sliding. */}
+            {(shownArch || offerPity) && (
+              <div className="fade-up" style={{ animationDelay: "60ms", display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginBottom: 12 }}>
+                {shownArch && (
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    height: 24, padding: "0 10px", borderRadius: 12,
+                    background: `color-mix(in srgb, ${T.accent} 12%, transparent)`,
+                    border: `1px solid color-mix(in srgb, ${T.accent} 34%, transparent)`,
+                    fontSize: 11, fontWeight: 900, color: T.ink,
+                    letterSpacing: "0.04em", textTransform: "uppercase",
+                  }}
+                    title={openingPath
+                      ? `${runPath.name} path — ${shownArch.count} matching card${shownArch.count === 1 ? "" : "s"} so far`
+                      : `${CATEGORY[shownArch.cat].name} — ${shownArch.count} card${shownArch.count === 1 ? "" : "s"} in this run`}
+                  >
+                    <span aria-hidden="true">{openingPath ? runPath.icon : CATEGORY[shownArch.cat].icon}</span>
+                    {openingPath ? "Path" : CATEGORY[shownArch.cat].name} ×{shownArch.count}
+                  </span>
+                )}
+                {offerPity && (
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    height: 24, padding: "0 10px", borderRadius: 12,
+                    background: rarityTint(RARITY[3].color, 13.3),
+                    border: `1px solid ${rarityTint(RARITY[3].color, 40)}`,
+                    fontSize: 11, fontWeight: 900,
+                    color: rarityText(RARITY[3].color),
+                    letterSpacing: "0.04em", textTransform: "uppercase",
+                  }}>
+                    <span aria-hidden="true">✨</span>
+                    Rare+ guaranteed
+                  </span>
+                )}
               </div>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2513,6 +2725,97 @@ export default function Cascade() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Opening archetype picker ──
+          Rendered as its own overlay rather than by deferring the run start,
+          because the round-1 board is already built and identical either way
+          (it depends only on the round). Gated on phase === "playing" so it
+          can never sit on top of the upgrade overlay, and on !showTutorial so
+          the two first-run modals can't stack — the tutorial is a more
+          important first impression than a build choice. */}
+      {archOffer && !archOfferClosed && phase === "playing" && !showTutorial && (
+        <div style={S.overlay} className="fade-in">
+          <div
+            style={{ ...S.ovCard, maxWidth: 380 }}
+            className="popIn"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose your opening path"
+          >
+            <div style={{ ...S.ovTitle, color: T.accent, fontSize: 22 }}>Choose Your Path</div>
+            <div style={{ ...S.ovSub, marginBottom: 18 }}>
+              Favors two upgrade types for your first few picks. Not a lock —
+              the cards you take decide where this run actually goes.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {archOffer.map((a, i) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => chooseArchetype(a)}
+                  className="fade-up"
+                  style={{
+                    animationDelay: `${i * 70}ms`,
+                    display: "flex", alignItems: "center", gap: 12, width: "100%",
+                    padding: "12px 14px", textAlign: "left", cursor: "pointer",
+                    /* An inset surface, not T.card: S.ovCard's own background IS
+                       T.card, so a card-coloured button would be a
+                       border-on-nothing with no fill to tell it apart from the
+                       panel it sits on. This is the same inset mix S.ovStat
+                       uses for the game-over stat cells. */
+                    background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
+                    border: `1.5px solid color-mix(in srgb, ${T.accent} 26%, transparent)`,
+                    borderRadius: 16, boxSizing: "border-box",
+                    color: T.ink,
+                    fontFamily: "'Nunito', sans-serif",
+                    /* Press feedback is a filter, not a transform: .fade-up
+                       animates `transform` on this very node, and an inline
+                       transform would outrank the keyframe and either cancel
+                       the stagger-in or be cancelled by it. filter is
+                       untouched by that animation, so the two compose.
+
+                       Written imperatively rather than through React state
+                       because a state-backed :active would re-render the whole
+                       Cascade tree on every pointerdown, and here the board is
+                       already built and idle — no reason to spend a render.
+                       globalStyles.js is off-limits this pass, so there is no
+                       .upgCard-equivalent class to hand this to. */
+                    transition: `filter ${D.tQuick}`,
+                    WebkitAppearance: "none",
+                    appearance: "none",
+                  }}
+                  onPointerDown={(e) => { e.currentTarget.style.filter = "brightness(0.88)"; }}
+                  onPointerUp={(e) => { e.currentTarget.style.filter = ""; }}
+                  onPointerCancel={(e) => { e.currentTarget.style.filter = ""; }}
+                  onPointerLeave={(e) => { e.currentTarget.style.filter = ""; }}
+                  aria-label={`${a.name}. ${a.desc}`}
+                >
+                  <span aria-hidden="true" style={{
+                    width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
+                    background: `color-mix(in srgb, ${T.accent} 12%, transparent)`,
+                  }}>{a.icon}</span>
+                  <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: 15, fontWeight: 900 }}>{a.name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: T.muted, lineHeight: 1.35 }}>{a.desc}</span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 900, letterSpacing: "0.1em",
+                      color: T.accent, textTransform: "uppercase",
+                    }}>{a.cats.map((c) => CATEGORY[c].name).join(" + ")}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            {/* Escape does the same thing. The pick is deliberately optional:
+               a run with no focus is a plain run, and forcing a choice here
+               would put a build decision in front of a player who just opened
+               the app — a decision they have no information to make yet. */}
+            <button type="button" onClick={skipArchetype} style={S.ghost}>
+              Just start playing
+            </button>
           </div>
         </div>
       )}
@@ -2724,6 +3027,14 @@ export default function Cascade() {
                   color: "var(--text-sub)",
                   marginTop: 3,
                   lineHeight: 1.3,
+                  /* pre-line, not pre-wrap: the only message that carries a
+                     newline is the daily briefing (twist + the day's path),
+                     and without this its two paragraphs collapse into one
+                     run-on line. pre-line would also let a future long
+                     message hard-wrap against this card's maxWidth instead of
+                     overflowing it. Every existing single-line message renders
+                     identically, since pre-line only acts on \n. */
+                  whiteSpace: "pre-line",
                 }}>{toast.message}</div>
               )}
             </div>
@@ -2776,7 +3087,7 @@ export default function Cascade() {
                  A player confirming this had no way to know their streak —
                  the one thing the game otherwise goes out of its way to
                  protect, with shields and reminders — was part of the deal. */
-              message: "This deletes your best score, stats, achievements, streaks, and tutorial.",
+              message: "This deletes your best score, stats, achievements, streaks, codex history, and tutorial.",
               confirmLabel: "Reset",
               danger: true,
               onConfirm: () => {
@@ -2797,6 +3108,12 @@ export default function Cascade() {
                   localStorage.removeItem(BEST_STREAK_KEY);
                   localStorage.removeItem(SHIELD_KEY);
                 } catch {}
+                /* The Codex's lifetime counts are a record of the same history
+                   as the achievements just cleared, so they go with them. It
+                   gets its own call rather than a raw removeItem because
+                   clearCodex owns the key name — a literal here would be a
+                   second place to forget to update the day that key changes. */
+                clearCodex();
                 setAchievements([]);
                 setBestStreak(0);
                 setShieldedDates([]);
@@ -2865,6 +3182,7 @@ export default function Cascade() {
                   confirmDialog: false,
                   showSettings: false,
                   showAchievements: false,
+                  showCodex: false,
                   screen: "home",
                 };
                 popNav();
@@ -2893,6 +3211,18 @@ export default function Cascade() {
           best={best}
           streak={computeStreak(dailyResults, shieldedDates)}
           bestStreak={bestStreak}
+          onClose={() => popNav()}
+        />
+      )}
+
+      {/* Codex — same shape as the Profile screen above: mounted while the
+          exit transition plays, closed by popping the history entry rather
+          than by clearing the flag (popNav is what actually routes through
+          the popstate handler, so hardware back and the on-screen arrow stay
+          one mechanism instead of two that can disagree). */}
+      {codexExit.shouldRender && (
+        <CodexScreen
+          closing={codexExit.closing}
           onClose={() => popNav()}
         />
       )}

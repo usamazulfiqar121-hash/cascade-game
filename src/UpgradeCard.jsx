@@ -1,7 +1,7 @@
 /* ═══════════ UPGRADE CARD ═══════════
    Single upgrade card on the upgrade selection screen. */
 
-import { T, RARITY, rarityText, rarityTint } from "./constants";
+import { T, RARITY, CATEGORY, rarityText, rarityTint } from "./constants";
 
 export default function UpgradeCard({ upgrade, onPick }) {
   const r = RARITY[upgrade.rarity];
@@ -49,6 +49,31 @@ export default function UpgradeCard({ upgrade, onPick }) {
         <div style={{ fontWeight: 900, fontSize: 16 }}>{upgrade.name}</div>
         <div style={{ fontSize: 12, fontWeight: 600, color: T.muted, marginTop: 2, lineHeight: 1.4 }}>{upgrade.desc}</div>
         <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: rarityText(r.color), marginTop: 4, textTransform: "uppercase" }}>{r.name}{upgrade.dailyOnly ? " \u00b7 Daily only" : ""}</div>
+        {/* Which category this card belongs to, on its own line under the
+            rarity.
+
+            The opening archetype weights two categories up for the first few
+            picks (see OFFER_TUNING.focusMult), and until a card says what TYPE
+            it is, that bias is invisible at the only moment it can act: the
+            offer itself. A player told "favors Luck + Tempo" has no way to
+            honour or even spot it, because nothing on the card separates a
+            luck card from a tempo one — the icon and the text are per-card
+            flavour, not category. Naming it here also makes the run's synergy
+            weighting (synergyMult) legible for the rest of the run, which is
+            the reason the categories are named at all.
+
+            Its own line rather than a suffix on the rarity, because the two
+            answer different questions — rarity is what you got, category is
+            what it does for the build — and jamming them together invites
+            reading the second word as a qualifier on the first.
+
+            Guarded rather than assumed: a card with no `cat`, or a cat this
+            build doesn't know, is legitimate (any future entry added without
+            one, or one left behind by a retune), and either must print nothing
+            rather than the word "undefined". */}
+        {upgrade.cat && CATEGORY[upgrade.cat] && (
+          <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.1em", color: T.muted, marginTop: 3, textTransform: "uppercase" }}>{CATEGORY[upgrade.cat].icon} {CATEGORY[upgrade.cat].name}</div>
+        )}
       </div>
     </button>
   );

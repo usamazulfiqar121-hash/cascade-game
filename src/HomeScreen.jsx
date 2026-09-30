@@ -59,7 +59,7 @@ const isCalm = () =>
   document.documentElement.getAttribute("data-reduce-motion") === "1";
 
 export default function HomeScreen({
-  onPlay, onDaily, onSettings, onAwards,
+  onPlay, onDaily, onSettings, onAwards, onCodex,
   dailyResults, shieldedDates = [], computeStreak, dailyKey,
   hasPlayedOnce, achievements, ACHIEVEMENTS, todayRounds,
   dailyPhase = "new", resumeRound = 1,
@@ -375,6 +375,7 @@ export default function HomeScreen({
         activeTab="home"
         onTabChange={() => {}}
         onAwards={onAwards}
+        onCodex={onCodex}
         onSettings={onSettings}
       />
     </div>

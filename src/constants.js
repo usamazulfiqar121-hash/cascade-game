@@ -194,24 +194,31 @@ export const rarityText = (color) => `color-mix(in srgb, ${color}, var(--ink) va
    should vary the actual outcome, not just its presentation).
    "jackpot" and "dawn" are pulled from this pool by id in pickRandomUpgrades/
    pickDailyUpgrades respectively — see the JACKPOT_CHANCE roll there and the
-   dailyOnly flag below. */
+   dailyOnly flag below.
+
+   `cat` groups cards by what they change rather than how big they are:
+   "tempo" (a flat +N moves every round), "luck" (per-pour chance), "flow"
+   (combo / mega / perfect-clear, i.e. cards that pay off move economy) and
+   "board" (tube count, auto-sort). Offer rules key off this, so a card that
+   arrives as a new balance patch is a one-word change here, not a new
+   hardcoded id list in the picker. */
 export const UPGRADES = [
-  { id: "m2", name: "+2 Moves", desc: "+2 moves every round", icon: "🏃", rarity: 1, value: 2 },
-  { id: "m3", name: "+3 Moves", desc: "+3 moves every round", icon: "⚡", rarity: 1, value: 3 },
-  { id: "m5", name: "+5 Moves", desc: "+5 moves every round", icon: "🔥", rarity: 2, value: 5 },
-  { id: "m8", name: "+8 Moves", desc: "+8 moves every round", icon: "💎", rarity: 3, value: 8 },
-  { id: "start", name: "Head Start", desc: "+16 moves every round", icon: "🚀", rarity: 4, value: 16 },
-  { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1 },
-  { id: "lucky2", name: "Super Lucky", desc: "35% chance per pour: +1 move", icon: "🌟", rarity: 3 },
-  { id: "combo3", name: "Combo Master", desc: "Every 3rd pour gives +1 move", icon: "🎯", rarity: 2 },
-  { id: "combo2", name: "Combo Legend", desc: "Every 2nd pour gives +1 move", icon: "🎪", rarity: 3 },
-  { id: "mega", name: "Mega Bonus", desc: "Every 5th pour gives +2 moves", icon: "🎊", rarity: 2 },
-  { id: "clear", name: "Perfect Clear", desc: "Finish with 5+ moves left: +3 next round", icon: "✨", rarity: 2 },
-  { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently", icon: "🔧", rarity: 3 },
-  { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round", icon: "🎁", rarity: 4 },
+  { id: "m2", name: "+2 Moves", desc: "+2 moves every round", icon: "🏃", rarity: 1, value: 2, cat: "tempo" },
+  { id: "m3", name: "+3 Moves", desc: "+3 moves every round", icon: "⚡", rarity: 1, value: 3, cat: "tempo" },
+  { id: "m5", name: "+5 Moves", desc: "+5 moves every round", icon: "🔥", rarity: 2, value: 5, cat: "tempo" },
+  { id: "m8", name: "+8 Moves", desc: "+8 moves every round", icon: "💎", rarity: 3, value: 8, cat: "tempo" },
+  { id: "start", name: "Head Start", desc: "+16 moves every round", icon: "🚀", rarity: 4, value: 16, cat: "tempo" },
+  { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1, cat: "luck" },
+  { id: "lucky2", name: "Super Lucky", desc: "35% chance per pour: +1 move", icon: "🌟", rarity: 3, cat: "luck" },
+  { id: "combo3", name: "Combo Master", desc: "Every 3rd pour gives +1 move", icon: "🎯", rarity: 2, cat: "flow" },
+  { id: "combo2", name: "Combo Legend", desc: "Every 2nd pour gives +1 move", icon: "🎪", rarity: 3, cat: "flow" },
+  { id: "mega", name: "Mega Bonus", desc: "Every 5th pour gives +2 moves", icon: "🎊", rarity: 2, cat: "flow" },
+  { id: "clear", name: "Perfect Clear", desc: "Finish with 5+ moves left: +3 next round", icon: "✨", rarity: 2, cat: "flow" },
+  { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently", icon: "🔧", rarity: 3, cat: "board" },
+  { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round", icon: "🎁", rarity: 4, cat: "board" },
   /* Rare, high-impact roll — bypasses normal weighting entirely; see
      JACKPOT_CHANCE in gameLogic.js. Never offered on a plain draw. */
-  { id: "jackpot", name: "Jackpot!", desc: "+20 moves every round", icon: "🎰", rarity: 5, value: 20 },
+  { id: "jackpot", name: "Jackpot!", desc: "+20 moves every round", icon: "🎰", rarity: 5, value: 20, cat: "tempo" },
   /* Daily-challenge exclusive — never offered by pickRandomUpgrades, so the
      daily habit has a payoff normal runs can't get, not just the same pool
      seeded differently. */
@@ -219,13 +226,142 @@ export const UPGRADES = [
      upgrade list (App.jsx), so a saved daily run remembers it without any
      extra field. "wind_used" is not in this list on purpose: the run strip
      skips ids it doesn't know, so a spent card just disappears. */
-  { id: "wind", name: "Second Wind", desc: "Once: out of moves? Get +5 and play on", icon: "💨", rarity: 3, dailyOnly: true },
+  { id: "wind", name: "Second Wind", desc: "Once: out of moves? Get +5 and play on", icon: "💨", rarity: 3, dailyOnly: true, cat: "flow" },
   /* Retired. +6 moves for Rare was strictly worse than +8 Moves at the same
      rarity, so nobody had a reason to take the "daily exclusive". Kept in
      the list only so a run saved with it still resolves; pickDailyUpgrades
      skips retired cards. */
-  { id: "dawn", name: "Dawn Bonus", desc: "+6 moves every round", icon: "🌅", rarity: 3, value: 6, dailyOnly: true, retired: true },
+  { id: "dawn", name: "Dawn Bonus", desc: "+6 moves every round", icon: "🌅", rarity: 3, value: 6, dailyOnly: true, retired: true, cat: "tempo" },
 ];
+
+/* Offer-draw tuning. Pure data — every number the upgrade picker in
+   gameLogic.js reads lives here, so the offer rules can be retuned without
+   touching the draw logic.
+
+   The two slot caps exist because a plain draw could fill all three cards
+   with "+N moves" variants, or with cards the run already stacks: the offer
+   then reads as one repeated number three times rather than a choice. Each
+   cap is per offer, not per run, and both are relaxed automatically if a
+   late run has too few fresh cards left to honour them (see RELAX in
+   drawOffer), so an offer is never short-filled because of a cap. */
+export const OFFER_TUNING = {
+  /* At most one card the run already owns in a single offer. */
+  maxOwnedPerOffer: 1,
+  /* At most one "tempo" card (a flat +N moves) in a single offer. */
+  maxTempoPerOffer: 1,
+  /* Pity: if the run has gone this many consecutive offers without taking a
+     card at or above pityMinRarity, the next offer is guaranteed to contain
+     one. Counted in offers, not rounds — they are the same thing here, since
+     every offer ends in exactly one pick. */
+  pityEvery: 5,
+  /* Rare (3) and above counts as a pity reset. Jackpot is rarity 5, so a
+     Jackpot offer satisfies pity on its own. */
+  pityMinRarity: 3,
+  /* Synergy: a card's draw weight is multiplied by the entry for how many
+     cards the run ALREADY owns in that card's category — index 0 is a
+     category the run has never invested in, index 3 is three or more. Read it
+     as "reinforce what the run is already good at", which is what turns a
+     random card into a build: two Lucky cards in and Super Lucky is twice as
+     likely to be the card on offer.
+
+     Rising, not falling: 1.0 with no investment, 2.5 once the run has three.
+     A falling reading (2.5 at zero synergy) would make the game push cards
+     AWAY from what the player has built, which is the opposite of the point.
+     The last entry is the cap — a fourth card in the same category buys
+     nothing more, so no single category can take the pool over. */
+  synergyMult: [1, 1.2, 1.6, 2.5],
+  /* The opening bias: how much a card in one of the run's chosen archetype
+     categories is weighted up, for the first FOCUS_OFFERS picks only (see
+     ARCHETYPES). 1.5 is deliberately gentle — it reorders the offer without
+     making the other two cards irrelevant, so the first choice is still a
+     real choice. */
+  focusMult: 1.5,
+  /* Ceiling on a single card's final weight, as a multiple of its base rarity
+     weight. This one is not decorative — it fires on a completely ordinary
+     opening, and it fires exactly where the other two curves stack: a card
+     the run has already invested in (synergyMult's last rung, 2.5) in a
+     category the bias still favours (focusMult, 1.5) is a flat 3.75x its own
+     rarity weight, so without the ceiling the most-committed card in the pool
+     would outweigh the whole rest of the draw. With rarityWeight(1) = 9 that
+     is 34 against a cap of 27, and it is reachable in the first few picks —
+     take three tempo cards, open Momentum, and the fourth tempo card is
+     already over the line. That case is the right place for the ceiling: a
+     player who has committed to a path should be nudged toward it, not have
+     the pool collapse onto it. Any single card is now at most 3x its base
+     weight no matter how the multipliers are retuned. */
+  maxCardWeightMult: 3,
+};
+
+/* Display names for the `cat` groups above. Kept apart from UPGRADES so the
+   rule layer never has to know how a category is spelled on screen, and so
+   the offer screen can name what the run is becoming without the picker
+   carrying any presentation strings. Order here is also the tie-break order
+   runArchetype uses, so a run with two categories tied always resolves to the
+   same one. */
+export const CATEGORY = {
+  tempo: { name: "Tempo", icon: "⏱️" },
+  luck: { name: "Luck", icon: "🍀" },
+  flow: { name: "Flow", icon: "🔥" },
+  board: { name: "Board", icon: "🔧" },
+};
+
+export const CATEGORY_ORDER = ["tempo", "luck", "flow", "board"];
+
+/* The opening offers a run can start from — the "pick your god" beat, and
+   the first thing that makes a run feel chosen rather than dealt.
+
+   `cats` is what the pick actually DOES: for the first few offers of a run,
+   cards in these categories are weighted up (see focusMult). Each archetype
+   grants two categories, so a pick expresses a direction ("more moves AND
+   more combos") instead of a single stat.
+
+   These are exactly the six distinct pairs of CATEGORY's four categories, one
+   each — and six is the CEILING, not a taste call: four categories give
+   C(4,2) = 6 two-category archetypes, so a seventh would have to duplicate a
+   pair. A duplicate is a dead pick. The offer can't tell the two apart, so the
+   player is asked to choose between identical things and correctly concludes
+   the choice is fake — which teaches them the whole screen is a formality, and
+   that reading carries over to the offer picks that genuinely matter. */
+export const ARCHETYPES = [
+  { id: "momentum", name: "Momentum", icon: "⏱️", cats: ["tempo", "flow"],
+    desc: "More moves, faster combos. Outlast the board." },
+  { id: "fortune", name: "Fortune", icon: "🍀", cats: ["luck", "tempo"],
+    desc: "Lucky pours, backed by the moves to spend them on." },
+  { id: "architect", name: "Architect", icon: "🔧", cats: ["board", "tempo"],
+    desc: "More tubes, more room, more moves to fill it." },
+  { id: "surgeon", name: "Surgeon", icon: "🧠", cats: ["flow", "board"],
+    desc: "Precision bonuses on a board that stays out of your way." },
+  { id: "gambler", name: "Gambler", icon: "🎲", cats: ["luck", "board"],
+    desc: "Push your luck on a wider board. High variance, high ceiling." },
+  { id: "catalyst", name: "Catalyst", icon: "🔥", cats: ["luck", "flow"],
+    desc: "Lucky pours that keep a combo chain running." },
+];
+
+/* Deliberately NOT a flat stat bonus. A flat bonus would have to be large
+   enough to feel like a reward, and a large flat bonus is just "this run is
+   easier now" with no shape to it — and it would have to be applied
+   permanently, since removing a mid-run nerf is worse than never granting it.
+
+   Biasing the DRAW instead is self-limiting: it can only reorder cards that
+   already exist, so a pick the player regrets still leaves a playable run, and
+   because it expires (FOCUS_OFFERS) the run can still become something the
+   opening didn't predict. The cost of that choice is that a weak opening can
+   produce a few unsatisfying offers — which is the correct trade, because a
+   bad opening should be survivable rather than silently corrected. */
+
+/* How many archetypes a run is offered out of the six above, and how long the
+   opening bias lasts. Four offered: there are 15 possible four-of-six sets, so
+   consecutive runs almost never repeat, and four is also the most a player can
+   genuinely compare at a glance — a fifth and sixth would stop being a choice
+   and start being a menu. (S.overlay scrolls, so this is about attention, not
+   about fitting on screen.)
+
+   The bias covers the first FOCUS_OFFERS picks and then expires, so the
+   opening is a nudge rather than a lock — a player who opens as Momentum and
+   then takes three Luck cards ends up a Luck run, which is the outcome that
+   makes the choice feel like a start rather than a promise. */
+export const ARCHETYPE_OFFER_COUNT = 4;
+export const FOCUS_OFFERS = 4;
 
 /* ═══════════ DAILY TWISTS ═══════════
    One rule change per day, the same for everyone (the day picks it, see

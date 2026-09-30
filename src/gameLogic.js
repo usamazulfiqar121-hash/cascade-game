@@ -2,7 +2,7 @@
    Pure functions. No React, no state, no side effects
    (except Math.random default in shuffle). */
 
-import { MAX_HEIGHT, UPGRADES, DAILY_TWISTS } from "./constants";
+import { MAX_HEIGHT, UPGRADES, DAILY_TWISTS, OFFER_TUNING, CATEGORY_ORDER, ARCHETYPES, ARCHETYPE_OFFER_COUNT, FOCUS_OFFERS } from "./constants";
 
 /* ─── Move calculation helpers ─── */
 export function sumMoveBonus(ups) {
@@ -29,7 +29,23 @@ export function getMegaEvery(ups) {
    near miss (rolled, but just missed) is surfaced too, rather than hidden —
    research ties seeing a near-miss to what keeps variable-reward systems
    compelling. dailyOnly upgrades never appear here — that's the whole point
-   of pickDailyUpgrades having something this pool doesn't. */
+   of pickDailyUpgrades having something this pool doesn't.
+
+   A card that would do nothing for this run is skipped here too, not just in
+   the daily. It used to be a daily-only filter, which left normal runs free to
+   offer a second Perfect Clear or a second Mega Bonus — a card whose own text
+   promises an effect the run already has. Offering it isn't a harmless
+   dud: it's one of three slots the player turned down, so a dead card both
+   wastes a choice and makes the offer read as noise. The daily already had
+   this filter and is measurably better for it.
+
+   The filter can never empty the offer. At most five cards in this pool can be
+   dead for a given run (clear, mega, combo2, combo3 and lucky), so at least
+   eight of the thirteen stay eligible — always more than the three an offer
+   needs, which is why the relax ladder in drawOffer does not have to give up
+   this rule. Super Lucky is never among them: getLuckyChance's 0.7 ceiling is
+   only ever a clamp, and 0.2 + 0.35 = 0.55 never reaches it, so taking Super
+   Lucky always moves the chance. */
 const JACKPOT_ID = "jackpot";
 const JACKPOT_CHANCE = 0.03;
 const JACKPOT_NEAR_MISS_MARGIN = 0.07;
@@ -49,33 +65,195 @@ function rarityWeight(rarity) {
   return Math.max(1, 12 - rarity * 3) | 0;
 }
 
-export function pickRandomUpgrades(count) {
+/* `focus` is the categories this run opened with (see ARCHETYPES). Applied
+   only while the opening bias is live, and computed from `owned` rather than
+   tracked, so it costs no state and survives a reload. Pass null outside a
+   run that has one. */
+export function pickRandomUpgrades(count, owned = [], rng = Math.random, focus = null) {
   const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.dailyOnly);
-  const weighted = [];
-  pool.forEach((u) => {
-    const weight = rarityWeight(u.rarity);
-    for (let i = 0; i < weight; i++) weighted.push(u);
-  });
-  const picked = [];
-  const used = new Set();
-
-  const roll = Math.random();
+  const roll = rng();
+  let jackpot = null;
   let jackpotNearMiss = false;
   if (roll < JACKPOT_CHANCE) {
-    const jackpot = UPGRADES.find((u) => u.id === JACKPOT_ID);
-    if (jackpot) { picked.push(jackpot); used.add(jackpot.id); }
+    jackpot = UPGRADES.find((u) => u.id === JACKPOT_ID) || null;
   } else if (roll < JACKPOT_CHANCE + JACKPOT_NEAR_MISS_MARGIN) {
     jackpotNearMiss = true;
   }
+  const upgrades = drawOffer(pool, count, owned, rng, {
+    pre: jackpot,
+    isDead: isDeadUpgrade,
+    pity: pityActive(owned),
+    focus: activeFocus(owned, focus),
+  });
+  return { upgrades, jackpotNearMiss };
+}
 
-  let guard = 0;
-  while (picked.length < count && guard < 200) {
-    const u = weighted[(Math.random() * weighted.length) | 0];
-    if (used.has(u.id)) { guard++; continue; }
-    used.add(u.id);
-    picked.push(u);
+/* Category of a card, read off its UPGRADES entry. A spent "wind_used" and
+   any id this build doesn't know resolve to "other", so neither can consume
+   a category slot. */
+function catOf(id) {
+  const u = UPGRADES.find((x) => x.id === (id === "wind_used" ? "wind" : id));
+  return u && u.cat ? u.cat : "other";
+}
+
+/* Rarity of a card the run already holds, 0 for an id this build doesn't
+   know. wind_used is a spent Second Wind, which is still the Rare card it
+   was — without the remap below, spending it would read as a non-Rare pick
+   and could hand the run a pity it had already earned. */
+function rarityOf(id) {
+  const u = UPGRADES.find((x) => x.id === (id === "wind_used" ? "wind" : id));
+  return u ? u.rarity : 0;
+}
+
+/* How many consecutive offers this run has gone without taking a card at or
+   above pityMinRarity, counted back from the most recent pick. 0 means the
+   last pick was a Rare+.
+
+   Derived from the run's own card list rather than kept in its own counter,
+   which is what lets pity work with no new state at all: the list is already
+   in memory for a normal run and already written to disk for a daily one (see
+   saveDailyRun), so a run resumed from a save counts exactly the streak it
+   was on, and nothing has to be migrated. */
+export function offersSinceRare(owned) {
+  let n = 0;
+  for (let i = owned.length - 1; i >= 0; i--) {
+    if (rarityOf(owned[i]) >= OFFER_TUNING.pityMinRarity) break;
+    n++;
   }
-  return { upgrades: picked, jackpotNearMiss };
+  return n;
+}
+
+/* Whether the next offer must contain a Rare or better. Exported because the
+   offer screen says so when it's true: a guaranteed Rare that arrives
+   unexplained reads as luck, and a player who can't tell a guarantee from a
+   coincidence stops trusting either. */
+export function pityActive(owned) {
+  return offersSinceRare(owned) >= OFFER_TUNING.pityEvery - 1;
+}
+
+/* The category this run is most invested in, as { cat, count }, or null
+   before the first pick. This is the "build identity" the draw is nudging
+   toward (see synergyMult) stated back to the player, so a run that has
+   quietly become a Luck run is legible as one.
+
+   `only` restricts the tally to a set of categories — used to answer "how is
+   my opening pick going?" instead, which has to be counted inside the chosen
+   archetype's own categories or it would answer a question nobody asked (a
+   player who opened as Momentum and took a Luck card would be told they were
+   "1 Luck" and, offered the count, never told their Momentum pick was going
+   unused). Ties break on CATEGORY_ORDER rather than on object key order, so
+   two players holding the same cards always see the same name. */
+export function runArchetype(owned, only = null) {
+  const counts = {};
+  for (const id of owned) {
+    const c = catOf(id);
+    if (c === "other") continue;
+    if (only && !only.includes(c)) continue;
+    counts[c] = (counts[c] || 0) + 1;
+  }
+  let cat = null, best = 0;
+  for (const c of CATEGORY_ORDER) {
+    const n = counts[c] || 0;
+    if (n > best) { cat = c; best = n; }
+  }
+  return cat ? { cat, count: best } : null;
+}
+
+/* How many cards the run already owns in `u`'s category, capped at the last
+   entry of synergyMult. Counted from the run's own list, so it is a pure
+   function of the run — no state, and the same answer for every player
+   holding the same cards, which is what keeps the daily daily. */
+function synergyCount(u, owned) {
+  const cat = u.cat;
+  if (!cat) return 0;
+  let n = 0;
+  for (const id of owned) if (catOf(id) === cat) n++;
+  return Math.min(n, OFFER_TUNING.synergyMult.length - 1);
+}
+
+/* The categories the run was opened with, if the opening bias still applies.
+   It stops applying after FOCUS_OFFERS picks: the run is meant to be able to
+   become something other than what it started as, and a bias that never
+   expires would quietly turn the opening pick into a lock. Keyed off
+   `owned.length` rather than a counter, so it survives a reload mid-run
+   without anything extra in the save. */
+function activeFocus(owned, focus) {
+  if (!focus || !focus.length) return null;
+  return owned.length < FOCUS_OFFERS ? focus : null;
+}
+
+/* The weight table, expanded into one entry per unit of weight — the draw
+   below indexes into it, so a card's chance is its share of the array.
+   Rounded to an integer because the array is a repeat-count: a weight of 1.2
+   would otherwise truncate back to 1 and quietly make a 20% boost a no-op. */
+function buildWeighted(pool, owned, focus) {
+  const weighted = [];
+  for (const u of pool) {
+    const base = rarityWeight(u.rarity);
+    const focusBoost = focus && u.cat && focus.includes(u.cat) ? OFFER_TUNING.focusMult : 1;
+    const w = Math.max(1, Math.min(
+      Math.round(base * OFFER_TUNING.synergyMult[synergyCount(u, owned)] * focusBoost),
+      Math.round(base * OFFER_TUNING.maxCardWeightMult),
+    ));
+    for (let i = 0; i < w; i++) weighted.push(u);
+  }
+  return weighted;
+}
+
+/* One offer, shared by both pickers so the normal and daily draws can't drift
+   apart rule by rule. `pre` is a card decided outside the draw (Jackpot),
+   `isDead` the per-card veto for a run that already has what the card gives.
+
+   `pity` forces the FIRST card of the offer to be Rare or better, and only
+   the first: a pity offer still offers a real choice between two Rare-or-better
+   cards plus whatever else the caps allow, and the floor is released as soon
+   as one such card lands.
+
+   A rule that can't be honoured is dropped rather than allowed to leave the
+   offer short. The ladder below gives up the owned cap, then the tempo cap,
+   then pity, so a late run holding nearly every card still gets three offers
+   instead of one. Relaxing costs no random number, which keeps the stream
+   identical whichever path a given day takes. */
+const RELAX = { OWNED: 1, TEMPO: 2, PITY: 3, ALL: 4 };
+
+function drawOffer(pool, count, owned, rng, opts = {}) {
+  const { pre = null, isDead = null, pity = false, focus = null } = opts;
+  const weighted = buildWeighted(pool, owned, focus);
+  const picked = [];
+  const used = new Set();
+  let ownedSlots = 0;
+  let tempoSlots = 0;
+  let pityLeft = pity ? 1 : 0;
+
+  const commit = (u) => {
+    picked.push(u);
+    used.add(u.id);
+    if (catOf(u.id) === "tempo") tempoSlots++;
+    if (owned.includes(u.id)) ownedSlots++;
+    if (rarityOf(u.id) >= OFFER_TUNING.pityMinRarity) pityLeft = 0;
+  };
+  if (pre) commit(pre);
+
+  let relax = 0;
+  let guard = 0;
+  while (picked.length < count && guard < 500) {
+    guard++;
+    const eligible = weighted.filter((u) => {
+      if (used.has(u.id)) return false;
+      if (isDead && isDead(u.id, owned)) return false;
+      if (relax < RELAX.PITY && pityLeft && rarityOf(u.id) < OFFER_TUNING.pityMinRarity) return false;
+      if (relax < RELAX.OWNED && owned.includes(u.id) && ownedSlots >= OFFER_TUNING.maxOwnedPerOffer) return false;
+      if (relax < RELAX.TEMPO && catOf(u.id) === "tempo" && tempoSlots >= OFFER_TUNING.maxTempoPerOffer) return false;
+      return true;
+    });
+    if (!eligible.length) {
+      if (relax < RELAX.ALL) { relax++; continue; }
+      break;
+    }
+    commit(eligible[(rng() * eligible.length) | 0]);
+    relax = 0;
+  }
+  return picked;
 }
 
 /* ─── Tube predicates ─── */
@@ -246,7 +424,12 @@ export function dateToSeed(date = new Date()) {
    `stream` keeps the board, the upgrade cards and the luck rolls of one
    round from sharing a sequence. */
 const DAILY_EPOCH_DAY = 20454; /* 2026-01-01 as UTC days since 1970 */
-export const DAILY_STREAM = { board: 0, upgrades: 1, luck: 2 };
+/* stream 3 is the day's opening archetype (see dailyArchetype). It was the
+   one free value in the low 2 bits, and it is deliberately NOT round 0 of
+   the upgrades stream: sharing that seed would make the archetype a function
+   of the round-1 card draw's stream, so changing the draw would silently
+   change the archetype and vice versa. */
+export const DAILY_STREAM = { board: 0, upgrades: 1, luck: 2, archetype: 3 };
 
 function fmix32(h) {
   h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
@@ -585,6 +768,74 @@ export function loadDailyRun() {
   }
 }
 
+/* ─── Normal-run save (the run "Continue" picks back up) ───
+   A daily could already be put down and picked up again (see saveDailyRun).
+   The one mode with no equivalent was the one the archetype and upgrade
+   system actually lives in: leaving a normal run threw the whole thing away,
+   and the Exit dialog's "Progress will be lost" meant exactly that.
+
+   Saved at ROUND BOUNDARIES only — right after an upgrade is taken, while
+   the board on screen is one nobody has poured into yet. That single
+   decision is what keeps this cheap: the level is stored verbatim rather
+   than regenerated, because a normal run's level comes from Math.random, so
+   regenerating it would hand the player a DIFFERENT board for a round they
+   had already begun thinking about — sometimes kinder, sometimes much
+   worse, and never the one they actually left.
+
+   Not persisting the mid-pour position is the deliberate half. It would
+   need the same tubesMatchLevel-style validation the daily has, and it
+   would restore a half-played board, which in a puzzle game hands the
+   player very little and costs a lot of surface to get right. Losing the
+   moves inside one round is the price, and it is a small one — rounds are
+   short, and someone who leaves mid-round has barely invested in it yet. */
+export const NORMAL_RUN_KEY = "cascade:normalRun";
+
+export function saveNormalRun(run) {
+  try { localStorage.setItem(NORMAL_RUN_KEY, JSON.stringify({ ...run, v: 1 })); } catch {}
+}
+
+export function clearNormalRun() {
+  try { localStorage.removeItem(NORMAL_RUN_KEY); } catch {}
+}
+
+/* A stored level is only usable if it has the shape generateLevel returns: a
+   board of tubes of bounded colour ids, a positive move limit, a colour
+   count. Anything else is a truncated write or a hand-edited value, and
+   reads as no save at all — the player starts a fresh run, which is exactly
+   where a corrupt save would otherwise have dumped them anyway. */
+function validLevel(l) {
+  return !!l
+    && Array.isArray(l.tubes) && l.tubes.length > 0
+    && l.tubes.every((t) => Array.isArray(t) && t.length <= MAX_HEIGHT
+      && t.every((b) => Number.isInteger(b) && b >= 0))
+    && Number.isFinite(l.moveLimit) && l.moveLimit >= 1
+    && Number.isFinite(l.colorCount) && l.colorCount >= 1;
+}
+
+/* The run to continue, or null. The tubes themselves are trusted rather than
+   re-validated against a fresh draw the way the daily's are: nothing between
+   the write and this read can modify them, and there is no regeneration here
+   to check them against. */
+export function loadNormalRun() {
+  try {
+    const raw = localStorage.getItem(NORMAL_RUN_KEY);
+    if (!raw) return null;
+    const r = JSON.parse(raw);
+    if (!r || r.v !== 1) return null;
+    if (!Number.isInteger(r.round) || r.round < 1) return null;
+    if (!Array.isArray(r.upgrades) || !r.upgrades.every((x) => typeof x === "string")) return null;
+    if (!validLevel(r.level)) return null;
+    /* A run opened without a path (the picker was skipped) stores null, which
+       is legal. A non-null one has to be a whole archetype, because runFocus
+       reads .cats off it on every draw. */
+    if (r.path && (typeof r.path.id !== "string" || !Array.isArray(r.path.cats))) return null;
+    if (!Number.isFinite(r.lastRoundMovesLeft) || r.lastRoundMovesLeft < 0) return null;
+    return r;
+  } catch {
+    return null;
+  }
+}
+
 /* True when `saved` could be the round's own board mid-play: same number
    of tubes, no tube over capacity, and exactly the same balls of each
    colour as the freshly generated round. A pour only moves balls, so this
@@ -672,23 +923,42 @@ export function isDeadUpgrade(id, owned = []) {
    the seeded stream for (day, round), so two players holding the same
    upgrades see the same cards; a card that would be dead for this run is
    skipped and the stream simply carries on. A run with nothing dead sees
-   exactly the cards it always did. */
-export function pickDailyUpgrades(dateSeed, count = 3, owned = []) {
+   exactly the cards it always did. The offer slot caps in drawOffer apply
+   here too — the daily is the same game, and it is where players are most
+   likely to notice three identical offers in a row.
+
+   Pity reads `owned` the same way it does in a normal run, which is what
+   keeps this deterministic: the streak is a function of the run's own cards,
+   and those are identical for every player who reached this round the same
+   way, so the forced Rare+ lands on the same offer for all of them. */
+export function pickDailyUpgrades(dateSeed, count = 3, owned = [], focus = null) {
   const rng = mulberry32(dateSeed);
   const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.retired);
-  const weighted = [];
-  pool.forEach((u) => {
-    const weight = rarityWeight(u.rarity);
-    for (let i = 0; i < weight; i++) weighted.push(u);
+  return drawOffer(pool, count, owned, rng, {
+    isDead: isDeadUpgrade,
+    pity: pityActive(owned),
+    focus: activeFocus(owned, focus),
   });
-  const picked = [];
-  const used = new Set();
-  let guard = 0;
-  while (picked.length < count && guard < 200) {
-    const u = weighted[(rng() * weighted.length) | 0];
-    if (used.has(u.id) || isDeadUpgrade(u.id, owned)) { guard++; continue; }
-    used.add(u.id);
-    picked.push(u);
-  }
-  return picked;
+}
+
+/* ─── Opening archetype ───
+   The run's starting direction. In a normal run the player picks one of
+   ARCHETYPE_OFFER_COUNT; in a daily they don't, because a choice would make
+   two players on the same cards see different offers — the one thing the
+   daily cannot give up. The day's archetype is therefore a pure function of
+   the date, which is also why nothing about it needs saving (see
+   dailyArchetype). */
+export function pickArchetypes(count = ARCHETYPE_OFFER_COUNT, rng = Math.random) {
+  /* Clamped rather than trusted: ARCHETYPE_OFFER_COUNT is a tuning constant
+     and a retune past ARCHETYPES.length would otherwise return a short offer
+     (a 2-card picker with no explanation) rather than the whole set. */
+  return shuffle(ARCHETYPES, rng).slice(0, Math.max(0, Math.min(count, ARCHETYPES.length)));
+}
+
+/* The daily's opening archetype — same for every player on a given date, and
+   the same on a resumed run as on a straight-through one, because it depends
+   on nothing but the date. Round 0 of the dedicated archetype stream: no round
+   0 board exists, so this seed cannot collide with a board or a card draw. */
+export function dailyArchetype(date = new Date()) {
+  return pickArchetypes(1, mulberry32(dailyRoundSeed(0, DAILY_STREAM.archetype, date)))[0];
 }
