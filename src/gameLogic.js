@@ -826,6 +826,13 @@ export const MOVE_ECONOMY = {
   carryCap: 6,
 };
 export const BOARD_CARD_CAP = 2; // Extra Tube / Auto-Sort: at most two of each
+/* Retries per NORMAL run (the daily and score attack have none). Was
+   unlimited — and a retry also deals an easier recovery board — so a normal
+   run could not actually end: every loss was one tap from undone, and the
+   drain had nothing to threaten. Two keeps the casual safety net (a bad
+   board or a mis-tap does not end a long run) while making the third loss
+   final, which is what gives the late rounds their weight. */
+export const RETRIES_PER_RUN = 2;
 
 /* Clearing a boss round is paid in choice, not moves: one extra card on the
    offer that follows it. Moves would feed straight back into the economy the
@@ -1140,6 +1147,9 @@ export function loadNormalRun() {
        to fall back from — what is NOT fine is a non-empty id that resolves to
        nothing, so only that case throws the save away. */
     if (r.mutatorId != null && !mutatorById(r.mutatorId)) return null;
+    /* Saves from before retries were limited have no count: they get the
+       full allowance rather than none, since that run never spent any. */
+    if (!Number.isInteger(r.retriesLeft) || r.retriesLeft < 0 || r.retriesLeft > RETRIES_PER_RUN) r.retriesLeft = RETRIES_PER_RUN;
     return r;
   } catch {
     return null;

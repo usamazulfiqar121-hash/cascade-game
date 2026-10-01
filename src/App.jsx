@@ -17,7 +17,7 @@ import {
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
-  weekMutator, mutatorById, offerCount,
+  weekMutator, mutatorById, offerCount, RETRIES_PER_RUN, MOVE_ECONOMY,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -537,6 +537,8 @@ export default function Cascade() {
      when the NEXT round's level is generated, so that round steps back down
      in difficulty instead of continuing to climb ("hills, not stairs"). */
   const [retriedThisRound, setRetriedThisRound] = useState(false);
+  /* See RETRIES_PER_RUN. Normal runs only; persisted with the Continue save. */
+  const [retriesLeft, setRetriesLeft] = useState(RETRIES_PER_RUN);
   /* The weekly mutator THIS RUN is playing under, frozen for the run's
      lifetime. weekMutator() is a pure function of the current UTC week, so
      calling it at each generateLevel would return the same object all week —
@@ -1686,6 +1688,21 @@ export default function Cascade() {
            what this local was named for. */
         flashClear();
         celebrateClearBurst(remainingAtClear);
+        /* The two things the economy pays for, said at the moment they are
+           earned: solving at or under par (the skill), and the moves that
+           will carry into the next board. One pop, so they never stack on
+           top of each other. */
+        {
+          const underPar = level.par > 0 && newMovesUsed <= level.par;
+          const carryNext = Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
+          const popText = underPar ? `Under par!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
+          if (popText) {
+            const pid = Date.now() + Math.random();
+            armEphemeral(() => setBonusPops((p) => [...p, { id: pid, text: popText }]), Math.max(0, impactMs));
+            armEphemeral(() => setBonusPops((p) => p.filter((q) => q.id !== pid)), Math.max(0, impactMs) + 1300);
+          }
+          if (underPar) armEphemeral(() => { Snd.mega(4); celebrate(6, 0.9, CHEER_MS.big); }, Math.max(0, impactMs) + 150);
+        }
         /* Daily round clear — increment streak. dailyState.status is
            deliberately NOT touched here. It used to be force-set to
            "completed" on every round clear, which finalized "today's
@@ -2247,11 +2264,12 @@ export default function Cascade() {
         lastRoundMovesLeft,
         path: runPath,
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
+        retriesLeft,
       });
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator, retriesLeft]);
 
   /* A retry re-rolls the same round from the same seed, so a daily retry
      reproduces the board exactly as it was — and must NOT pick up the weekly
@@ -2272,6 +2290,11 @@ export default function Cascade() {
      so it is unchanged by a retry, which re-rolls the round rather than
      advancing past it. */
   const retry = useCallback(() => {
+    /* Normal runs only spend from the allowance; the button is not shown at
+       zero, and this guard covers a stale tap. */
+    if (canAssist && retriesLeft <= 0) return;
+    const left = canAssist ? retriesLeft - 1 : retriesLeft;
+    if (canAssist) setRetriesLeft(left);
     const seed = isDaily
       ? dailyRoundSeed(round, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
       : null;
@@ -2301,9 +2324,10 @@ export default function Cascade() {
         lastRoundMovesLeft,
         path: runPath,
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
+        retriesLeft: left,
       });
     }
-  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, canAssist, dailyTwist, weeklyMutator, runPath]);
+  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, canAssist, dailyTwist, weeklyMutator, runPath, retriesLeft]);
 
   /* Takes the opening archetype. Deliberately does NOT touch the board: the
      round-1 level was already generated from (round, upgrades) and the
@@ -2346,6 +2370,7 @@ export default function Cascade() {
        counted another. Cheap to reset, and impossible to get wrong by omission. */
     setDailyRun({ rounds: [], totalMoves: 0 });
     setScoreResult(null);
+    setRetriesLeft(RETRIES_PER_RUN);
     setRetriedThisRound(false);
     setUndoUsedThisRun(false);
     /* Cleared here too, not just at the game-over trigger: the flag has to
@@ -2535,6 +2560,7 @@ export default function Cascade() {
         setRound(resume.round);
         setRunUpgrades(resume.upgrades);
         setLastRoundMovesLeft(resume.lastRoundMovesLeft);
+        setRetriesLeft(resume.retriesLeft);
         setRetriedThisRound(false);
         setUndoUsedThisRun(false);
         setNewBestThisRun(false);
@@ -3997,13 +4023,21 @@ export default function Cascade() {
                   </>
                 ) : (
                   <>
-                    <button style={S.primary} onClick={retry}>Retry Round {round}</button>
+                    {retriesLeft > 0 ? (
+                      <button style={S.primary} onClick={retry}>
+                        Retry Round {round} <span style={{ opacity: 0.8, fontWeight: 700 }}>· {"❤️".repeat(retriesLeft)} {retriesLeft} left</span>
+                      </button>
+                    ) : (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.muted, textAlign: "center", margin: "2px 0 4px" }}>
+                        No retries left — this run ends at round {round}.
+                      </div>
+                    )}
                     <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
                     {/* No pushNav: this replaces the run that is already on
                         screen, so the existing "game" history entry still
                         describes exactly one game in the stack. Pushing
                         again would leave back needing two presses to leave. */}
-                    <button style={S.ghost} onClick={startFreshNormalRun}>Start Over</button>
+                    <button style={retriesLeft > 0 ? S.ghost : S.primary} onClick={startFreshNormalRun}>{retriesLeft > 0 ? "Start Over" : "New Run"}</button>
                     {/* The Home button in the HUD is under this overlay, so without
                         this the only way out was the OS back gesture, or Start Over
                         and then Home. Same route back does (see onBackFromGame). */}
