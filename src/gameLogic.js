@@ -9,18 +9,25 @@ export function sumMoveBonus(ups) {
   return ups.reduce((s, id) => s + (UPGRADES.find((u) => u.id === id)?.value || 0), 0);
 }
 
+/* Per-pour refunds. Their SUM has to stay well under one move per pour, or
+   a run stops spending moves at all: the old numbers (luck stacking to 70%,
+   +1 every 2nd pour, +2 every 5th) refunded about 1.6 moves per pour at the
+   top, i.e. every pour was free and the run could not be lost. Now the most a
+   run can stack is 0.40 + 0.33 + 0.25 = ~0.98 only with ALL of them, and
+   each is a rare-ish pick — a real engine you build, not a default. */
+export const LUCK_CAP = 0.4;
 export function getLuckyChance(ups) {
-  return Math.min(0.7, ups.reduce((s, id) => s + (id === "lucky" ? 0.2 : id === "lucky2" ? 0.35 : 0), 0));
+  return Math.min(LUCK_CAP, ups.reduce((s, id) => s + (id === "lucky" ? 0.15 : id === "lucky2" ? 0.25 : 0), 0));
 }
 
 export function getComboEvery(ups) {
-  if (ups.includes("combo2")) return 2;
-  if (ups.includes("combo3")) return 3;
+  if (ups.includes("combo2")) return 3;
+  if (ups.includes("combo3")) return 4;
   return 0;
 }
 
 export function getMegaEvery(ups) {
-  return ups.includes("mega") ? 5 : 0;
+  return ups.includes("mega") ? 8 : 0;
 }
 
 /* ─── Upgrade pool picker ───
@@ -781,6 +788,109 @@ export function msUntilNextWeek() {
   return d.getTime() - now.getTime();
 }
 
+/* ═══════════ MOVE ECONOMY ═══════════
+
+   What a round gives you, and why. The old budget was colours×3 + 0.8×round
+   + 4 plus every "+N moves" card ever taken. Board difficulty stops growing
+   at round 11 (seven colours) but that budget never stopped, and the cards
+   stacked on top: simulated, a player finished round 20 with ~66 moves to
+   spare and round 40 with ~130. Nothing could be lost, so no card mattered.
+
+   The budget now has four parts, every one of them visible to the player:
+
+     par    the fewest moves this board needs (solved, see boardPar).
+     buffer slack on top of par: generous on round 1 (+80%), shrinking to
+            +20% by round 8. Halved on a BOSS round (every 5th).
+     drain  from round 3 on, a little less every round, accelerating
+            (1.8/round + 0.05/round²). This is what the run's cards are
+            racing: an average build keeps up, a strong one pulls ahead, a
+            weak one falls behind — and eventually everyone is caught.
+     carry  half the moves you finished the last round with, up to 6.
+            Solving efficiently is rewarded on the very next board.
+
+   Tuned against simulated runs (a greedy no-lookahead player and a solver,
+   picking cards sensibly or at random) for: tight but fair early rounds,
+   8–14 spare moves in mid-game, and runs that end around round 15–20 for an
+   average player and 25–35 for a strong one. Those are model numbers, not
+   player data — the constants below are the knobs to retune from real play. */
+export const MOVE_ECONOMY = {
+  bufferStart: 0.8,   // round 1: par + 80%
+  bufferEnd: 0.2,     // from bufferRound on: par + 20%
+  bufferRound: 8,
+  bossEvery: 5,       // every 5th round is a boss round...
+  bossBuffer: 0.5,    // ...with half the buffer
+  drainFrom: 2,       // drain is 0 up to and including this round
+  drainLinear: 1.8,
+  drainSquare: 0.05,
+  carryRate: 0.5,
+  carryCap: 6,
+};
+export const BOARD_CARD_CAP = 2; // Extra Tube / Auto-Sort: at most two of each
+
+export function isBossRound(round) {
+  return round > 0 && round % MOVE_ECONOMY.bossEvery === 0;
+}
+
+export function moveBudget(round, par, prevMovesLeft = 0) {
+  const E = MOVE_ECONOMY;
+  const t = Math.min(1, Math.max(0, (round - 1) / (E.bufferRound - 1)));
+  const boss = isBossRound(round);
+  const buffer = Math.round(par * (E.bufferStart + (E.bufferEnd - E.bufferStart) * t) * (boss ? E.bossBuffer : 1));
+  const k = round - E.drainFrom;
+  const drain = k > 0 ? Math.round(E.drainLinear * k + E.drainSquare * k * k) : 0;
+  const carry = Math.min(E.carryCap, Math.floor(Math.max(0, prevMovesLeft || 0) * E.carryRate));
+  return { base: par + buffer - drain + carry, buffer, drain, carry, boss };
+}
+
+/* Fewest moves that solve this board (near-minimal: weighted A*, which is
+   what keeps it ~1ms on a 7-colour board instead of seconds). Deterministic —
+   no rng — so a daily round's budget is identical for every player, and a
+   resumed run recomputes exactly the budget it had. Falls back to a formula
+   only if the search gives up, which no generated board has done in testing. */
+export function boardPar(tubes, colorCount = 0) {
+  const done = (t) => t.length === MAX_HEIGHT && t.every((c) => c === t[0]);
+  const key = (T) => T.map((t) => t.join(",")).sort().join("|");
+  const h = (T) => T.reduce((s, t) => {
+    let breaks = 0;
+    for (let i = 1; i < t.length; i++) if (t[i] !== t[i - 1]) breaks++;
+    return s + breaks + (t.length && !done(t) ? 1 : 0);
+  }, 0);
+  const W = 1.2, CAP = 60000;
+  /* binary heap on f */
+  const heap = [];
+  const push = (n) => { heap.push(n); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p].f <= heap[i].f) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l].f < heap[m].f) m = l; if (r < heap.length && heap[r].f < heap[m].f) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  const start = tubes.map((t) => [...t]);
+  const seen = new Map([[key(start), 0]]);
+  push({ T: start, g: 0, f: h(start) });
+  let expanded = 0;
+  while (heap.length && expanded++ < CAP) {
+    const c = pop();
+    if (c.T.every((t) => !t.length || done(t))) return c.g;
+    for (let a = 0; a < c.T.length; a++) {
+      const from = c.T[a];
+      if (!from.length || done(from)) continue;
+      const mono = from.every((x) => x === from[0]);
+      let triedEmpty = false;
+      for (let b = 0; b < c.T.length; b++) {
+        if (a === b) continue;
+        const to = c.T[b];
+        if (to.length >= MAX_HEIGHT) continue;
+        if (to.length && to[to.length - 1] !== from[from.length - 1]) continue;
+        if (!to.length) { if (triedEmpty || mono) continue; triedEmpty = true; }
+        const N = c.T.map((t) => [...t]);
+        const col = N[a][N[a].length - 1];
+        while (N[a].length && N[a][N[a].length - 1] === col && N[b].length < MAX_HEIGHT) N[b].push(N[a].pop());
+        const k = key(N), g = c.g + 1;
+        if (seen.has(k) && seen.get(k) <= g) continue;
+        seen.set(k, g);
+        push({ T: N, g, f: g + W * h(N) });
+      }
+    }
+  }
+  return Math.max(1, colorCount * 3 + 2);
+}
+
 /* ─── Level generator ───
    Recovery levels ("hills, not stairs"): after a round that took a retry
    (struggled=true, set by the caller) or barely cleared (prevMovesLeft <= 1),
@@ -830,27 +940,34 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
     attempts++;
   } while (attempts < 8 && tubes.some((t) => t.length === MAX_HEIGHT && t.every((c) => c === t[0])));
 
-  const extraTubes = runUpgrades.filter((id) => id === "tube").length;
+  /* Par is measured on the board AS DEALT, before the run's board cards
+     touch it. That is what makes Extra Tube and Auto-Sort worth taking: the
+     budget is set by the plain board, and the cards then make the board you
+     actually play easier than the budget assumed. Measured after them, the
+     budget would shrink to match and the cards would buy nothing. */
+  const par = boardPar(tubes, colorCount);
+
+  const extraTubes = Math.min(BOARD_CARD_CAP, runUpgrades.filter((id) => id === "tube").length);
   for (let i = 0; i < extraTubes; i++) tubes.push([]);
   /* Warm Start is one free Auto-Sort, on top of any the run has taken.
      A mutator gets its own count here rather than sharing the twist's +1 —
      they can't both be active, and adding them together would hand out two
      free sorts if that ever changed. */
-  const autoSortCount = runUpgrades.filter((id) => id === "auto").length
+  const autoSortCount = Math.min(BOARD_CARD_CAP, runUpgrades.filter((id) => id === "auto").length)
     + (twistId === "warm" ? 1 : 0)
     + (m && m.autoSortDelta ? m.autoSortDelta(round) : 0);
   tubes = applyAutoSort(tubes, autoSortCount, rng);
 
-  const baseLimit = Math.round(colorCount * 3 + round * 0.8) + 4;
+  const budget = moveBudget(round, par, prevMovesLeft);
   const moveBonus = sumMoveBonus(runUpgrades);
   const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
   const moveLimit = Math.max(
     1,
-    baseLimit + moveBonus + perfectClearBonus + twistMoveDelta(twistId, round)
+    budget.base + moveBonus + perfectClearBonus + twistMoveDelta(twistId, round)
       + (m && m.moveDelta ? m.moveDelta(round) : 0),
   );
 
-  return { tubes, moveLimit, colorCount };
+  return { tubes, moveLimit, colorCount, par, boss: budget.boss, carry: budget.carry, drain: budget.drain };
 }
 
 /* ═══════════ DAILY MODE — STATE MANAGEMENT ═══════════ */
@@ -1099,6 +1216,9 @@ export function isDeadUpgrade(id, owned = []) {
     case "lucky":
     case "lucky2":
       return getLuckyChance([...owned, id]) === getLuckyChance(owned);
+    case "tube":
+    case "auto":
+      return owned.filter((x) => x === id).length >= BOARD_CARD_CAP;
     default:
       return false;
   }

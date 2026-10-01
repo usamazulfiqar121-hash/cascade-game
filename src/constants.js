@@ -237,22 +237,26 @@ export const rarityText = (color) => `color-mix(in srgb, ${color}, var(--ink) va
    arrives as a new balance patch is a one-word change here, not a new
    hardcoded id list in the picker. */
 export const UPGRADES = [
-  { id: "m2", name: "+2 Moves", desc: "+2 moves every round", icon: "🏃", rarity: 1, value: 2, cat: "tempo" },
-  { id: "m3", name: "+3 Moves", desc: "+3 moves every round", icon: "⚡", rarity: 1, value: 3, cat: "tempo" },
-  { id: "m5", name: "+5 Moves", desc: "+5 moves every round", icon: "🔥", rarity: 2, value: 5, cat: "tempo" },
-  { id: "m8", name: "+8 Moves", desc: "+8 moves every round", icon: "💎", rarity: 3, value: 8, cat: "tempo" },
-  { id: "start", name: "Head Start", desc: "+16 moves every round", icon: "🚀", rarity: 4, value: 16, cat: "tempo" },
-  { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1, cat: "luck" },
-  { id: "lucky2", name: "Super Lucky", desc: "35% chance per pour: +1 move", icon: "🌟", rarity: 3, cat: "luck" },
-  { id: "combo3", name: "Combo Master", desc: "Every 3rd pour gives +1 move", icon: "🎯", rarity: 2, cat: "flow" },
-  { id: "combo2", name: "Combo Legend", desc: "Every 2nd pour gives +1 move", icon: "🎪", rarity: 3, cat: "flow" },
-  { id: "mega", name: "Mega Bonus", desc: "Every 5th pour gives +2 moves", icon: "🎊", rarity: 2, cat: "flow" },
+  /* Values are against a board that needs ~5 (round 1) to ~22 (seven
+     colours) moves: +4 every round is a fifth of a late board, every round,
+     for the rest of the run. The ids keep their old names (m2, m8...) so a
+     saved run still resolves; only the numbers moved. See MOVE_ECONOMY. */
+  { id: "m2", name: "+1 Move", desc: "+1 move every round", icon: "🏃", rarity: 1, value: 1, cat: "tempo" },
+  { id: "m3", name: "+2 Moves", desc: "+2 moves every round", icon: "⚡", rarity: 1, value: 2, cat: "tempo" },
+  { id: "m5", name: "+3 Moves", desc: "+3 moves every round", icon: "🔥", rarity: 2, value: 3, cat: "tempo" },
+  { id: "m8", name: "+4 Moves", desc: "+4 moves every round", icon: "💎", rarity: 3, value: 4, cat: "tempo" },
+  { id: "start", name: "Head Start", desc: "+6 moves every round", icon: "🚀", rarity: 4, value: 6, cat: "tempo" },
+  { id: "lucky", name: "Lucky Drop", desc: "15% chance per pour: +1 move", icon: "🍀", rarity: 1, cat: "luck" },
+  { id: "lucky2", name: "Super Lucky", desc: "25% chance per pour: +1 move", icon: "🌟", rarity: 3, cat: "luck" },
+  { id: "combo3", name: "Combo Master", desc: "Every 4th pour in a row: +1 move", icon: "🎯", rarity: 2, cat: "flow" },
+  { id: "combo2", name: "Combo Legend", desc: "Every 3rd pour in a row: +1 move", icon: "🎪", rarity: 3, cat: "flow" },
+  { id: "mega", name: "Mega Bonus", desc: "Every 8th pour in a row: +2 moves", icon: "🎊", rarity: 2, cat: "flow" },
   { id: "clear", name: "Perfect Clear", desc: "Finish with 5+ moves left: +3 next round", icon: "✨", rarity: 2, cat: "flow" },
-  { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently", icon: "🔧", rarity: 3, cat: "board" },
-  { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round", icon: "🎁", rarity: 4, cat: "board" },
+  { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently (max 2)", icon: "🔧", rarity: 3, cat: "board" },
+  { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round (max 2)", icon: "🎁", rarity: 4, cat: "board" },
   /* Rare, high-impact roll — bypasses normal weighting entirely; see
      JACKPOT_CHANCE in gameLogic.js. Never offered on a plain draw. */
-  { id: "jackpot", name: "Jackpot!", desc: "+20 moves every round", icon: "🎰", rarity: 5, value: 20, cat: "tempo" },
+  { id: "jackpot", name: "Jackpot!", desc: "+8 moves every round", icon: "🎰", rarity: 5, value: 8, cat: "tempo" },
   /* Daily-challenge exclusive — never offered by pickRandomUpgrades, so the
      daily habit has a payoff normal runs can't get, not just the same pool
      seeded differently. */
