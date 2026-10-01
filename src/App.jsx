@@ -265,12 +265,19 @@ const CONFIRM_SCRIM_GUARD_MS = 400;
    "+3" on round 1 with no cards taken is otherwise a mystery. */
 function budgetLine(lvl, ruleName) {
   const sign = (n) => `${n > 0 ? "+" : "−"}${Math.abs(n)}`;
-  const parts = [`Par ${lvl.par}`];
+  const playPar = lvl.playPar ?? lvl.par;
+  if (lvl.suddenDeath) return `Sudden death · solve in ${playPar} · no bonus moves`;
+  const parts = [`Par ${playPar}`];
+  /* Board cards made this board easier than the par the budget was set from;
+     the difference is theirs, and keeps the line summing to the HUD. */
+  if (lvl.par > playPar) parts.push(`+${lvl.par - playPar} board cards`);
   if (lvl.buffer) parts.push(`+${lvl.buffer} spare`);
   if (lvl.drain) parts.push(`−${lvl.drain} drain`);
   if (lvl.carry) parts.push(`+${lvl.carry} carry`);
   if (lvl.cards) parts.push(`${sign(lvl.cards)} cards`);
   if (lvl.rule) parts.push(`${sign(lvl.rule)} ${ruleName || "rule"}`);
+  const sum = lvl.par + (lvl.buffer || 0) - (lvl.drain || 0) + (lvl.carry || 0) + (lvl.cards || 0) + (lvl.rule || 0);
+  if (lvl.moveLimit > sum) parts.push(`raised to par`);
   return parts.join(" · ");
 }
 
@@ -988,12 +995,26 @@ export default function Cascade() {
      fires once per new board (a retry of a boss round re-announces it, which
      is right — it is a new attempt at the same squeeze). */
   useEffect(() => {
-    if (screen !== "game" || !level.boss) return;
+    /* pendingResumeRef is still set here (this effect runs before the level
+       effect that consumes it): a daily resumed onto its upgrade cards has
+       already cleared this boss, so announcing it would be wrong. */
+    if (screen !== "game" || pendingResumeRef.current?.phase === "upgrade") return;
+    if (level.suddenDeath) {
+      showToast({
+        icon: "⚡",
+        color: "var(--danger)",
+        title: `Sudden death · round ${round}`,
+        message: `The drain has eaten your spare moves. Solve in ${level.playPar ?? level.par} — no lucky or combo moves this round.`,
+        duration: 3600,
+      });
+      return;
+    }
+    if (!level.boss) return;
     showToast({
       icon: "👹",
       color: "var(--danger)",
       title: `Boss round ${round}`,
-      message: "Half the spare moves. Clear it to choose from 4 upgrades instead of 3.",
+      message: "Half the spare moves. Clear it for one extra upgrade to choose from.",
       duration: 3200,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1556,7 +1577,7 @@ export default function Cascade() {
       // tier: 0 = plain pour, 1 = lucky roll, 2 = combo bonus, 3 = mega bonus.
       let bonus = 0, tier = 0;
       const luckyChance =
-        getLuckyChance(runUpgrades) + (isDaily && dailyTwist?.id === "lucky" ? LUCKY_DAY_BONUS : 0);
+        level.suddenDeath ? 0 : Math.min(0.5, getLuckyChance(runUpgrades) + (isDaily && dailyTwist?.id === "lucky" ? LUCKY_DAY_BONUS : 0));
       /* Daily: the roll is fixed by (day, round, pour number) so every
          player with the same luck upgrade gets the same drops. Math.random
          here made the daily a different game for each player, and let
@@ -1573,9 +1594,10 @@ export default function Cascade() {
          that actually earned it), re-running the modulo check on every
          later no-op pour would hand out the same bonus again and again for
          free — the exact free-moves exploit this whole change closes. */
-      const comboEvery = getComboEvery(runUpgrades);
+      /* Sudden death switches the per-pour refunds off (see generateLevel). */
+      const comboEvery = level.suddenDeath ? 0 : getComboEvery(runUpgrades);
       if (meaningful && comboEvery && newCombo % comboEvery === 0) { bonus += 1; tier = Math.max(tier, 2); }
-      const megaEvery = getMegaEvery(runUpgrades);
+      const megaEvery = level.suddenDeath ? 0 : getMegaEvery(runUpgrades);
       if (meaningful && megaEvery && newCombo % megaEvery === 0) { bonus += 2; tier = Math.max(tier, 3); }
       /* How many semitones to transpose this bonus's arpeggio up by (see
          semitones() in sound.js). Two per combo earned, so every rung of the
@@ -1675,6 +1697,24 @@ export default function Cascade() {
         });
       }
 
+      /* Normal run: keep the live position too, as the daily does. The save
+         used to exist only at round boundaries, so Exit -> Continue (or
+         closing the app) dealt the same board back with its FULL move count —
+         an unlimited free retry that made RETRIES_PER_RUN decorative. Now
+         leaving resumes exactly where the player was, moves spent included. */
+      if (canAssist && !isSolved(next) && newMovesLeft > 0) {
+        saveNormalRun({
+          round,
+          upgrades: upgradesNow,
+          level,
+          lastRoundMovesLeft,
+          path: runPath,
+          mutatorId: weeklyMutator ? weeklyMutator.id : null,
+          retriesLeft,
+          live: { tubes: next, moves: newMovesUsed, bonusMoves: newBonus, combo: newCombo },
+        });
+      }
+
       if (isSolved(next)) {
         roundDecidedRef.current = true;
         const remainingAtClear = newMovesLeft;
@@ -1693,7 +1733,7 @@ export default function Cascade() {
            will carry into the next board. One pop, so they never stack on
            top of each other. */
         {
-          const underPar = level.par > 0 && newMovesUsed <= level.par;
+          const underPar = level.par > 0 && newMovesUsed <= (level.playPar ?? level.par);
           const carryNext = Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
           const popText = underPar ? `Under par!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
           if (popText) {
@@ -1974,7 +2014,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, runPath, weeklyMutator, retriesLeft]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -2561,6 +2601,11 @@ export default function Cascade() {
         setRunUpgrades(resume.upgrades);
         setLastRoundMovesLeft(resume.lastRoundMovesLeft);
         setRetriesLeft(resume.retriesLeft);
+        /* Lay the live position over the restored board (consumed by the
+           level effect, the same hand-off the daily resume uses). */
+        pendingResumeRef.current = resume.live
+          ? { phase: "playing", tubes: resume.live.tubes, moves: resume.live.moves, bonusMoves: resume.live.bonusMoves, combo: resume.live.combo }
+          : null;
         setRetriedThisRound(false);
         setUndoUsedThisRun(false);
         setNewBestThisRun(false);
@@ -2946,7 +2991,7 @@ export default function Cascade() {
              badly understating it. */
           phase === "upgrade"
         ? "Your run is saved, but not this clear — the next board depends on the card you'd pick next. You'll pick this round up again from the start."
-        : "Your run is saved at the start of this round, and resumes from Home. Moves made in this round are lost.",
+        : "Your run is saved exactly where you are, and resumes from Home.",
       confirmLabel: "Exit",
       /* Danger for both kinds of real loss: a normal run with nothing on disk,
          and any score run (nothing is ever on disk for it). A score run that
@@ -3380,7 +3425,8 @@ export default function Cascade() {
                 looking at. The daily's badge is inherited from an existing
                 style and stays as it is. */}
             {isScore && <span style={S.dailyBadge}>SCORE</span>}
-            {level.boss && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>BOSS</span>}
+            {level.suddenDeath && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>⚡</span>}
+            {level.boss && !level.suddenDeath && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>BOSS</span>}
             Round {round}
           </div>
           {/* Three different records behind one word, so they can't share a
@@ -3389,7 +3435,7 @@ export default function Cascade() {
               points that their record was 9, and would silently mix the two
               modes' records. */}
           <div style={S.colorCount}>
-            {level.par ? `par ${level.par}` : `${level.colorCount} colors`} · best{" "}
+            {level.par ? `par ${level.playPar ?? level.par}` : `${level.colorCount} colors`} · best{" "}
             {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
           </div>
         </div>

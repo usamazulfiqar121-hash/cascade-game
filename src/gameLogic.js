@@ -971,15 +971,33 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
     + (twistId === "warm" ? 1 : 0)
     + (m && m.autoSortDelta ? m.autoSortDelta(round) : 0);
   tubes = applyAutoSort(tubes, autoSortCount, rng);
+  /* The par of the board the player actually gets. Lower than `par` once
+     board cards apply (an Auto-Sort saves ~4 moves on average). The budget is
+     built from `par`, so the cards pay off; the HUD, "Under par" and the floor
+     below use this one, so they describe the board on screen. */
+  const playPar = extraTubes || autoSortCount ? boardPar(tubes, colorCount) : par;
 
   const budget = moveBudget(round, par, prevMovesLeft);
   const moveBonus = sumMoveBonus(runUpgrades);
   const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
   const ruleDelta = twistMoveDelta(twistId, round) + (m && m.moveDelta ? m.moveDelta(round) : 0);
-  const moveLimit = Math.max(1, budget.base + moveBonus + perfectClearBonus + ruleDelta);
+  /* Never below the par of the board as played: however far the drain has
+     run, a perfect solve still clears the round. Late rounds become "par or
+     nothing" — the hardest the game gets, and still always winnable. Without
+     this a weak build hit rounds with a limit of 1 on a 20-move board,
+     unwinnable, while Retry kept offering to burn hearts on it. */
+  const unclamped = budget.base + moveBonus + perfectClearBonus + ruleDelta;
+  const moveLimit = Math.max(playPar, unclamped);
+  /* SUDDEN DEATH: the drain has eaten every spare move, so the round is
+     exactly par — and the per-pour refunds (luck, combo, mega) switch off.
+     Without that second half the floor made runs endless: refunds forgave
+     ~10 moves of mistakes a round, so a par-limit round was still easy, and a
+     simulated average player never died. Move cards still matter here — they
+     are what keeps a run OUT of sudden death for longer. */
+  const suddenDeath = unclamped < playPar;
 
   return {
-    tubes, moveLimit, colorCount, par,
+    tubes, moveLimit, colorCount, par, playPar, suddenDeath,
     boss: budget.boss, buffer: budget.buffer, carry: budget.carry, drain: budget.drain,
     cards: moveBonus + perfectClearBonus, rule: ruleDelta,
   };
@@ -1150,6 +1168,18 @@ export function loadNormalRun() {
     /* Saves from before retries were limited have no count: they get the
        full allowance rather than none, since that run never spent any. */
     if (!Number.isInteger(r.retriesLeft) || r.retriesLeft < 0 || r.retriesLeft > RETRIES_PER_RUN) r.retriesLeft = RETRIES_PER_RUN;
+    /* The live position is optional (a round-boundary save has none). A bad
+       one is dropped rather than the whole run: the round then restarts from
+       its saved start, which is what every save did before this existed. */
+    const L = r.live;
+    const ballCount = (T) => T.reduce((n, t) => n + t.length, 0);
+    if (L && !(Array.isArray(L.tubes) && L.tubes.length === r.level.tubes.length
+      && L.tubes.every((t) => Array.isArray(t) && t.length <= MAX_HEIGHT && t.every((b) => Number.isInteger(b) && b >= 0))
+      && ballCount(L.tubes) === ballCount(r.level.tubes)
+      && Number.isInteger(L.moves) && L.moves >= 0
+      && Number.isInteger(L.bonusMoves) && L.bonusMoves >= 0
+      && Number.isInteger(L.combo) && L.combo >= 0
+      && L.moves < r.level.moveLimit + L.bonusMoves)) r.live = null;
     return r;
   } catch {
     return null;
