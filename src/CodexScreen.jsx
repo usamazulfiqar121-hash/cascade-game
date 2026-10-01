@@ -16,10 +16,20 @@
    per-session number that would restart behind the player's back. */
 
 import { ARCHETYPES, CATEGORY, CATEGORY_ORDER, DAILY_TWISTS, UPGRADES, RULE_KIND_COLOR, RULE_KIND_LABEL } from "./constants";
-import { pickDailyTwist } from "./gameLogic";
+import { pickDailyTwist, MOVE_ECONOMY } from "./gameLogic";
 import { loadCodex } from "./codex";
 import { useMemo, useState } from "react";
 import { useEnterShield } from "./useEnterShield";
+
+/* The move budget, in the words the round-start line uses (see budgetLine in
+   App.jsx). Numbers come from MOVE_ECONOMY so this cannot drift from the code. */
+const MOVE_RULES = [
+  { icon: "⛳", name: "Par", desc: "The fewest moves this board can be solved in. Every round starts from it." },
+  { icon: "🫧", name: "Spare", desc: `Extra moves on top of par: +${Math.round(MOVE_ECONOMY.bufferStart * 100)}% on round 1, shrinking to +${Math.round(MOVE_ECONOMY.bufferEnd * 100)}% by round ${MOVE_ECONOMY.bufferRound}.` },
+  { icon: "🩸", name: "Drain", desc: `From round ${MOVE_ECONOMY.drainFrom + 1}, every round takes a few more moves away — and it speeds up. Your upgrades are what keep you ahead of it.` },
+  { icon: "↪️", name: "Carry", desc: `Half the moves you finish a round with roll into the next one, up to ${MOVE_ECONOMY.carryCap}. Solve tight, start the next board richer.` },
+  { icon: "👹", name: "Boss", desc: `Every ${MOVE_ECONOMY.bossEvery}th round has half the spare moves. Clear it and you choose from 4 upgrades instead of 3.` },
+];
 
 /* The same three-way split the daily twist disclosure already uses, so the
    rule reads identically wherever it appears — except the map itself, which
@@ -115,6 +125,26 @@ export default function CodexScreen({ onClose, onBack, closing = false }) {
           Every run opens with a <span style={S.introEm}>path</span> that favours two upgrade
           types for your first few picks. It&apos;s a nudge, not a lock — the cards you take
           decide where the run actually goes.
+        </div>
+
+        {/* ── HOW MOVES WORK ──
+            First, because every other section is about getting more out of
+            this one: paths, cards and rules are all ways of beating the move
+            budget, and a player who can't see how the budget is made can't
+            judge any of them. The same five words appear under the board at
+            the start of every round, so this is the long form of a line the
+            player has already read. */}
+        <div style={S.sectionLabel}>HOW MOVES WORK</div>
+        <div style={S.stack}>
+          {MOVE_RULES.map((r) => (
+            <div key={r.name} style={S.row}>
+              <div style={S.rowIcon} aria-hidden="true">{r.icon}</div>
+              <div style={S.rowBody}>
+                <div style={S.rowName}>{r.name}</div>
+                <div style={S.rowDesc}>{r.desc}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* ── PATHS ── */}

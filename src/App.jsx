@@ -17,7 +17,7 @@ import {
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
-  weekMutator, mutatorById,
+  weekMutator, mutatorById, offerCount,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -255,6 +255,24 @@ function DailyResetCountdown() {
 const UPGRADE_TAP_GUARD_MS = 500;
 const SCREEN_SHIELD_MS = 350;
 const CONFIRM_SCRIM_GUARD_MS = 400;
+
+/* The round's move budget in one line, shown under the board until the first
+   pour: where the number in the HUD came from. Without it the economy is
+   invisible — the count just looks arbitrary, and a player cannot tell a
+   boss squeeze from a bad card from their own leftover paying off. Zero
+   parts are left out so round 1 reads "Par 5 · +4 spare", not a sum of
+   zeros. The rule (daily twist or the week's mutator) is named, because
+   "+3" on round 1 with no cards taken is otherwise a mystery. */
+function budgetLine(lvl, ruleName) {
+  const sign = (n) => `${n > 0 ? "+" : "−"}${Math.abs(n)}`;
+  const parts = [`Par ${lvl.par}`];
+  if (lvl.buffer) parts.push(`+${lvl.buffer} spare`);
+  if (lvl.drain) parts.push(`−${lvl.drain} drain`);
+  if (lvl.carry) parts.push(`+${lvl.carry} carry`);
+  if (lvl.cards) parts.push(`${sign(lvl.cards)} cards`);
+  if (lvl.rule) parts.push(`${sign(lvl.rule)} ${ruleName || "rule"}`);
+  return parts.join(" · ");
+}
 
 export default function Cascade() {
   const [round, setRound] = useState(1);
@@ -961,6 +979,23 @@ export default function Cascade() {
       toastTimerRef.current = setTimeout(() => setToast(null), 240);
     }, config.duration ?? 2600);
   }, []);
+
+  /* A boss round is announced when its board arrives, not discovered when the
+     moves run short: the squeeze only creates tension if the player knows it
+     is coming and what clearing it pays. Keyed on the level object, so it
+     fires once per new board (a retry of a boss round re-announces it, which
+     is right — it is a new attempt at the same squeeze). */
+  useEffect(() => {
+    if (screen !== "game" || !level.boss) return;
+    showToast({
+      icon: "👹",
+      color: "var(--danger)",
+      title: `Boss round ${round}`,
+      message: "Half the spare moves. Clear it to choose from 4 upgrades instead of 3.",
+      duration: 3200,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level]);
 
   useEffect(() => {
     return () => {
@@ -1760,14 +1795,14 @@ export default function Cascade() {
             setPendingUpgrades(
               pickDailyUpgrades(
                 dailyRoundSeed(round, DAILY_STREAM.upgrades, dailyRunDateRef.current || new Date()),
-                dailyTwist?.id === "feast" ? FEAST_CARD_COUNT : 3,
+                offerCount(round, dailyTwist?.id === "feast" ? FEAST_CARD_COUNT : 3),
                 runUpgrades,
                 runFocus,
               ),
             );
             setJackpotNearMiss(false);
           } else {
-            const { upgrades, jackpotNearMiss } = pickRandomUpgrades(3, runUpgrades, Math.random, runFocus);
+            const { upgrades, jackpotNearMiss } = pickRandomUpgrades(offerCount(round), runUpgrades, Math.random, runFocus);
             setPendingUpgrades(upgrades);
             setJackpotNearMiss(jackpotNearMiss);
           }
@@ -2444,7 +2479,7 @@ export default function Cascade() {
               saved.phase === "upgrade"
                 ? pickDailyUpgrades(
                     dailyRoundSeed(saved.round, DAILY_STREAM.upgrades, runDate),
-                    twist.id === "feast" ? FEAST_CARD_COUNT : 3,
+                    offerCount(saved.round, twist.id === "feast" ? FEAST_CARD_COUNT : 3),
                     saved.upgrades,
                     resumedPath.cats,
                   )
@@ -3308,7 +3343,7 @@ export default function Cascade() {
         ))}
       </div>
 
-      <div style={S.hud} className={isDaily || isScore ? "hud-daily" : undefined}>
+      <div style={S.hud} className={isDaily || isScore || level.boss ? "hud-daily" : undefined}>
         <div>
           <div style={S.roundLabel} className="hud-round">
             {isDaily && <span style={S.dailyBadge}>DAILY</span>}
@@ -3319,6 +3354,7 @@ export default function Cascade() {
                 looking at. The daily's badge is inherited from an existing
                 style and stays as it is. */}
             {isScore && <span style={S.dailyBadge}>SCORE</span>}
+            {level.boss && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>BOSS</span>}
             Round {round}
           </div>
           {/* Three different records behind one word, so they can't share a
@@ -3327,7 +3363,7 @@ export default function Cascade() {
               points that their record was 9, and would silently mix the two
               modes' records. */}
           <div style={S.colorCount}>
-            {level.colorCount} colors · best{" "}
+            {level.par ? `par ${level.par}` : `${level.colorCount} colors`} · best{" "}
             {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
           </div>
         </div>
@@ -3478,7 +3514,11 @@ export default function Cascade() {
 
       <div style={S.footer}>
         {phase === "playing" && (
-          <div style={S.hint}>{selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}</div>
+          <div style={S.hint}>
+            {selected === null && moves === 0 && level.par
+              ? budgetLine(level, isDaily ? dailyTwist?.name : weeklyMutator?.name)
+              : selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}
+          </div>
         )}
       </div>
 

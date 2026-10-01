@@ -827,6 +827,13 @@ export const MOVE_ECONOMY = {
 };
 export const BOARD_CARD_CAP = 2; // Extra Tube / Auto-Sort: at most two of each
 
+/* Clearing a boss round is paid in choice, not moves: one extra card on the
+   offer that follows it. Moves would feed straight back into the economy the
+   boss exists to squeeze; a wider pick makes the build better instead. */
+export function offerCount(round, base = 3) {
+  return base + (isBossRound(round) ? 1 : 0);
+}
+
 export function isBossRound(round) {
   return round > 0 && round % MOVE_ECONOMY.bossEvery === 0;
 }
@@ -961,13 +968,14 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
   const budget = moveBudget(round, par, prevMovesLeft);
   const moveBonus = sumMoveBonus(runUpgrades);
   const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
-  const moveLimit = Math.max(
-    1,
-    budget.base + moveBonus + perfectClearBonus + twistMoveDelta(twistId, round)
-      + (m && m.moveDelta ? m.moveDelta(round) : 0),
-  );
+  const ruleDelta = twistMoveDelta(twistId, round) + (m && m.moveDelta ? m.moveDelta(round) : 0);
+  const moveLimit = Math.max(1, budget.base + moveBonus + perfectClearBonus + ruleDelta);
 
-  return { tubes, moveLimit, colorCount, par, boss: budget.boss, carry: budget.carry, drain: budget.drain };
+  return {
+    tubes, moveLimit, colorCount, par,
+    boss: budget.boss, buffer: budget.buffer, carry: budget.carry, drain: budget.drain,
+    cards: moveBonus + perfectClearBonus, rule: ruleDelta,
+  };
 }
 
 /* ═══════════ DAILY MODE — STATE MANAGEMENT ═══════════ */
