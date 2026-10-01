@@ -1,49 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Background: dark navy gradient -->
-  <defs>
-    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
-      <stop offset="0%" stop-color="#121A31"/>
-      <stop offset="100%" stop-color="#0A0F1F"/>
-    </radialGradient>
-    <linearGradient id="blueBall" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#5A9BFF"/>
-      <stop offset="100%" stop-color="#2F7BF6"/>
-    </linearGradient>
-    <linearGradient id="redBall" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FF7A8C"/>
-      <stop offset="100%" stop-color="#FF4D6A"/>
-    </linearGradient>
-    <linearGradient id="tubeGlass" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.08)"/>
-      <stop offset="100%" stop-color="rgba(255,255,255,0.02)"/>
-    </linearGradient>
-  </defs>
-
-  <!-- Background -->
-  <rect width="1024" height="1024" fill="url(#bg)"/>
-  <rect width="1024" height="1024" fill="url(#bg)" rx="0"/>
-
-  <!-- Left tube (blue) -->
-  <g transform="translate(180, 220)">
-    <!-- Tube outline -->
-    <rect x="0" y="0" width="280" height="600" rx="140" ry="140"
-          fill="url(#tubeGlass)"
-          stroke="rgba(140,170,255,0.25)" stroke-width="6"/>
-    <!-- Balls (4, stacked from bottom) -->
-    <circle cx="140" cy="470" r="62" fill="url(#blueBall)"/>
-    <circle cx="140" cy="350" r="62" fill="url(#blueBall)"/>
-    <circle cx="140" cy="230" r="62" fill="url(#blueBall)"/>
-    <circle cx="140" cy="110" r="62" fill="url(#blueBall)"/>
-  </g>
-
-  <!-- Right tube (red) -->
-  <g transform="translate(564, 220)">
-    <rect x="0" y="0" width="280" height="600" rx="140" ry="140"
-          fill="url(#tubeGlass)"
-          stroke="rgba(255,120,150,0.25)" stroke-width="6"/>
-    <circle cx="140" cy="470" r="62" fill="url(#redBall)"/>
-    <circle cx="140" cy="350" r="62" fill="url(#redBall)"/>
-    <circle cx="140" cy="230" r="62" fill="url(#redBall)"/>
-    <circle cx="140" cy="110" r="62" fill="url(#redBall)"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+<linearGradient id="glassg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#121A52"/><stop offset="1" stop-color="#1E2E80"/></linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6A5CFF"/><stop offset="0.5" stop-color="#3B6FE8"/><stop offset="1" stop-color="#1A2A6C"/></linearGradient>
+<radialGradient id="shine" cx="0.38" cy="0.32" r="0.72"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="#1A0B4A" stop-opacity="0.35"/></radialGradient>
+<radialGradient id="glow" gradientUnits="userSpaceOnUse" cx="784" cy="356" r="420"><stop offset="0" stop-color="#9CC2FF" stop-opacity="0.0"/><stop offset="1" stop-color="#9CC2FF" stop-opacity="0"/></radialGradient><radialGradient id="vig" cx="0.5" cy="0.45" r="0.75"><stop offset="0.6" stop-color="#05061A" stop-opacity="0"/><stop offset="1" stop-color="#05061A" stop-opacity="0.35"/></radialGradient></defs><rect width="1024" height="1024" fill="url(#bg)"/><rect width="1024" height="1024" fill="url(#vig)"/><g transform="translate(-142.6 -14.8) scale(1.1113)"><path d="M409.2 294.0 L236.7 592.8 A125.0 125.0 0 0 0 453.3 717.8 L625.8 419.0 Z" fill="url(#glassg)"/>
+<circle cx="339.0" cy="665.7" r="99" fill="#0E0A3A" fill-opacity="0.85"/><circle cx="339.0" cy="665.7" r="94" fill="#0A0830" fill-opacity="0.28" transform="translate(0 8)"/><circle cx="339.0" cy="665.7" r="92" fill="#FF4D6A"/><circle cx="339.0" cy="665.7" r="92" fill="url(#shine)"/><ellipse cx="309.6" cy="630.7" rx="23.9" ry="14.7" fill="#FFFFFF" fill-opacity="0.75" transform="rotate(-30 309.6 630.7)"/>
+<circle cx="434.0" cy="501.1" r="99" fill="#0E0A3A" fill-opacity="0.85"/><circle cx="434.0" cy="501.1" r="94" fill="#0A0830" fill-opacity="0.28" transform="translate(0 8)"/><circle cx="434.0" cy="501.1" r="92" fill="#FF4D6A"/><circle cx="434.0" cy="501.1" r="92" fill="url(#shine)"/><ellipse cx="404.6" cy="466.2" rx="23.9" ry="14.7" fill="#FFFFFF" fill-opacity="0.75" transform="rotate(-30 404.6 466.2)"/>
+<path d="M409.2 294.0 L236.7 592.8 A125.0 125.0 0 0 0 453.3 717.8 L625.8 419.0" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M436.4 355.8 L278.9 628.6" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="22" stroke-linecap="round"/>
+<ellipse cx="517.5" cy="356.5" rx="143.7" ry="34.0" transform="rotate(30.00 517.5 356.5)" fill="#1B2A7A" fill-opacity="0.55" stroke="#FFFFFF" stroke-width="27"/>
+<circle cx="579.6" cy="248.9" r="99" fill="#0E0A3A" fill-opacity="0.85"/><circle cx="579.6" cy="248.9" r="94" fill="#0A0830" fill-opacity="0.28" transform="translate(0 8)"/><circle cx="579.6" cy="248.9" r="92" fill="#FFC24B"/><circle cx="579.6" cy="248.9" r="92" fill="url(#shine)"/><ellipse cx="550.2" cy="214.0" rx="23.9" ry="14.7" fill="#FFFFFF" fill-opacity="0.75" transform="rotate(-30 550.2 214.0)"/>
+<circle cx="784.4" cy="355.5" r="99" fill="#0E0A3A" fill-opacity="0.85"/><circle cx="784.4" cy="355.5" r="94" fill="#0A0830" fill-opacity="0.28" transform="translate(0 8)"/><circle cx="784.4" cy="355.5" r="92" fill="#FFC24B"/><circle cx="784.4" cy="355.5" r="92" fill="url(#shine)"/><ellipse cx="754.9" cy="320.6" rx="23.9" ry="14.7" fill="#FFFFFF" fill-opacity="0.75" transform="rotate(-30 754.9 320.6)"/>
+<circle cx="877.0" cy="567.8" r="99" fill="#0E0A3A" fill-opacity="0.85"/><circle cx="877.0" cy="567.8" r="94" fill="#0A0830" fill-opacity="0.28" transform="translate(0 8)"/><circle cx="877.0" cy="567.8" r="92" fill="#FFC24B"/><circle cx="877.0" cy="567.8" r="92" fill="url(#shine)"/><ellipse cx="847.5" cy="532.8" rx="23.9" ry="14.7" fill="#FFFFFF" fill-opacity="0.75" transform="rotate(-30 847.5 532.8)"/></g></svg>

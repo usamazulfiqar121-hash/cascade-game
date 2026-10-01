@@ -1,9 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <defs>
-    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
-      <stop offset="0%" stop-color="#121A31"/>
-      <stop offset="100%" stop-color="#0A0F1F"/>
-    </radialGradient>
-  </defs>
-  <rect width="1024" height="1024" fill="url(#bg)"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+<linearGradient id="glassg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#121A52"/><stop offset="1" stop-color="#1E2E80"/></linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6A5CFF"/><stop offset="0.5" stop-color="#3B6FE8"/><stop offset="1" stop-color="#1A2A6C"/></linearGradient>
+<radialGradient id="shine" cx="0.38" cy="0.32" r="0.72"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="1" stop-color="#1A0B4A" stop-opacity="0.35"/></radialGradient>
+<radialGradient id="glow" gradientUnits="userSpaceOnUse" cx="784" cy="356" r="420"><stop offset="0" stop-color="#9CC2FF" stop-opacity="0.0"/><stop offset="1" stop-color="#9CC2FF" stop-opacity="0"/></radialGradient><radialGradient id="vig" cx="0.5" cy="0.45" r="0.75"><stop offset="0.6" stop-color="#05061A" stop-opacity="0"/><stop offset="1" stop-color="#05061A" stop-opacity="0.35"/></radialGradient></defs><rect width="1024" height="1024" fill="url(#bg)"/><rect width="1024" height="1024" fill="url(#vig)"/></svg>
