@@ -1032,7 +1032,10 @@ export default function Cascade() {
     if (!level.boss) {
       /* The drain is the one rule that changes every round without an event
          to announce it, so its first appearance is explained once, ever. */
-      if (level.drain > 0) {
+      /* Round 3 only — the drain's real first appearance. Otherwise an
+         existing player would get "the drain has started" mid-run at round
+         15 the first time they open this build. */
+      if (level.drain > 0 && round <= 3) {
         let seen = false;
         try { seen = localStorage.getItem("cascade:tipDrain") === "1"; } catch {}
         if (!seen) {
@@ -1764,7 +1767,10 @@ export default function Cascade() {
          board — not ~0.5s later in the transition timer. A live save one pour
          before the solve let Exit -> Continue -> one pour re-roll the cards
          (Jackpot included) as often as the player liked. */
-      const clearedUnderPar = isSolved(next) && level.par > 0 && newMovesUsed <= (level.playPar ?? level.par);
+      /* Not in sudden death: there the limit IS the target, so every clear
+         would count and Marksman would pay +4 for nothing — the exact
+         "fires by itself" flaw Perfect Clear was replaced for. */
+      const clearedUnderPar = isSolved(next) && level.par > 0 && !level.suddenDeath && newMovesUsed <= (level.playPar ?? level.par);
       const solvedOffer = isSolved(next) && !isDaily
         ? pickRandomUpgrades(offerCount(round), runUpgrades, Math.random, runFocus)
         : null;
@@ -1793,10 +1799,12 @@ export default function Cascade() {
            will carry into the next board. One pop, so they never stack on
            top of each other. */
         {
-          const underPar = clearedUnderPar && !level.suddenDeath;
-          /* Glass Cannon gives up Carry, so there is none to announce. */
-          const carryNext = runUpgrades.includes("glass") ? 0 : Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
-          const popText = underPar ? `On target!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
+          const underPar = clearedUnderPar;
+          /* Only what is already certain. The carry used to be announced here
+             too, but the card picked next (Glass Cannon) can still cancel it,
+             so the pop could promise moves that never arrived; the carry is
+             shown on the next board's budget line instead. */
+          const popText = underPar ? "On target!" : null;
           if (popText) {
             const pid = Date.now() + Math.random();
             armEphemeral(() => setBonusPops((p) => [...p, { id: pid, text: popText }]), Math.max(0, impactMs));
@@ -2591,7 +2599,12 @@ export default function Cascade() {
           dailyRoundSeed(saved.round, DAILY_STREAM.board, runDate),
           false, twist,
           null,
-          saved.genUnderPar === true,
+          /* A daily saved before this field existed was built with Perfect
+             Clear's rule (5+ moves left); honouring that here means the run
+             can only resume with MORE moves than it had, never fewer. */
+          saved.genUnderPar === undefined
+            ? saved.upgrades.includes("clear") && saved.genPrevLeft >= 5
+            : saved.genUnderPar === true,
         );
         if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
           dailyRunDateRef.current = runDate;
@@ -4404,6 +4417,7 @@ export default function Cascade() {
                    localStorage.removeItem(SCORE_BEST_KEY);
                    localStorage.removeItem(SCORE_RUNS_KEY);
                    localStorage.removeItem(SCORE_TRIES_KEY);
+                   localStorage.removeItem("cascade:tipDrain");
                  } catch {}
                  setScoreTries(0);
                  setScoreBest(0);

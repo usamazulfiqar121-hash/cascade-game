@@ -255,12 +255,12 @@ export const UPGRADES = [
      par economy that fired on its own every early round (carry alone left 5)
      and never late, so it asked nothing of the player. Now it pays for skill:
      the id stays "clear" so saved runs keep the card. */
-  { id: "clear", name: "Par Master", desc: "Solve a round within its target: +4 moves next round", icon: "🎯", rarity: 2, cat: "flow" },
+  { id: "clear", name: "Marksman", desc: "Solve a round within its target: +4 moves next round", icon: "🏹", rarity: 2, cat: "flow" },
   /* Trade-off cards: each one GIVES something and COSTS something, so the
      pick depends on the run and the player rather than on the bigger number.
      Balanced in simulation against the rest of the pool (see MOVE_ECONOMY). */
   { id: "glass", name: "Glass Cannon", desc: "+5 moves every round, but you lose Carry", icon: "💪", rarity: 3, value: 5, cat: "tempo" },
-  { id: "invest", name: "Investment", desc: "+1 move next round, growing by +1 every round after", icon: "🌱", rarity: 2, cat: "tempo" },
+  { id: "invest", name: "Investment", desc: "+1 move next round, growing by +1 every round after (max +10)", icon: "🌱", rarity: 2, cat: "tempo" },
   { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently (max 2)", icon: "🔧", rarity: 3, cat: "board" },
   { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round (max 2)", icon: "🎁", rarity: 4, cat: "board" },
   /* Rare, high-impact roll — bypasses normal weighting entirely; see
