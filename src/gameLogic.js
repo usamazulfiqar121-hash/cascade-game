@@ -17,7 +17,7 @@ export function sumMoveBonus(ups) {
    each is a rare-ish pick — a real engine you build, not a default. */
 export const LUCK_CAP = 0.4;
 export function getLuckyChance(ups) {
-  return Math.min(LUCK_CAP, ups.reduce((s, id) => s + (id === "lucky" ? 0.15 : id === "lucky2" ? 0.25 : 0), 0));
+  return Math.min(LUCK_CAP, ups.reduce((s, id) => s + (id === "lucky" ? 0.2 : id === "lucky2" ? 0.25 : 0), 0));
 }
 
 export function getComboEvery(ups) {
@@ -826,6 +826,19 @@ export const MOVE_ECONOMY = {
   carryCap: 6,
 };
 export const BOARD_CARD_CAP = 2; // Extra Tube / Auto-Sort: at most two of each
+export const PAR_MASTER_BONUS = 4;
+export const INVEST_CAP = 10;
+
+/* Investment grows with the rounds since it was taken. A run takes exactly
+   one card per cleared round, so a card's index in the list IS the round it
+   was taken after (index 0 -> after round 1). The first round after taking it
+   pays +1, then +2, ... up to INVEST_CAP. Derived, not stored, so a saved or
+   resumed run (and a daily, regenerated from its upgrade list) always agrees. */
+export function investmentBonus(ups, round) {
+  const i = ups.indexOf("invest");
+  if (i === -1) return 0;
+  return Math.max(0, Math.min(INVEST_CAP, round - 1 - i));
+}
 /* Retries per NORMAL run (the daily and score attack have none). Was
    unlimited — and a retry also deals an easier recovery board — so a normal
    run could not actually end: every loss was one tap from undone, and the
@@ -923,7 +936,7 @@ export function boardPar(tubes, colorCount = 0) {
     to the same board. Callers pass `null` for a daily. Every hook is optional
     and defaults to 0, so a mutator object that defines none of them changes
     nothing. */
-export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false, twist = null, mutator = null) {
+export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false, twist = null, mutator = null, prevUnderPar = false) {
   const twistId = twist && typeof twist === "object" ? twist.id : twist;
   const m = mutator && typeof mutator === "object" ? mutator : null;
   const rng = seed !== null ? mulberry32(seed) : Math.random;
@@ -981,9 +994,11 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
      because of a card meant to help. */
   const playPar = extraTubes || autoSortCount ? Math.min(par, boardPar(tubes, colorCount)) : par;
 
-  const budget = moveBudget(round, par, prevMovesLeft);
-  const moveBonus = sumMoveBonus(runUpgrades);
-  const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
+  /* Glass Cannon's cost: no carry at all. */
+  const budget = moveBudget(round, par, runUpgrades.includes("glass") ? 0 : prevMovesLeft);
+  const moveBonus = sumMoveBonus(runUpgrades) + investmentBonus(runUpgrades, round);
+  /* Par Master ("clear"): the last round was solved within its target. */
+  const perfectClearBonus = runUpgrades.includes("clear") && prevUnderPar ? PAR_MASTER_BONUS : 0;
   const ruleDelta = twistMoveDelta(twistId, round) + (m && m.moveDelta ? m.moveDelta(round) : 0);
   /* Never below the par of the board as played: however far the drain has
      run, a perfect solve still clears the round. Late rounds become "par or
@@ -1172,6 +1187,7 @@ export function loadNormalRun() {
     /* Saves from before retries were limited have no count: they get the
        full allowance rather than none, since that run never spent any. */
     if (!Number.isInteger(r.retriesLeft) || r.retriesLeft < 0 || r.retriesLeft > RETRIES_PER_RUN) r.retriesLeft = RETRIES_PER_RUN;
+    r.lastRoundUnderPar = r.lastRoundUnderPar === true;
     /* The live position is optional (a round-boundary save has none). A bad
        one is dropped rather than the whole run: the round then restarts from
        its saved start, which is what every save did before this existed. */
@@ -1275,6 +1291,9 @@ export function isDeadUpgrade(id, owned = []) {
     case "tube":
     case "auto":
       return owned.filter((x) => x === id).length >= BOARD_CARD_CAP;
+    case "glass":
+    case "invest":
+      return owned.includes(id);
     default:
       return false;
   }

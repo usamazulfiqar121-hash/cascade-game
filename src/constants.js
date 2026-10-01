@@ -246,12 +246,21 @@ export const UPGRADES = [
   { id: "m5", name: "+3 Moves", desc: "+3 moves every round", icon: "🔥", rarity: 2, value: 3, cat: "tempo" },
   { id: "m8", name: "+4 Moves", desc: "+4 moves every round", icon: "💎", rarity: 3, value: 4, cat: "tempo" },
   { id: "start", name: "Head Start", desc: "+6 moves every round", icon: "🚀", rarity: 4, value: 6, cat: "tempo" },
-  { id: "lucky", name: "Lucky Drop", desc: "15% chance per pour: +1 move", icon: "🍀", rarity: 1, cat: "luck" },
+  { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1, cat: "luck" },
   { id: "lucky2", name: "Super Lucky", desc: "25% chance per pour: +1 move", icon: "🌟", rarity: 3, cat: "luck" },
   { id: "combo3", name: "Combo Master", desc: "Every 4th pour in a row: +1 move", icon: "🎯", rarity: 2, cat: "flow" },
   { id: "combo2", name: "Combo Legend", desc: "Every 3rd pour in a row: +1 move", icon: "🎪", rarity: 3, cat: "flow" },
   { id: "mega", name: "Mega Bonus", desc: "Every 8th pour in a row: +2 moves", icon: "🎊", rarity: 2, cat: "flow" },
-  { id: "clear", name: "Perfect Clear", desc: "Finish with 5+ moves left: +3 next round", icon: "✨", rarity: 2, cat: "flow" },
+  /* Was "Perfect Clear: finish with 5+ moves left: +3 next round". Under the
+     par economy that fired on its own every early round (carry alone left 5)
+     and never late, so it asked nothing of the player. Now it pays for skill:
+     the id stays "clear" so saved runs keep the card. */
+  { id: "clear", name: "Par Master", desc: "Solve a round within its target: +4 moves next round", icon: "🎯", rarity: 2, cat: "flow" },
+  /* Trade-off cards: each one GIVES something and COSTS something, so the
+     pick depends on the run and the player rather than on the bigger number.
+     Balanced in simulation against the rest of the pool (see MOVE_ECONOMY). */
+  { id: "glass", name: "Glass Cannon", desc: "+5 moves every round, but you lose Carry", icon: "💪", rarity: 3, value: 5, cat: "tempo" },
+  { id: "invest", name: "Investment", desc: "+1 move next round, growing by +1 every round after", icon: "🌱", rarity: 2, cat: "tempo" },
   { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently (max 2)", icon: "🔧", rarity: 3, cat: "board" },
   { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round (max 2)", icon: "🎁", rarity: 4, cat: "board" },
   /* Rare, high-impact roll — bypasses normal weighting entirely; see

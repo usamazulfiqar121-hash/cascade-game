@@ -665,6 +665,11 @@ export default function Cascade() {
      path checks it; the level effect clears it for the next round. */
   const roundDecidedRef = useRef(false);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
+  /* Whether the round that fed this one was solved within its target — Par
+     Master's trigger. Travels exactly where lastRoundMovesLeft travels (both
+     saves, retry, resume), for the same reason: it is an input to the next
+     board's move limit. */
+  const [lastRoundUnderPar, setLastRoundUnderPar] = useState(false);
   /* Shown only on the game-over overlay. Distinct from lastRoundMovesLeft
      (which is the moves left when the last round was *cleared* and feeds
      Perfect Clear). On a loss, "moves left" was still reporting the number
@@ -1480,7 +1485,7 @@ export default function Cascade() {
   const roundTransitionRef = useRef(null);
 
   normalSaveBaseRef.current = {
-    round, upgrades: runUpgrades, level, lastRoundMovesLeft, path: runPath,
+    round, upgrades: runUpgrades, level, lastRoundMovesLeft, lastRoundUnderPar, path: runPath,
     mutatorId: weeklyMutator ? weeklyMutator.id : null, retriesLeft,
   };
   /* Writes the normal run's save with a live position: every pour, undo and
@@ -1705,6 +1710,7 @@ export default function Cascade() {
           round,
           upgrades: upgradesNow,
           genPrevLeft: lastRoundMovesLeft,
+          genUnderPar: lastRoundUnderPar,
           nextPrevLeft: 0,
           tubes: next,
           moves: newMovesUsed,
@@ -1727,13 +1733,14 @@ export default function Cascade() {
          board — not ~0.5s later in the transition timer. A live save one pour
          before the solve let Exit -> Continue -> one pour re-roll the cards
          (Jackpot included) as often as the player liked. */
+      const clearedUnderPar = isSolved(next) && level.par > 0 && newMovesUsed <= (level.playPar ?? level.par);
       const solvedOffer = isSolved(next) && !isDaily
         ? pickRandomUpgrades(offerCount(round), runUpgrades, Math.random, runFocus)
         : null;
       if (solvedOffer && canAssist) {
         saveNormalLive({
           tubes: next, moves: newMovesUsed, bonusMoves: newBonus, combo: newCombo, undoLeft, hintLeft, undoUsed: undoUsedThisRun,
-          offer: solvedOffer.upgrades.map((u) => u.id), jackpotNearMiss: solvedOffer.jackpotNearMiss, clearedLeft: Math.max(0, newMovesLeft),
+          offer: solvedOffer.upgrades.map((u) => u.id), jackpotNearMiss: solvedOffer.jackpotNearMiss, clearedLeft: Math.max(0, newMovesLeft), clearedUnderPar,
         });
       }
 
@@ -1755,8 +1762,9 @@ export default function Cascade() {
            will carry into the next board. One pop, so they never stack on
            top of each other. */
         {
-          const underPar = level.par > 0 && !level.suddenDeath && newMovesUsed <= (level.playPar ?? level.par);
-          const carryNext = Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
+          const underPar = clearedUnderPar && !level.suddenDeath;
+          /* Glass Cannon gives up Carry, so there is none to announce. */
+          const carryNext = runUpgrades.includes("glass") ? 0 : Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
           const popText = underPar ? `Under par!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
           if (popText) {
             const pid = Date.now() + Math.random();
@@ -1811,7 +1819,9 @@ export default function Cascade() {
             round,
             upgrades: runUpgrades,
             genPrevLeft: lastRoundMovesLeft,
+            genUnderPar: lastRoundUnderPar,
             nextPrevLeft: remainingAtClear,
+            nextUnderPar: clearedUnderPar,
             tubes: next,
             moves: newMovesUsed,
             bonusMoves: newBonus,
@@ -1867,6 +1877,7 @@ export default function Cascade() {
           if (screenRef.current !== "game") return;
           const quietClear = navStateRef.current.confirmDialog;
           setLastRoundMovesLeft(remainingAtClear);
+          setLastRoundUnderPar(clearedUnderPar);
           /* Daily upgrade choices must be identical for every player too —
              pickRandomUpgrades() alone used Math.random even in daily mode,
              so two players clearing the same round saw different 3 cards. */
@@ -2035,7 +2046,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, runPath, weeklyMutator, retriesLeft, hintLeft]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, runPath, weeklyMutator, retriesLeft, hintLeft, lastRoundUnderPar]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -2274,6 +2285,7 @@ export default function Cascade() {
       nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound,
       isDaily ? dailyTwist : null,
       isDaily ? null : weeklyMutator,
+      lastRoundUnderPar,
     );
     setLevel(nextLevel);
     setRetriedThisRound(false);
@@ -2283,6 +2295,7 @@ export default function Cascade() {
         round: nextRound,
         upgrades: newUpgrades,
         genPrevLeft: lastRoundMovesLeft,
+        genUnderPar: lastRoundUnderPar,
         nextPrevLeft: 0,
         tubes: nextLevel.tubes,
         moves: 0,
@@ -2325,6 +2338,7 @@ export default function Cascade() {
         upgrades: newUpgrades,
         level: nextLevel,
         lastRoundMovesLeft,
+        lastRoundUnderPar,
         path: runPath,
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
         retriesLeft,
@@ -2332,7 +2346,7 @@ export default function Cascade() {
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator, retriesLeft]);
+  }, [round, runUpgrades, lastRoundMovesLeft, lastRoundUnderPar, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator, retriesLeft]);
 
   /* A retry re-rolls the same round from the same seed, so a daily retry
      reproduces the board exactly as it was — and must NOT pick up the weekly
@@ -2365,6 +2379,7 @@ export default function Cascade() {
       round, runUpgrades, lastRoundMovesLeft, seed, false,
       isDaily ? dailyTwist : null,
       isDaily ? null : weeklyMutator,
+      lastRoundUnderPar,
     );
     setLevel(nextLevel);
     setRetriedThisRound(true);
@@ -2385,12 +2400,13 @@ export default function Cascade() {
         upgrades: runUpgrades,
         level: nextLevel,
         lastRoundMovesLeft,
+        lastRoundUnderPar,
         path: runPath,
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
         retriesLeft: left,
       });
     }
-  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, canAssist, dailyTwist, weeklyMutator, runPath, retriesLeft]);
+  }, [round, runUpgrades, lastRoundMovesLeft, lastRoundUnderPar, isDaily, canAssist, dailyTwist, weeklyMutator, runPath, retriesLeft]);
 
   /* Takes the opening archetype. Deliberately does NOT touch the board: the
      round-1 level was already generated from (round, upgrades) and the
@@ -2415,6 +2431,7 @@ export default function Cascade() {
 
   const restartRun = useCallback(() => {
     runTokenRef.current += 1;
+    setLastRoundUnderPar(false);
     setRound(1);
     setRunUpgrades([]);
     setLastRoundMovesLeft(0);
@@ -2543,6 +2560,7 @@ export default function Cascade() {
           dailyRoundSeed(saved.round, DAILY_STREAM.board, runDate),
           false, twist,
           null,
+          saved.genUnderPar === true,
         );
         if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
           dailyRunDateRef.current = runDate;
@@ -2581,6 +2599,7 @@ export default function Cascade() {
           setRound(saved.round);
           setRunUpgrades(saved.upgrades);
           setLastRoundMovesLeft(saved.phase === "upgrade" ? saved.nextPrevLeft : saved.genPrevLeft);
+          setLastRoundUnderPar(saved.phase === "upgrade" ? saved.nextUnderPar === true : saved.genUnderPar === true);
           setRetriedThisRound(false);
           setUndoUsedThisRun(false);
           setShareImage(null);
@@ -2623,6 +2642,7 @@ export default function Cascade() {
         setRound(resume.round);
         setRunUpgrades(resume.upgrades);
         setLastRoundMovesLeft(resume.lastRoundMovesLeft);
+        setLastRoundUnderPar(resume.lastRoundUnderPar);
         setRetriesLeft(resume.retriesLeft);
         /* Lay the live position over the restored board (consumed by the
            level effect, the same hand-off the daily resume uses). */
@@ -2638,10 +2658,15 @@ export default function Cascade() {
           : null;
         /* A saved offer means the round was already cleared: the next board
            is generated from what it was cleared with. */
-        if (lv && lv.offer) setLastRoundMovesLeft(lv.clearedLeft);
-        if (lv && lv.undoUsed) setUndoUsedThisRun(true);
+        if (lv && lv.offer) {
+          setLastRoundMovesLeft(lv.clearedLeft);
+          setLastRoundUnderPar(lv.clearedUnderPar === true);
+        }
         setRetriedThisRound(false);
-        setUndoUsedThisRun(false);
+        /* From the save, not reset: resetting AFTER restoring (as this did)
+           threw the restore away, so Exit -> Continue still cleared "undo used"
+           and let a run that had undone earn Purist. */
+        setUndoUsedThisRun(!!(lv && lv.undoUsed));
         setNewBestThisRun(false);
         setShareImage(null);
         setShared(false);
@@ -2702,6 +2727,7 @@ export default function Cascade() {
       setRound(1);
       setRunUpgrades([]);
       setLastRoundMovesLeft(0);
+      setLastRoundUnderPar(false);
       setRetriedThisRound(false);
       setUndoUsedThisRun(false);
       setNewBestThisRun(false);
