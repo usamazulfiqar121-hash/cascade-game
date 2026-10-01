@@ -295,6 +295,13 @@ export default function Cascade() {
   const [scoreBest, setScoreBest] = useState(() => loadScoreBest());
   const [scoreRuns, setScoreRuns] = useState(() => loadScoreRuns());
   const [scoreTries, setScoreTries] = useState(() => loadScoreTries());
+  /* Identifies the current run so a score run is recorded at most ONCE. Two
+     writers exist — the loss timer and the Exit dialog — and both can fire
+     for the same run (lose, tap Home in the ~0.5s before the card, Exit).
+     Bumped by restartRun; each writer records only if no write has been made
+     for the run token it belongs to. */
+  const runTokenRef = useRef(0);
+  const scoreRecordedTokenRef = useRef(-1);
   const [scoreResult, setScoreResult] = useState(null);
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
   const [toast, setToast] = useState(null);
@@ -319,7 +326,10 @@ export default function Cascade() {
      just belt-and-braces for the same-session case before the very
      first setDailyState() commits. Shared by DailyBoard and
      FriendCompare so both read the exact same "today" number. */
-  const todayRounds = dailyState?.rounds ?? dailyRun.rounds.length;
+  /* dailyRun is ALSO score attack's round log, so the fallback is only valid
+     while this is a daily run — otherwise a score run's cleared rounds showed
+     on Home as "You · N" on a daily the player never played. */
+  const todayRounds = dailyState?.rounds ?? (isDaily ? dailyRun.rounds.length : 0);
   const toastTimerRef = useRef(null);
 
   /* ═══ DAILY MODE — INITIALIZATION ═══ */
@@ -1734,7 +1744,14 @@ export default function Cascade() {
              cancelling it just reveals the upgrade cards a frame later, which
              is the correct end state anyway. Nothing is lost: the daily
              position and streak day were written synchronously above. */
-          if (screenRef.current !== "game" || navStateRef.current.confirmDialog) return;
+          /* Screen changed = the run is gone, so bail. But an open Exit dialog
+             is NOT a reason to skip the state below: returning here used to
+             leave the round solved, phase stuck on "playing" and every pour
+             blocked once the player tapped Cancel — nothing re-ran this. So
+             the state always lands (the cards wait behind the dialog) and only
+             the sound/haptic/music are held back. */
+          if (screenRef.current !== "game") return;
+          const quietClear = navStateRef.current.confirmDialog;
           setLastRoundMovesLeft(remainingAtClear);
           /* Daily upgrade choices must be identical for every player too —
              pickRandomUpgrades() alone used Math.random even in daily mode,
@@ -1755,9 +1772,11 @@ export default function Cascade() {
             setJackpotNearMiss(jackpotNearMiss);
           }
           setPhase("upgrade");
-          Snd.clear();
-          Haptic.success();
-          Music.pulse("clear");
+          if (!quietClear) {
+            Snd.clear();
+            Haptic.success();
+            Music.pulse("clear");
+          }
           /* Was a flat 250ms after the tap. The winning ball is now still in
              the air at that point, so the card would have covered the one
              pour that matters most. Waits for it to land, then holds ~450ms
@@ -1821,6 +1840,7 @@ export default function Cascade() {
            clearNormalRun() and deleted the player's unrelated half-finished
            normal run, which they had every reason to believe was safe. */
         if (canAssist) clearNormalRun();
+        const lossRunToken = runTokenRef.current;
         roundTransitionRef.current = setTimeout(() => {
           /* Unlike the upgrade transition above, the work here has to
              happen even if the player already walked away: the attempt
@@ -1870,7 +1890,8 @@ export default function Cascade() {
              zero would put an empty row on a board whose whole value is that
              its entries mean something — so a run is recorded only once it
              has a score worth ranking. */
-          if (isScore && dailyRun.rounds.length > 0) {
+          if (isScore && dailyRun.rounds.length > 0 && scoreRecordedTokenRef.current !== lossRunToken) {
+            scoreRecordedTokenRef.current = lossRunToken;
             const result = recordScoreRun(scoreDisplay, dailyRun.rounds.length);
              setScoreResult(result);
              setScoreBest(result.best);
@@ -2271,6 +2292,7 @@ export default function Cascade() {
   const skipArchetype = useCallback(() => setArchOfferClosed(true), []);
 
   const restartRun = useCallback(() => {
+    runTokenRef.current += 1;
     setRound(1);
     setRunUpgrades([]);
     setLastRoundMovesLeft(0);
@@ -2872,7 +2894,8 @@ export default function Cascade() {
       danger: (isScore && scoreCleared === 0) || (!isDaily && !isScore && !hasSave),
       onConfirm: () => {
         saveBestRound();
-        if (scoreCleared > 0) {
+        if (scoreCleared > 0 && scoreRecordedTokenRef.current !== runTokenRef.current) {
+          scoreRecordedTokenRef.current = runTokenRef.current;
           const result = recordScoreRun(scoreToRecord, scoreCleared);
           setScoreBest(result.best);
           setScoreRuns(loadScoreRuns());
@@ -3075,7 +3098,7 @@ export default function Cascade() {
              and a continued run adopts the one its save carries, so the card
              and the boards being played always describe the same rule even if
              the app was left closed across a Monday. */
-          weeklyMutator={weeklyMutator}
+          weeklyMutator={weekMutator()}
           /* A normal run left mid-way is resumable, and this is the whole of
              that feature's surface on Home: with a save, the card under Play
              offers the round back; without one, nothing here renders and Play
@@ -3090,7 +3113,7 @@ export default function Cascade() {
              about which rule continuing would actually apply, which is the
              one thing on this screen a player cannot check for themselves. */
           savedMutator={savedNormalMutator}
-          savedMutatorIsCurrent={savedNormalMutator === weeklyMutator}
+          savedMutatorIsCurrent={savedNormalMutator === weekMutator()}
           onContinue={() => { if (startNewGame(false)) pushNav("game"); }}
           onNewRun={() => {
             /* Discard-then-start, not just start: onPlay is wired to resume
@@ -3718,7 +3741,7 @@ export default function Cascade() {
                     </div>
                     <div style={S.ovStat}>
                       <div style={S.ovStatNum}>
-                        {scoreResult ? `${scoreResult.rank}/${scoreRuns.length}` : "—"}
+                        {scoreResult && scoreResult.rank <= scoreRuns.length ? `${scoreResult.rank}/${scoreRuns.length}` : "—"}
                       </div>
                       <div style={S.ovStatLabel}>On Board</div>
                     </div>
