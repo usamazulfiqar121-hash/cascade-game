@@ -1144,6 +1144,24 @@ export function dailyArchetype(date = new Date()) {
 
 export const SCORE_BEST_KEY = "cascade:scoreBest";
 export const SCORE_RUNS_KEY = "cascade:scoreRuns";
+/* How many score runs have been STARTED. Not part of the standings (a try that
+   never cleared a round scores nothing and is never ranked) — it exists only so
+   Home can tell "never tried" from "tried, no score yet". Without it a player
+   who had just lost a run on round 1 was told "Not attempted". */
+export const SCORE_TRIES_KEY = "cascade:scoreTries";
+export function loadScoreTries() {
+  try {
+    const n = parseInt(localStorage.getItem(SCORE_TRIES_KEY), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+export function bumpScoreTries() {
+  const n = loadScoreTries() + 1;
+  try { localStorage.setItem(SCORE_TRIES_KEY, String(n)); } catch {}
+  return n;
+}
 
 /* Eight, not ten or "all of them": the board is rendered as fixed-height rows
    with no scrolling (it lives on the game-over card, where the viewport is

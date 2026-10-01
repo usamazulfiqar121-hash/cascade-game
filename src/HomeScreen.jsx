@@ -95,7 +95,7 @@ export default function HomeScreen({
      the two data props do, because this screen is also what an install with no
      score run on disk has to render, and a bare `undefined` there would have
      thrown in the toLocaleString below on the very first launch. */
-  onScore, scoreBest = 0, scoreRuns = [],
+  onScore, scoreBest = 0, scoreRuns = [], scoreTries = 0,
 }) {
   /* Two different questions, kept apart. `streakSafe`: today already counts
      for the streak (round 1 cleared) -- drives the streak badge and the week
@@ -374,7 +374,9 @@ export default function HomeScreen({
                 🏆  SCORE ATTACK
               </span>
               <span style={S.dailyCta}>
-                {scoreBest > 0 ? `Best ${scoreBest.toLocaleString("en-US")}` : "Not attempted"}
+                {scoreBest > 0
+                  ? `Best ${scoreBest.toLocaleString("en-US")}`
+                  : scoreTries > 0 ? "No score yet" : "Not attempted"}
               </span>
             </div>
             <div style={S.twistHeadline}>
@@ -400,7 +402,7 @@ export default function HomeScreen({
                   {scoreRuns[0].score.toLocaleString("en-US")}
                 </span>
                 <span style={{ color: D.textSub, fontSize: 11, fontWeight: 600 }}>
-                  top run · reached round {scoreRuns[0].round}
+                  top run · {scoreRuns[0].round} {scoreRuns[0].round === 1 ? "round" : "rounds"} cleared
                 </span>
               </div>
             )}

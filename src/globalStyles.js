@@ -571,15 +571,19 @@ button:active:not(:disabled) { transform: scale(0.97); }
    has 320, a 320px phone 280, so the labels used to break mid-phrase
    ("Round" / "1", "moves" / "left"). Labels are nowrap now (theme.js);
    here the "moves left" caption drops under its number where the row is
-   too tight for it beside it (Daily from 380px down, the plain HUD from
+   too tight for it beside it (Daily and Score from 430px down — measured
+   touching at 390px with the badge — the plain HUD from
    340px down), and at 340px and below the row tightens a little more. */
-@media (max-width: 380px) {
+@media (max-width: 430px) {
   .hud-daily .hud-moves-sub { display: block; margin-left: 0 !important; margin-top: 3px; }
 }
 @media (max-width: 340px) {
   .hud-moves-sub { display: block; margin-left: 0 !important; margin-top: 3px; }
   .hud-right { gap: 6px !important; }
   .hud-round { font-size: 18px !important; }
+  /* With a DAILY/SCORE badge the label still touched the moves count at 320px
+     (measured gap 0px), so the badge sits on its own line above "Round N". */
+  .hud-daily .hud-round > span { display: table !important; margin: 0 0 2px 0 !important; }
 }
 
 /* ═══════════ TYPE UTILITIES ═══════════ */

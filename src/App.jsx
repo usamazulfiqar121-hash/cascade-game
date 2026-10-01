@@ -12,7 +12,8 @@ import {
   DAILY_STATE_KEY, DAILY_RUN_KEY,
   pickDailyTwist, LUCKY_DAY_BONUS, FEAST_CARD_COUNT, WIND_MOVES,
   dailyScore, DAILY_BEST_SCORE_KEY, BEST_STREAK_KEY, SHIELD_KEY,
-  SCORE_BEST_KEY, SCORE_RUNS_KEY, loadScoreBest, loadScoreRuns, recordScoreRun,
+  SCORE_BEST_KEY, SCORE_RUNS_KEY, SCORE_TRIES_KEY, loadScoreBest, loadScoreRuns, recordScoreRun,
+  loadScoreTries, bumpScoreTries,
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
@@ -293,6 +294,7 @@ export default function Cascade() {
      same moment recordScoreRun writes). Neither is written mid-run. */
   const [scoreBest, setScoreBest] = useState(() => loadScoreBest());
   const [scoreRuns, setScoreRuns] = useState(() => loadScoreRuns());
+  const [scoreTries, setScoreTries] = useState(() => loadScoreTries());
   const [scoreResult, setScoreResult] = useState(null);
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
   const [toast, setToast] = useState(null);
@@ -1899,7 +1901,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -2570,6 +2572,7 @@ export default function Cascade() {
       if (score) {
         setMode("score");
         setScoreResult(null);
+        setScoreTries(bumpScoreTries());
         showToast({
           icon: "🎯",
           color: "var(--accent)",
@@ -2804,6 +2807,15 @@ export default function Cascade() {
        handler, so this is a fresh read at the moment of the tap and cannot
        go stale against the save. */
     const hasSave = canAssist && !!loadNormalRun();
+    /* A score run that has cleared at least one round is a finished result the
+       moment the player chooses to stop: there is no resume path, so leaving
+       cannot be used to retry anything, and stopping early can only ever score
+       LESS than playing on. It used to be discarded here, which meant a player
+       who cleared rounds and then tapped Home came back to a card reading
+       "Not attempted" — the run simply vanished. Now leaving records it, the
+       same way running out of moves does. Read at tap time (event handler). */
+    const scoreCleared = isScore ? dailyRun.rounds.length : 0;
+    const scoreToRecord = scoreCleared > 0 ? scoreDisplay : 0;
     setConfirmDialog({
       title: "Exit to Home?",
       /* A daily run is saved as it's played and resumes from
@@ -2830,8 +2842,10 @@ export default function Cascade() {
          neither is a destructive "are you sure" the red treatment is for. */
       message: isDaily
         ? "Your daily run is saved. Pick it up from Home any time today."
+        : isScore && scoreCleared > 0
+        ? `Leaving ends this run. Your score of ${scoreToRecord.toLocaleString("en-US")} (${scoreCleared} ${scoreCleared === 1 ? "round" : "rounds"} cleared) will be recorded.`
         : isScore
-        ? "Score attack isn't saved. Leaving now discards this run — it only counts if it ends with a round cleared."
+        ? "No round cleared yet, so this run has no score. Leaving discards it — a run counts once you clear a round."
         : !hasSave
         /* Nothing on disk at all: a run still on its opening round, which has
            not been cleared yet, so no boundary has been written. */
@@ -2855,9 +2869,20 @@ export default function Cascade() {
          and any score run (nothing is ever on disk for it). A score run that
          HAS cleared a round is a large number discarded, which is the same
          class of thing a red confirm is for. */
-      danger: isScore || (!isDaily && !hasSave),
+      danger: (isScore && scoreCleared === 0) || (!isDaily && !isScore && !hasSave),
       onConfirm: () => {
         saveBestRound();
+        if (scoreCleared > 0) {
+          const result = recordScoreRun(scoreToRecord, scoreCleared);
+          setScoreBest(result.best);
+          setScoreRuns(loadScoreRuns());
+          showToast({
+            icon: result.isNew ? "🏆" : "🎯",
+            color: "var(--gold)",
+            title: result.isNew ? "New High Score!" : "Score recorded",
+            message: `${result.score.toLocaleString("en-US")} points · ${scoreCleared} ${scoreCleared === 1 ? "round" : "rounds"} cleared`,
+          });
+        }
         restartRun();
         /* popNav(), not setScreen("home") directly — this "game"
            screen was pushed via pushNav when the run started (see
@@ -3080,6 +3105,7 @@ export default function Cascade() {
           onScore={() => { if (startFreshScoreRun()) pushNav("game"); }}
           scoreBest={scoreBest}
           scoreRuns={scoreRuns}
+          scoreTries={scoreTries}
         />
       )}
 
@@ -3259,7 +3285,7 @@ export default function Cascade() {
         ))}
       </div>
 
-      <div style={S.hud} className={isDaily ? "hud-daily" : undefined}>
+      <div style={S.hud} className={isDaily || isScore ? "hud-daily" : undefined}>
         <div>
           <div style={S.roundLabel} className="hud-round">
             {isDaily && <span style={S.dailyBadge}>DAILY</span>}
@@ -3697,7 +3723,7 @@ export default function Cascade() {
                       <div style={S.ovStatLabel}>On Board</div>
                     </div>
                     <div style={S.ovStat}>
-                      <div style={S.ovStatNum}>{scoreResult ? scoreResult.round : dailyRun.rounds.length}</div>
+                      <div style={S.ovStatNum}>{round}</div>
                       <div style={S.ovStatLabel}>Reached Round</div>
                     </div>
                   </div>
@@ -3855,7 +3881,7 @@ export default function Cascade() {
                                 <span style={{
                                   fontSize: 11, fontWeight: 600, color: T.muted, flex: 1, textAlign: "left",
                                 }}>
-                                  Reached round {r.round}
+                                  {r.round} {r.round === 1 ? "round" : "rounds"} cleared
                                   {mine && (
                                     <span style={{ color: T.accent, fontWeight: 800 }}> · this run</span>
                                   )}
@@ -4135,7 +4161,9 @@ export default function Cascade() {
                  try {
                    localStorage.removeItem(SCORE_BEST_KEY);
                    localStorage.removeItem(SCORE_RUNS_KEY);
+                   localStorage.removeItem(SCORE_TRIES_KEY);
                  } catch {}
+                 setScoreTries(0);
                  setScoreBest(0);
                  setScoreRuns([]);
                  setScoreResult(null);
