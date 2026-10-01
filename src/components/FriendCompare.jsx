@@ -160,6 +160,9 @@ export default function FriendCompare({ rounds, dateKey }) {
 
           {feedback && (
             <div
+              role={feedback.type === "err" ? "alert" : "status"}
+              aria-live={feedback.type === "err" ? "assertive" : "polite"}
+              aria-atomic="true"
               style={{
                 ...s.feedback,
                 color: feedback.type === "err" ? T.danger : T.go,
@@ -201,13 +204,21 @@ export default function FriendCompare({ rounds, dateKey }) {
                         </div>
                       )}
                     </div>
-                    <button
-                      style={s.remove}
-                      onClick={() => remove(f.id)}
-                      aria-label={`Remove ${f.label}`}
-                    >
-                      ✕
-                    </button>
+                      <button
+                        style={{
+                          ...s.remove,
+                          minWidth: 44,
+                          minHeight: 44,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 0,
+                        }}
+                        onClick={() => remove(f.id)}
+                        aria-label={`Remove ${f.label}`}
+                      >
+                        ✕
+                      </button>
                   </div>
                 );
               })}

@@ -15,15 +15,20 @@
    "you've taken" figures are real totals across every run rather than a
    per-session number that would restart behind the player's back. */
 
-import { ARCHETYPES, CATEGORY, CATEGORY_ORDER, DAILY_TWISTS, UPGRADES } from "./constants";
+import { ARCHETYPES, CATEGORY, CATEGORY_ORDER, DAILY_TWISTS, UPGRADES, RULE_KIND_COLOR, RULE_KIND_LABEL } from "./constants";
 import { pickDailyTwist } from "./gameLogic";
 import { loadCodex } from "./codex";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useEnterShield } from "./useEnterShield";
 
 /* The same three-way split the daily twist disclosure already uses, so the
-   rule reads identically wherever it appears. */
-const TWIST_KIND_LABEL = { blessing: "Blessing", curse: "Curse", mixed: "Trade-off" };
+   rule reads identically wherever it appears — except the map itself, which
+   used to be duplicated here and has moved to constants.js as
+   RULE_KIND_LABEL. The colour ternary below had the same problem one level
+   down: it re-derived the same three-way split from `kind` by hand, so a new
+   kind would have had to be added in two places, and a miss in either one
+   fails differently — the label renders `undefined`, the colour silently
+   falls through to blessing-green. Both now read from the one table. */
 
 export default function CodexScreen({ onClose, onBack, closing = false }) {
   const handleBack = onBack || onClose;
@@ -43,7 +48,7 @@ export default function CodexScreen({ onClose, onBack, closing = false }) {
      is a screen the player opened deliberately. */
   const [seen] = useState(loadCodex);
 
-  const today = pickDailyTwist();
+  const today = useMemo(() => pickDailyTwist(), []);
   const cardsTaken = Object.values(seen.cards).reduce((a, b) => a + b, 0);
 
   /* Cards grouped by category, in CATEGORY_ORDER, retired ones dropped
@@ -66,6 +71,23 @@ export default function CodexScreen({ onClose, onBack, closing = false }) {
           ? "slideOutRight 280ms cubic-bezier(0.4, 0, 1, 1) both"
           : "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
         pointerEvents: closing ? "none" : "auto",
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Codex"
+      tabIndex={-1}
+      ref={(el) => {
+        if (el && !el.dataset.focused) {
+          el.dataset.focused = "1";
+          const btn = el.querySelector('button[aria-label="Back"]');
+          btn?.focus?.({ preventScroll: true });
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleBack();
+        }
       }}
     >
       <div style={S.header}>
@@ -168,8 +190,7 @@ export default function CodexScreen({ onClose, onBack, closing = false }) {
           {DAILY_TWISTS.map((t) => {
             const isToday = today && t.id === today.id;
             const n = seen.twists[t.id] || 0;
-            const color =
-              t.kind === "curse" ? "var(--danger)" : t.kind === "mixed" ? "var(--gold-text)" : "var(--go)";
+            const color = RULE_KIND_COLOR[t.kind] || RULE_KIND_COLOR.blessing;
             return (
               <div
                 key={t.id}
@@ -188,7 +209,7 @@ export default function CodexScreen({ onClose, onBack, closing = false }) {
                     {/* The kind is already implied by the colour above; spelled
                         out, because colour alone is exactly the channel the
                         colour-blind setting removes. */}
-                    <span style={{ ...S.rowMeta, display: "inline", marginLeft: 6 }}>· {TWIST_KIND_LABEL[t.kind]}</span>
+                    <span style={{ ...S.rowMeta, display: "inline", marginLeft: 6 }}>· {RULE_KIND_LABEL[t.kind]}</span>
                   </div>
                   <div style={S.rowDesc}>{t.desc}</div>
                 </div>
@@ -239,7 +260,7 @@ const S = {
     background: "var(--bg-0)",
   },
   backBtn: {
-    width: 40, height: 40,
+    width: 44, height: 44,
     borderRadius: 12,
     background: "var(--glass)",
     border: "1px solid var(--glass-border)",

@@ -428,15 +428,6 @@ const S = {
     WebkitTapHighlightColor: "transparent",
     transition: `background ${D.tQuick}, box-shadow ${D.tQuick}, transform ${D.tSpring}`,
   },
-  chev: {
-    fontSize: 22, fontWeight: 300, color: "var(--text-dim)",
-    lineHeight: 1, marginTop: -2,
-  },
-  statVal: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 15, fontWeight: 800, color: "var(--accent)",
-    fontVariantNumeric: "tabular-nums",
-  },
   toggle: {
     display: "inline-flex", alignItems: "center",
     width: 40, height: 22, borderRadius: 999, padding: 2,

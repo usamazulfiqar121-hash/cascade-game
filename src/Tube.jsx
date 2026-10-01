@@ -230,7 +230,7 @@ export default function Tube({
       className="tube-btn"
       data-state={state}
       data-tube-idx={idx}
-      aria-label={`Tube${selected ? ", selected" : ""}${solved ? ", solved" : ""}`}
+      aria-label={`Tube${selected ? ", selected" : ""}${solved ? ", solved" : ""}${hintFrom ? ", hint source" : ""}${hintTo ? ", hint destination" : ""}`}
       style={{
         ...S.tube,
         width: d.width,

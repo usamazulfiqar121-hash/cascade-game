@@ -9,11 +9,13 @@ import {
   loadDailyState, saveDailyState,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
   dailyRoundSeed, dailyLuckRoll, DAILY_STREAM,
+  DAILY_STATE_KEY, DAILY_RUN_KEY,
   pickDailyTwist, LUCKY_DAY_BONUS, FEAST_CARD_COUNT, WIND_MOVES,
   dailyScore, DAILY_BEST_SCORE_KEY, BEST_STREAK_KEY, SHIELD_KEY,
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
+  weekMutator, mutatorById,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -358,7 +360,13 @@ export default function Cascade() {
       seenDayRef.current = k;
       try { setDailyState(loadDailyState()); } catch {}
       try {
-        const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+        const parsedDr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+        /* Same narrowing as the two other readers of this key. Not a crash
+           risk here (a non-object would throw inside reconcileStreakShield and
+           be swallowed by this catch, leaving state untouched) but it would
+           silently skip the day-rollover shield reconcile, which is exactly the
+           thing this interval exists to do. */
+        const dr = parsedDr && typeof parsedDr === "object" && !Array.isArray(parsedDr) ? parsedDr : {};
         setShieldedDates(reconcileStreakShield(dr));
       } catch {}
       setDayTick((n) => n + 1);
@@ -420,6 +428,33 @@ export default function Cascade() {
     () => (screen === "home" && dailyPhase === "resume" ? loadDailyRun()?.round ?? 1 : 1),
     [screen, dailyPhase, dailyState],
   );
+  /* The normal run's Continue, by the same construction as resumeRound above:
+     read from disk only while Home is showing, so it refreshes the moment the
+     Exit dialog sends the player back. `null` means there is nothing to
+     continue — no save, or a corrupt one loadNormalRun rejected — and the
+     Play button starts a fresh run exactly as it did before Continue existed.
+     The round is the only field Home needs; everything else is restored by
+     startNewGame's resume branch.
+
+     NOT memoized, deliberately, where resumeRound above is. The daily's
+     resume is a primitive and its two deps change exactly when the answer
+     does; this one is invalidated by clearNormalRun() from three separate
+     places (the loss trigger, the Continue card's New Run button, and
+     Settings > Reset), and only two of those also change `screen` — a Reset
+     performed from Home leaves it "home", so a dep array keyed on `screen`
+     would hand Home a save that was deleted a render earlier. A useMemo here
+     needs a bump-counter in all three clear sites to be correct, which is
+     more machinery than the read it saves. */
+  const savedNormal = screen === "home" ? loadNormalRun() : null;
+  /* The rule the CONTINUED run is actually under, which is not necessarily
+     the one the card above it advertises: the save carries the mutator it was
+     generated with (mutatorId), and a run left on Sunday and reopened on
+     Monday is still playing last week's rule. Resolved through mutatorById so
+     it is the same object the resume branch will adopt, and null when the save
+     is null or has no resolvable rule. */
+  const savedNormalMutator = savedNormal
+    ? mutatorById(savedNormal.mutatorId) || weekMutator()
+    : null;
   const [shieldedDates, setShieldedDates] = useState([]);
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
@@ -450,7 +485,31 @@ export default function Cascade() {
      when the NEXT round's level is generated, so that round steps back down
      in difficulty instead of continuing to climb ("hills, not stairs"). */
   const [retriedThisRound, setRetriedThisRound] = useState(false);
-  const [level, setLevel] = useState(() => generateLevel(1, [], 0));
+  /* The weekly mutator THIS RUN is playing under, frozen for the run's
+     lifetime. weekMutator() is a pure function of the current UTC week, so
+     calling it at each generateLevel would return the same object all week —
+     except in the one case that matters: an app left open across Monday
+     midnight, where a run already halfway through would silently have its
+     next round generated under different rules than its first. Pinning it
+     makes the whole run consistent, which is the same reason dailyTwist is
+     per-run rather than per-render.
+
+     Settable, unlike a plain module constant, for the one case a session-wide
+     pin cannot cover on its own: a run CONTINUED from a save. That run was
+     started under whatever rule was in force when it was written, and it
+     carries that rule's id in its save (see mutatorById) — so resuming it
+     adopts the saved rule rather than this week's, or a player who put the
+     app down on Sunday and came back Monday would have their next round
+     generated under a different rule than their first. Reassigned only by
+     restartRun (a fresh run takes this week's rule) and by the normal-run
+     resume, never by a round change, so it stays stable within a run. */
+  const [weeklyMutator, setWeeklyMutator] = useState(() => weekMutator());
+  /* The pinned object, not a fresh weekMutator() call: the two are the same
+     on a cold start, but only the state value above is guaranteed to be the
+     one every later generateLevel in this run is using. Legal to read here
+     because the two useState calls run in order, and the resume path
+     overwrites this level wholesale anyway. */
+  const [level, setLevel] = useState(() => generateLevel(1, [], 0, null, false, null, weeklyMutator));
   const [tubes, setTubes] = useState(level.tubes);
   const [moves, setMoves] = useState(0);
   const [bonusMoves, setBonusMoves] = useState(0);
@@ -643,13 +702,32 @@ export default function Cascade() {
       const t = localStorage.getItem("cascade:tutorialSeen");
       try {
         const a = localStorage.getItem(ACH_KEY);
-        if (a) setAchievements(JSON.parse(a));
+        /* Type-check the parsed value, not just that it parses. A syntactically
+           valid non-array (null, {}, 123, or a bare string) survives JSON.parse
+           and would be stored verbatim, then throw at the first `.length` /
+           `.includes` when the achievements screen opens — and there is no
+           error boundary above it, so that unmounts the React root and blanks
+           the app. The single writer (unlockAch) already normalises to an
+           array of strings, so mirror that guard here rather than inventing a
+           second shape. */
+        if (a) {
+          const parsedAch = JSON.parse(a);
+          if (Array.isArray(parsedAch)) setAchievements(parsedAch.filter((x) => typeof x === "string"));
+        }
       } catch {}
       try {
         const dr = localStorage.getItem("cascade:dailyResults");
-        const parsedDr = dr ? JSON.parse(dr) : {};
-        if (dr) setDailyResults(parsedDr);
-        setShieldedDates(reconcileStreakShield(parsedDr));
+        const parsedDr = dr ? JSON.parse(dr) : null;
+        /* Same reason as the achievements read above, and this one is worse:
+           dailyResults is indexed in the RENDER body (the dailyPhase spread at
+           411-418 and computeStreak at 3505), so a value that parses but isn't
+           an object — a stored "null" is enough — throws there rather than in
+           an effect, and with no error boundary above Cascade that unmounts the
+           root and blanks the app on every launch. Narrow to a plain object
+           once, here, so nothing downstream has to re-check the shape. */
+        const safeDr = parsedDr && typeof parsedDr === "object" && !Array.isArray(parsedDr) ? parsedDr : {};
+        if (dr) setDailyResults(safeDr);
+        setShieldedDates(reconcileStreakShield(safeDr));
       } catch {}
       try {
         if (localStorage.getItem("cascade:hasPlayedOnce") === "1") setHasPlayedOnce(true);
@@ -1358,7 +1436,14 @@ export default function Cascade() {
              is still going. See computeStreak in gameLogic.js. */
           try {
             const k = dailyKey(dailyRunDateRef.current || new Date());
-            const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+            const parsedDr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
+            /* Same narrowing as the load path. `dr[k] = …` on a number or a
+               string throws in strict mode (ES modules are always strict) and
+               the surrounding catch swallows it, so a malformed store would
+               silently cost the player the streak day with no symptom at all.
+               The spread also makes this a write of a fresh object rather than
+               of whatever was parsed. */
+            const dr = parsedDr && typeof parsedDr === "object" && !Array.isArray(parsedDr) ? parsedDr : {};
             if (!dr[k]) {
               dr[k] = { completed: true, ts: Date.now() };
               localStorage.setItem("cascade:dailyResults", JSON.stringify(dr));
@@ -1378,7 +1463,14 @@ export default function Cascade() {
              whatever took its place. The daily position and the streak
              day were both written synchronously above, so bailing here
              loses nothing. */
-          if (screenRef.current !== "game") return;
+          /* Screen alone isn't enough: onHomePress opens the Exit dialog
+             without changing `screen`, so tapping Home in the window above
+             leaves screenRef on "game" and the clear chime, success haptic and
+             music pulse fire on top of the dialog. Bail on the dialog too —
+             cancelling it just reveals the upgrade cards a frame later, which
+             is the correct end state anyway. Nothing is lost: the daily
+             position and streak day were written synchronously above. */
+          if (screenRef.current !== "game" || navStateRef.current.confirmDialog) return;
           setLastRoundMovesLeft(remainingAtClear);
           /* Daily upgrade choices must be identical for every player too —
              pickRandomUpgrades() alone used Math.random even in daily mode,
@@ -1446,6 +1538,14 @@ export default function Cascade() {
               })
             : null;
         if (failedState) clearDailyRun();
+        /* A normal run's save is dropped the moment the run ends, for the
+           same reason the daily's is: this snapshot is of a round boundary,
+           so it still describes a live run and Home would happily offer to
+           continue a run the player has already lost. Written synchronously,
+           before the timer below, so it happens even if they close the app in
+           the ~0.5s before the results card — the same reason the daily's
+           state is committed here rather than in the card's render. */
+        if (!isDaily) clearNormalRun();
         roundTransitionRef.current = setTimeout(() => {
           /* Unlike the upgrade transition above, the work here has to
              happen even if the player already walked away: the attempt
@@ -1721,6 +1821,7 @@ export default function Cascade() {
     const nextLevel = generateLevel(
       nextRound, newUpgrades, lastRoundMovesLeft, nextSeed, retriedThisRound,
       isDaily ? dailyTwist : null,
+      isDaily ? null : weeklyMutator,
     );
     setLevel(nextLevel);
     setRetriedThisRound(false);
@@ -1753,26 +1854,73 @@ export default function Cascade() {
          Not credited to the Codex here either, and for a different reason
          than the daily's: a path is credited once, at the moment it is
          chosen (chooseArchetype), and re-saving it on every round boundary
-         would multiply that count by the length of the run. */
+         would multiply that count by the length of the run.
+
+         mutatorId is what makes the resumed run the SAME run: the board in
+         this save was generated under the pinned rule, and every board after
+         it has to be too. An id, not the object, because the mutator's hooks
+         are functions and JSON drops them (see mutatorById). */
       saveNormalRun({
         round: nextRound,
         upgrades: newUpgrades,
         level: nextLevel,
         lastRoundMovesLeft,
         path: runPath,
+        mutatorId: weeklyMutator ? weeklyMutator.id : null,
       });
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator]);
 
+  /* A retry re-rolls the same round from the same seed, so a daily retry
+     reproduces the board exactly as it was — and must NOT pick up the weekly
+     mutator, or "retry" would quietly change the rules mid-round.
+
+     For a normal run this is where a LIVE run comes back from the dead: the
+     loss trigger above clears the Continue save (a run that has ended must
+     not be resumable), and this button is the one way to keep playing it. So
+     it re-writes the save, or the run would be back on screen with nothing
+     behind it — the Exit dialog would promise "your run is saved at the start
+     of this round" and be lying, and Home would offer no Continue, and the
+     whole run would evaporate on the way out.
+
+     The re-rolled board is a legitimate snapshot for the same reason
+     chooseUpgrade's is: it is the start of a round, untouched, with the
+     moves counter at zero. `lastRoundMovesLeft` is the run's own — the moves
+     left when round-1 was cleared, still feeding this round's Perfect Clear —
+     so it is unchanged by a retry, which re-rolls the round rather than
+     advancing past it. */
   const retry = useCallback(() => {
     const seed = isDaily
       ? dailyRoundSeed(round, DAILY_STREAM.board, dailyRunDateRef.current || new Date())
       : null;
-    setLevel(generateLevel(round, runUpgrades, lastRoundMovesLeft, seed, false, isDaily ? dailyTwist : null));
+    const nextLevel = generateLevel(
+      round, runUpgrades, lastRoundMovesLeft, seed, false,
+      isDaily ? dailyTwist : null,
+      isDaily ? null : weeklyMutator,
+    );
+    setLevel(nextLevel);
     setRetriedThisRound(true);
-  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, dailyTwist]);
+    /* Re-arming a round is a new attempt, so the previous run's verdict must
+       not carry into it. Without this the flag is sticky: die on round 5 with
+       best 4 and it is set true, retry, then die on round 5 again — but now
+       `round > best` is 5 > 5 and false, so the only writer is skipped and the
+       results card claims a "New Personal Best" that was never set. The game
+       over which retry is reached has already been dismissed, so nothing else
+       resets it; restartRun (1924) does, for every other path. */
+    setNewBestThisRun(false);
+    if (!isDaily) {
+      saveNormalRun({
+        round,
+        upgrades: runUpgrades,
+        level: nextLevel,
+        lastRoundMovesLeft,
+        path: runPath,
+        mutatorId: weeklyMutator ? weeklyMutator.id : null,
+      });
+    }
+  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, dailyTwist, weeklyMutator, runPath]);
 
   /* Takes the opening archetype. Deliberately does NOT touch the board: the
      round-1 level was already generated from (round, upgrades) and the
@@ -1818,7 +1966,20 @@ export default function Cascade() {
     setArchOffer(null);
     setArchOfferClosed(false);
     setRunPath(null);
-    setLevel(generateLevel(1, [], 0));
+    /* A brand new run takes whatever rule is in force NOW, whatever rule the
+       previous run was playing under. The session pin is the same thing on a
+       cold start, so this is a no-op in the ordinary case — but it is what
+       keeps a run CONTINUED under last week's mutator from leaking that rule
+       into the next fresh run, which restartRun is also the reset for (Home,
+       back, Exit, Settings > Reset, game-over Start Over). */
+    setWeeklyMutator(weekMutator());
+    /* Normal-run round 1, so the weekly mutator applies. Not `weeklyMutator`
+       but the value just set: setState is async, so the variable still holds
+       the PREVIOUS pin at this point in the closure. Calling weekMutator()
+       again returns the identical object (it is a pure function of the week),
+       so the two agree — and the level is overwritten by the resume path
+       anyway when a run is being continued. */
+    setLevel(generateLevel(1, [], 0, null, false, null, weekMutator()));
   }, []);
 
   /* Save best round reached so far. Called at every place the player can
@@ -1884,6 +2045,7 @@ export default function Cascade() {
           saved.round, saved.upgrades, saved.genPrevLeft,
           dailyRoundSeed(saved.round, DAILY_STREAM.board, runDate),
           false, twist,
+          null,
         );
         if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
           dailyRunDateRef.current = runDate;
@@ -1938,6 +2100,56 @@ export default function Cascade() {
         }
       }
     }
+    /* Normal run, and there is a save to pick up: resume it. Deliberately
+       ABOVE recordGameStart() below, so continuing a run is not counted as
+       starting a new one — the same reason the daily's resume is above it
+       too. The save is written at every round boundary (chooseUpgrade)
+       precisely so this branch has something to restore.
+
+       The one field that is NOT recomputed, because it cannot be, is the
+       weekly mutator. Everything else here is a pure function of what was
+       saved, but which mutator is in force depends on WHEN the run was
+       started, and the save is the only record of that — hence mutatorId
+       (see mutatorById). A save with no id at all predates the weekly rules
+       and falls back to this week's, which is what such a run was generated
+       under in the first place.
+
+       Not credited to the Codex: the path and the mutator were recorded when
+       this run first started, and re-recording on every resume would count
+       one run once per time it was picked back up. */
+    if (!daily) {
+      const resume = loadNormalRun();
+      if (resume) {
+        setIsDaily(false);
+        setDailyTwist(null);
+        setDailyScoreResult(null);
+        setRound(resume.round);
+        setRunUpgrades(resume.upgrades);
+        setLastRoundMovesLeft(resume.lastRoundMovesLeft);
+        setRetriedThisRound(false);
+        setUndoUsedThisRun(false);
+        setNewBestThisRun(false);
+        setShareImage(null);
+        setShared(false);
+        setRunPath(resume.path || null);
+        /* No picker: the opening decision was already made, and it is stored.
+           Re-offering it would either strand the run behind a modal for a
+           choice it has already made, or silently overwrite the path its
+           later offers were biased by. */
+        setArchOffer(null);
+        setArchOfferClosed(true);
+        /* The restored board is the stored one VERBATIM, not a regenerated
+           one. A normal run's level comes from Math.random, so regenerating
+           would hand back a different board for a round the player had
+           already begun — the exact thing the save-at-round-boundaries design
+           exists to prevent. That is also why there is no tubesMatchLevel
+           check here, unlike the daily: there is nothing to re-derive this
+           board from. */
+        setLevel(resume.level);
+        setWeeklyMutator(mutatorById(resume.mutatorId) || weekMutator());
+        resumed = true;
+      }
+    }
     if (!resumed) recordGameStart();
     if (!resumed && daily) {
       /* Pin the run to today's date, then seed round 1 the same way every
@@ -1990,19 +2202,41 @@ export default function Cascade() {
       setRunPath(path);
       setArchOffer(null);
       setArchOfferClosed(false);
-      setLevel(generateLevel(1, [], 0, seed, false, twist));
+      setLevel(generateLevel(1, [], 0, seed, false, twist, null));
     } else if (!resumed) {
-      /* Normal run: offer the opening archetypes. Note the round-1 board is
-         already built by restartRun() and is identical either way — it
-         depends only on the round, never on the upgrades — so the picker can
-         sit on top of a live board instead of the run start being deferred,
-         which is what keeps every existing run-start path below untouched. */
+      /* Normal run, nothing to continue: the archetype picker over a fresh
+         round 1. The board is built by restartRun() and is identical either
+         way — it depends only on the round, never on the upgrades — so the
+         picker can sit on top of a live board instead of the run start being
+         deferred, which is what keeps every existing run-start path below
+         untouched. */
       restartRun();
       setArchOffer(pickArchetypes());
     }
     setScreen("game");
     return true;
   }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest]);
+
+  /* Start a normal run from round 1, DISCARDING any save. The one way to say
+     "not that one" now that startNewGame resumes when it can.
+
+     Two call sites need it and both were getting it wrong on their own: the
+     game-over card's "Start Over", and the Home Continue card's "New Run".
+     Start Over is the sharper of the two — the loss trigger clears the save,
+     but the "Retry Round" button above it writes one back (see retry), so a
+     player who retried and then pressed Start Over would have been handed
+     their own retried run back instead of a new one, which is the exact
+     opposite of what the button says. The Home card's "New Run" needs the
+     same clear for the same reason, and having one function means the next
+     place that needs "fresh, not resumed" cannot forget it.
+
+     Clear BEFORE startNewGame, not after: the resume branch reads the save
+     synchronously inside startNewGame, so clearing afterwards would leave one
+     frame of the old run on screen. */
+  const startFreshNormalRun = useCallback(() => {
+    clearNormalRun();
+    return startNewGame(false);
+  }, [startNewGame]);
 
   /* ═══════════ NAVIGATION — Back button infra ═══════════
      Phase 1: only infrastructure. Nothing wired yet.
@@ -2158,16 +2392,51 @@ export default function Cascade() {
   /* "Exit to Home?" — shared by the HUD Home button and by hardware/gesture
      back, so the two can't drift apart again. */
   const openExitDialog = () => {
+    /* Asked of the disk rather than inferred from `round > 1`, because the
+       two stopped being the same thing: a run that lost on round 1 and was
+       retried has a save, and telling that player "there's nothing to save"
+       would be wrong in the one direction that loses their work. An event
+       handler, so this is a fresh read at the moment of the tap and cannot
+       go stale against the save. */
+    const hasSave = !isDaily && !!loadNormalRun();
     setConfirmDialog({
       title: "Exit to Home?",
       /* A daily run is saved as it's played and resumes from
          Home, so "will be lost" would be false there (and the
-         old, true version of it pushed people to stay in). */
+         old, true version of it pushed people to stay in).
+
+         A normal run is saved too, but only at ROUND BOUNDARIES (see
+         saveNormalRun), so "saved" would overstate it in the other
+         direction — a player who pours a few moves and then leaves has
+         lost those moves even though the run itself is intact. The copy
+         names the actual boundary rather than rounding either way, and the
+         dialog is no longer `danger` for a normal run that has a save,
+         because what is being confirmed is no longer a loss. It stays the
+         same amber either way: the daily's version is about a resource (one
+         attempt a day) and this one is about a small, definite loss, and
+         neither is a destructive "are you sure" the red treatment is for. */
       message: isDaily
         ? "Your daily run is saved. Pick it up from Home any time today."
-        : "Progress will be lost.",
+        : !hasSave
+        /* Nothing on disk at all: a run still on its opening round, which has
+           not been cleared yet, so no boundary has been written. */
+        ? "This run hasn't cleared a round yet, so there's nothing to save. It starts over from round 1."
+        : /* The upgrade screen is a different loss, and the save cannot cover
+             it. A normal run's NEXT board depends on the card the player is
+             about to pick (an Extra Tube changes the board, a moves card
+             changes the limit), so there is nothing to save until the pick
+             happens — which is exactly why this save is written in
+             chooseUpgrade. A daily escapes this because its next board is
+             seedable from (date, round) alone.
+
+             So leaving here rewinds to the START of the round they just
+             cleared, and "moves made in this round are lost" would be
+             badly understating it. */
+          phase === "upgrade"
+        ? "Your run is saved, but not this clear — the next board depends on the card you'd pick next. You'll pick this round up again from the start."
+        : "Your run is saved at the start of this round, and resumes from Home. Moves made in this round are lost.",
       confirmLabel: "Exit",
-      danger: !isDaily,
+      danger: !isDaily && !hasSave,
       onConfirm: () => {
         saveBestRound();
         restartRun();
@@ -2203,7 +2472,17 @@ export default function Cascade() {
   };
 
   const onHomePress = () => {
-    if (phase === "playing" && (moves > 0 || round > 1)) {
+    /* The same predicate onBackFromGame uses below, deliberately. The two are
+       documented as "shared by the HUD Home button and by hardware/gesture
+       back, so the two can't drift apart again" — and had: this one required
+       phase === "playing", so at the upgrade screen the HUD Home button
+       dropped the run silently while the back button asked about it. That
+       was harmless when a normal run could not be saved at all. It is not
+       harmless now — the run survives to Home, and the player who walks out
+       from the card screen by tapping Home is discarding a cleared round
+       without ever being told. */
+    const inProgress = phase === "upgrade" || moves > 0 || round > 1;
+    if (inProgress) {
       openExitDialog();
     } else {
       saveBestRound();
@@ -2322,6 +2601,10 @@ export default function Cascade() {
       {/* HOME — visible when screen === "home" */}
       {screen === "home" && (
         <HomeScreen
+          /* Resumes when there is a save, starts fresh when there isn't — see
+             startNewGame's normal-run branch. The Continue card below Play
+             says which of the two this will do, and its "New Run" button is
+             the way to force the second without discarding anything by hand. */
           onPlay={() => { if (startNewGame(false)) pushNav("game"); }}
           onAwards={() => { setShowAchievements(true); pushNav("awards"); }}
           onCodex={() => { setShowCodex(true); pushNav("codex"); }}
@@ -2344,6 +2627,33 @@ export default function Cascade() {
           todayRounds={todayRounds}
           dailyPhase={dailyPhase}
           resumeRound={resumeRound}
+          /* Per-RUN, not per-session: a cold start resolves this week's rule,
+             and a continued run adopts the one its save carries, so the card
+             and the boards being played always describe the same rule even if
+             the app was left closed across a Monday. */
+          weeklyMutator={weeklyMutator}
+          /* A normal run left mid-way is resumable, and this is the whole of
+             that feature's surface on Home: with a save, the card under Play
+             offers the round back; without one, nothing here renders and Play
+             means "start fresh" like it always did. Deliberately not a
+             confirm — resuming is what the player asked for by coming back,
+             and the run stays on disk until the next round boundary overwrites
+             it, so a mis-tap costs one round boundary, not the run. */
+          normalRun={savedNormal}
+          /* Only when it DIFFERS from the card above. Printing the same
+             mutator twice, 60px apart, on the one screen that already stacks
+             three cards, is noise — but printing only the newer one is a lie
+             about which rule continuing would actually apply, which is the
+             one thing on this screen a player cannot check for themselves. */
+          savedMutator={savedNormalMutator}
+          savedMutatorIsCurrent={savedNormalMutator === weeklyMutator}
+          onContinue={() => { if (startNewGame(false)) pushNav("game"); }}
+          onNewRun={() => {
+            /* Discard-then-start, not just start: onPlay is wired to resume
+               when a save exists, so routing this through startNewGame alone
+               would pick the very save this button exists to throw away. */
+            if (startFreshNormalRun()) pushNav("game");
+          }}
         />
       )}
 
@@ -2604,7 +2914,14 @@ export default function Cascade() {
             if (!u) return null;
             const r = RARITY[u.rarity];
             return (
-              <div key={i} title={u.name} style={{
+              /* Keyed on the ABSOLUTE index, not the window index i: the
+                 slice(-10) shifts every time an 11th upgrade is taken, so key 0
+                 refers to a different card than it did a render ago and React
+                 patches the existing node's icon in place instead of mounting
+                 the new one. Absolute index is stable for a given upgrade.
+                 key={id} would NOT be right here — duplicates are legal across
+                 a run (maxOwnedPerOffer caps per OFFER, not per run). */
+              <div key={runUpgrades.length - 10 + i} title={u.name} style={{
                 width: 26, height: 26, borderRadius: 8,
                 background: rarityTint(r.color, 13.3), border: `1.5px solid ${rarityTint(r.color, 40)}`,
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
@@ -2942,7 +3259,11 @@ export default function Cascade() {
                   <>
                     <button style={S.primary} onClick={retry}>Retry Round {round}</button>
                     <button style={{ ...S.ghost, color: T.accent }} onClick={generateShare}>📤 Share Result</button>
-                    <button style={S.ghost} onClick={() => startNewGame(false)}>Start Over</button>
+                    {/* No pushNav: this replaces the run that is already on
+                        screen, so the existing "game" history entry still
+                        describes exactly one game in the stack. Pushing
+                        again would leave back needing two presses to leave. */}
+                    <button style={S.ghost} onClick={startFreshNormalRun}>Start Over</button>
                     {/* The Home button in the HUD is under this overlay, so without
                         this the only way out was the OS back gesture, or Start Over
                         and then Home. Same route back does (see onBackFromGame). */}
@@ -2966,11 +3287,28 @@ export default function Cascade() {
       </div>
       )}
 
+      {/* Toast announcer. The visible toast below is aria-hidden to avoid duplicate announcements. */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: "absolute",
+          width: 1, height: 1,
+          margin: -1, padding: 0, border: 0,
+          overflow: "hidden",
+          clip: "rect(0 0 0 0)",
+          clipPath: "inset(50%)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {toast && [toast.title, toast.message].filter(Boolean).join(": ")}
+      </div>
+
       {/* In-app toast */}
       {toast && (
         <div
-          role="status"
-          aria-live="polite"
+          aria-hidden="true"
           style={{
             position: "fixed",
             top: "calc(env(safe-area-inset-top, 0px) + 20px)",
@@ -3098,8 +3436,14 @@ export default function Cascade() {
                   localStorage.removeItem("cascade:tutorialSeen");
                   localStorage.removeItem("cascade:stats");
                   localStorage.removeItem("cascade:dailyResults");
-                  localStorage.removeItem("cascade:dailyState");
-                  localStorage.removeItem("cascade:dailyRun");
+                  /* These two were bare string literals duplicating exported
+                     constants (DAILY_STATE_KEY / DAILY_RUN_KEY), so the reset
+                     had a second place to forget to update the day either key
+                     changed. The remaining literals here have no constant to
+                     point at yet and are left alone deliberately rather than
+                     half-migrated. */
+                  localStorage.removeItem(DAILY_STATE_KEY);
+                  localStorage.removeItem(DAILY_RUN_KEY);
                   localStorage.removeItem("cascade:hasPlayedOnce");
                   /* The title says ALL progress, but these three used to survive it: Profile
                      still showed the old Best Streak and every unlocked achievement, and a
@@ -3114,6 +3458,15 @@ export default function Cascade() {
                    clearCodex owns the key name — a literal here would be a
                    second place to forget to update the day that key changes. */
                 clearCodex();
+                /* The Continue-your-run save (cascade:normalRun) was never
+                   removed here, so it was the one piece of gameplay state that
+                   survived "Reset All Progress?" — a player who reset and then
+                   reinstalled or tapped Continue got their old run back, from a
+                   screen that had just promised them everything was gone. It
+                   gets the same treatment as the Codex rather than a literal
+                   removeItem, since clearNormalRun owns the key name and the
+                   paired in-memory state has no setter to clear. */
+                clearNormalRun();
                 setAchievements([]);
                 setBestStreak(0);
                 setShieldedDates([]);
@@ -3242,25 +3595,54 @@ export default function Cascade() {
       {/* Tapping the dim area outside the card (or pressing Escape, see the
           effect near openExitDialog) cancels, as the back-button handler's
           own comment always said it did. Destructive confirms are red. */}
-      {confirmDialog && (
-        <div
-          style={S.overlay}
-          onClick={(e) => {
-            if (e.target !== e.currentTarget) return;
-            if (performance.now() - confirmOpenedAtRef.current < CONFIRM_SCRIM_GUARD_MS) return;
-            setConfirmDialog(null);
-          }}
-        >
-          <div style={{ ...S.ovCard, maxWidth: 340 }} role="alertdialog" aria-modal="true" aria-label={confirmDialog.title}>
-            <div style={{ ...S.ovTitle, fontSize: 20 }}>{confirmDialog.title}</div>
-            <div style={{ ...S.ovSub, marginBottom: 20 }}>{confirmDialog.message}</div>
-            <button style={confirmDialog.danger ? S.primaryDanger : S.primary} onClick={confirmDialog.onConfirm}>
-              {confirmDialog.confirmLabel || "Confirm"}
-            </button>
-            <button style={confirmDialog.danger ? S.cancelOutline : S.ghost} onClick={() => setConfirmDialog(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
+       {confirmDialog && (
+         <div
+           style={S.overlay}
+           onClick={(e) => {
+             if (e.target !== e.currentTarget) return;
+             if (performance.now() - confirmOpenedAtRef.current < CONFIRM_SCRIM_GUARD_MS) return;
+             setConfirmDialog(null);
+           }}
+         >
+           <div
+             style={{ ...S.ovCard, maxWidth: 340 }}
+             role="alertdialog"
+             aria-modal="true"
+             aria-label={confirmDialog.title}
+             aria-describedby="confirm-dialog-message"
+             tabIndex={-1}
+             ref={(el) => {
+               /* Move focus to the Cancel button for danger (least-destructive default),
+                  or to the confirm action otherwise; run once when the dialog opens. */
+               if (el && !el.dataset.focused) {
+                 el.dataset.focused = "1";
+                 const cancel = el.querySelector('button:last-of-type');
+                 const confirmBtn = el.querySelector('button:first-of-type');
+                 const target = confirmDialog.danger ? cancel : confirmBtn;
+                 target?.focus?.({ preventScroll: true });
+                 /* Simple focus trap while this dialog is mounted. */
+                 const nodes = Array.from(el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'));
+                 if (nodes.length) {
+                   const first = nodes[0], last = nodes[nodes.length - 1];
+                   el.addEventListener('keydown', (ev) => {
+                     if (ev.key === 'Tab') {
+                       if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+                       else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+                     }
+                   });
+                 }
+               }
+             }}
+           >
+             <div style={{ ...S.ovTitle, fontSize: 20 }}>{confirmDialog.title}</div>
+             <div id="confirm-dialog-message" style={{ ...S.ovSub, marginBottom: 20 }}>{confirmDialog.message}</div>
+             <button style={confirmDialog.danger ? S.primaryDanger : S.primary} onClick={confirmDialog.onConfirm}>
+               {confirmDialog.confirmLabel || "Confirm"}
+             </button>
+             <button style={confirmDialog.danger ? S.cancelOutline : S.ghost} onClick={() => setConfirmDialog(null)}>Cancel</button>
+           </div>
+         </div>
+       )}
 
       {screenShield && <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 400 }} />}
     </div>

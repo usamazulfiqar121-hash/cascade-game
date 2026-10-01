@@ -10,35 +10,53 @@
    to invented player names, so it read as a real ranking of real players.
    The headline is now the one true thing the card knows -- your position
    in the field it is showing -- and a caption names the field as
-   simulated. Real comparison lives in Compare Friends. */
+   simulated. Real comparison lives in Compare Friends.
+
+   variant:
+     "full"    — the game-over card, exactly as it has always rendered:
+                your position, and your row again below the cut if you
+                missed the top 3. This is the default so the existing
+                call site is unaffected.
+     "preview" — Home, BEFORE the player has played today. Same seeded
+                field (previewField in leaderboard.js reads the identical
+                draw), no "You" row, because a "You · 0" against a field
+                you haven't met yet reads as a score of zero rather than
+                as a target. */
 
 import { T } from "../constants";
-import { generateDailyBoard } from "../leaderboard";
+import { generateDailyBoard, previewField } from "../leaderboard";
 
-export default function DailyBoard({ rounds, dateSeed }) {
-  const board = generateDailyBoard(dateSeed, rounds);
-  const player = board.find((e) => e.isPlayer);
+const TOP_N = 3;
+
+export default function DailyBoard({ rounds, dateSeed, variant = "full", style }) {
+  const isPreview = variant === "preview";
+  const board = isPreview ? previewField(dateSeed) : generateDailyBoard(dateSeed, rounds);
+  const player = isPreview ? null : board.find((e) => e.isPlayer);
   /* An empty field, or a board whose entries never carry the player's own
      row, would leave `player` undefined and take out `player.rank` below --
      a render-time TypeError on a card that is otherwise entirely optional.
-     Say nothing rather than crash the game-over screen. */
-  if (!player) return null;
+     Say nothing rather than crash the game-over screen. Preview mode has no
+     player row by construction, so the guard only applies to "full". */
+  if (!isPreview && !player) return null;
 
-  const top3 = board.slice(0, 3);
-  const playerInTop3 = player.rank <= 3;
+  const top = board.slice(0, TOP_N);
+  const playerInTop3 = !!player && player.rank <= TOP_N;
+  const headline = isPreview
+    ? "Today's field"
+    : `Ghost field · #${player.rank} of ${board.length}`;
 
   return (
-    <div style={s.card}>
+    <div style={{ ...s.card, ...(style || null) }}>
       <div style={s.headline}>
-        <span style={s.trophy}>🏆</span>
-        <span style={s.headlineText}>Ghost field · #{player.rank} of {board.length}</span>
+        <span style={s.trophy}>{isPreview ? "👥" : "🏆"}</span>
+        <span style={s.headlineText}>{headline}</span>
       </div>
 
       <div style={s.rows}>
-        {top3.map((e) => (
+        {top.map((e) => (
           <Row key={e.rank} entry={e} />
         ))}
-        {!playerInTop3 && (
+        {!isPreview && !playerInTop3 && (
           <>
             <div style={s.divider}>···</div>
             <Row entry={player} />

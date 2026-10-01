@@ -77,14 +77,11 @@ export function rankLabel(pctBeaten) {
   return "Keep climbing";
 }
 
-/* Deterministic field of FIELD_SIZE named entries for the day, drawn
-   from a logistic distribution centered on dailyMedian() (matching
-   the curve percentileBeaten() uses, so the two stay roughly
-   consistent with each other), plus the real player's own entry
-   inserted at its true sorted position. Ties go to the player, so a
-   matching score reads as "you made it" rather than being bumped
-   below a same-scoring bot. */
-export function generateDailyBoard(dateSeed, playerRounds) {
+/* The day's FIELD_SIZE named entries, drawn from a logistic distribution
+   centered on dailyMedian() (matching the curve percentileBeaten() uses, so
+   the two stay roughly consistent with each other). Shared by every public
+   entry point below so that all of them describe the same day. */
+function drawField(dateSeed) {
   const rng = mulberry32(dateSeed);
   const median = dailyMedian(dateSeed);
 
@@ -99,30 +96,52 @@ export function generateDailyBoard(dateSeed, playerRounds) {
     const rounds = Math.max(0, Math.min(MAX_BOT_ROUNDS, Math.round(raw)));
     bots.push({ name, rounds });
   }
+  return bots;
+}
 
-  const entries = [
-    ...bots,
-    { name: "You", rounds: Math.max(0, playerRounds || 0), isPlayer: true },
-  ];
-  /* The tie-break used to be `a.isPlayer ? -1 : 1` — invalid as a
-     comparator: for two tied BOTS (neither one isPlayer), that returns
-     1 in both directions (cmp(A,B) and cmp(B,A) both say "greater"),
-     which breaks the antisymmetry Array.prototype.sort requires. Two
-     tied bots were never actually reported as equal, so the ES2019
-     stable-sort guarantee didn't apply to them — their relative order
-     became whatever a given JS engine's sort happens to do with an
-     invalid comparator, not something derived from any rule here.
-     That's a real problem for a board whose whole premise (see file
-     header) is "every player sees the same board" — two players on
-     different engine/WebView versions could see tied bots in a
-     different order for the exact same dateSeed. Returning 0 for a
-     bot-vs-bot tie correctly reports them as equal, so the guaranteed-
-     stable sort preserves their original (deterministic, seeded draw)
-     order on any spec-conforming engine — same input, same output,
-     everywhere. Player-vs-bot ties are unaffected: -1/+1 there was
-     already consistent in both directions (verified), so "ties go to
-     the player" still holds exactly as before. */
+/* Sort + stamp ranks. The tie-break is the load-bearing part: it used to be
+   `a.isPlayer ? -1 : 1` — invalid as a comparator, because for two tied BOTS
+   (neither one isPlayer) that returns 1 in BOTH directions, which breaks the
+   antisymmetry Array.prototype.sort requires. Two tied bots were never
+   reported as equal, so the ES2019 stable-sort guarantee didn't apply to
+   them — their relative order became whatever a given engine's sort happens
+   to do with an invalid comparator, not something derived from any rule here.
+   That's a real problem for a board whose whole premise (see the file header)
+   is "every player sees the same board": two players on different
+   engine/WebView versions could see tied bots in a different order for the
+   exact same dateSeed. Returning 0 for a bot-vs-bot tie correctly reports
+   them as equal, so the guaranteed-stable sort preserves their original
+   (deterministic, seeded draw) order on any spec-conforming engine — same
+   input, same output, everywhere. Player-vs-bot ties are unaffected: -1/+1
+   there was already consistent in both directions, so "ties go to the
+   player" still holds exactly as before. */
+function rankEntries(entries) {
   entries.sort((a, b) => b.rounds - a.rounds || (a.isPlayer ? -1 : b.isPlayer ? 1 : 0));
-
   return entries.map((e, i) => ({ ...e, rank: i + 1 }));
+}
+
+/* The day's field WITH the real player's own entry inserted at its true sorted
+   position. Ties go to the player, so a matching score reads as "you made it"
+   rather than being bumped below a same-scoring bot. */
+export function generateDailyBoard(dateSeed, playerRounds) {
+  return rankEntries([
+    ...drawField(dateSeed),
+    { name: "You", rounds: Math.max(0, playerRounds || 0), isPlayer: true },
+  ]);
+}
+
+/* The SAME seeded field with no player row in it — for showing the day
+   before the player has played. generateDailyBoard always injects a
+   "You" entry, and a "You · 0" row is worse than useless on Home for
+   someone who hasn't started: it reads as a score of zero against a
+   field they're about to go and try to beat.
+
+   Both functions call the same drawField() with the same seed rather than
+   each re-running the draw themselves, so the preview on Home and the
+   board on the game-over card are the same field by construction — not by
+   two copies of the loop happening to stay in step. That's the one property
+   the file header says the whole design rests on, so it's worth spending a
+   function on. */
+export function previewField(dateSeed) {
+  return rankEntries(drawField(dateSeed));
 }

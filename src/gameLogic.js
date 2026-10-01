@@ -496,7 +496,7 @@ export function reconcileStreakShield(results) {
   const dbKey = dailyKey(dayBefore);
   if (!results[dbKey] && !shielded.includes(dbKey)) return shielded;
   const monthKey = yestKey.slice(0, 7);
-  if (shielded.some((k) => k.slice(0, 7) === monthKey)) return shielded;
+  if (shielded.some((k) => typeof k === "string" && k.slice(0, 7) === monthKey)) return shielded;
   const updated = [...shielded, yestKey];
   try { localStorage.setItem(SHIELD_KEY, JSON.stringify(updated)); } catch {}
   return updated;
@@ -635,6 +635,126 @@ export function twistMoveDelta(twistId, round) {
   }
 }
 
+/* ─── Weekly mutator ───
+   The long-run counterpart to the daily twist: ONE rule a week, shared by
+   every player, in an order that never repeats inside a six-week block. It
+   gives the endless normal run a reason to start fresh each week, which the
+   daily can't do for that mode (the daily is a different board every day, so
+   it has no "this week's version of the same challenge" to vary).
+
+   Deliberately NOT applied to the daily. A daily board's entire promise is
+   that it is identical for every player on a given date; layering a weekly
+   rule on top would make the same date play differently depending on which
+   Monday it was, and nobody would see why. So every caller passes null for a
+   daily and a mutator for a normal run.
+
+   Week boundaries are Mondays in UTC, matching the daily's UTC-midnight
+   reset, so the mutator always flips at the same instant the puzzle does and
+   never on a local-midnight surprise. */
+const MUTATOR_SALT = 0x5f3a91;
+
+/* Each mutator describes only what it changes; every hook defaults to 0, so
+   adding a rule is one object and no edits anywhere else. `kind` is purely
+   for the Home card's colour — no game logic reads it.
+
+   The three hooks are all consumed by generateLevel, and all three are
+   round-aware, so a rule can ramp with the run (escalation) or only fire on
+   particular rounds (gilded) rather than being a flat constant. */
+export const WEEKLY_MUTATORS = [
+  {
+    id: "longhaul", name: "Long Haul", icon: "🏃", kind: "boon",
+    desc: "+3 moves every round",
+    moveDelta: () => 3,
+  },
+  {
+    id: "squeeze", name: "Tight Squeeze", icon: "✂️", kind: "curse",
+    desc: "2 fewer moves every round",
+    moveDelta: () => -2,
+  },
+  {
+    id: "deepcuts", name: "Deep Cuts", icon: "🎨", kind: "curse",
+    desc: "Colours ramp up a round sooner",
+    colorDelta: 1,
+  },
+  {
+    id: "warmup", name: "Warm Start", icon: "🌅", kind: "boon",
+    desc: "Round 1 opens with one colour already sorted",
+    autoSortDelta: (round) => (round === 1 ? 1 : 0),
+  },
+  {
+    id: "escalation", name: "Escalation", icon: "📈", kind: "curse",
+    desc: "1 fewer move for every 3 rounds you clear",
+    moveDelta: (round) => -Math.floor((Math.max(1, round) - 1) / 3),
+  },
+  {
+    id: "gilded", name: "Gilded Round", icon: "⭐", kind: "trade",
+    desc: "Every 5th round opens with +8 moves",
+    moveDelta: (round) => (Math.max(1, round) % 5 === 0 ? 8 : 0),
+  },
+];
+
+/* Days since the epoch, snapped back to that week's Monday (UTC).
+   getUTCDay() is 0 for Sunday, so +6 then mod 7 lands Monday on 0. */
+function weekIndexUTC(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return Math.floor(d.getTime() / 86400000) - DAILY_EPOCH_DAY;
+}
+
+/* One shuffled pass of the whole set per six-week block, so every mutator
+   comes round exactly once per block and never twice inside one.
+
+   The one thing NOT guarded is the seam between two blocks — the last mutator
+   of one block can repeat as the first of the next, roughly one week in six.
+   The daily's twist order goes to real lengths to avoid this (see
+   twistOrder / orderIsFair) because the player sees that rotation as a daily
+   calendar; here it's one card, once a week, and fixing it would mean
+   computing the previous block's order to test against. Judged not worth the
+   complexity, and noted here so it's a known shape rather than a surprise. */
+function mutatorOrder(block) {
+  const ids = WEEKLY_MUTATORS.map((_, i) => i);
+  return shuffle(ids, mulberry32(fmix32((block ^ MUTATOR_SALT) >>> 0)));
+}
+
+export function weekMutator(date = new Date()) {
+  const n = WEEKLY_MUTATORS.length;
+  const week = weekIndexUTC(date);
+  const block = Math.floor(week / n);
+  return WEEKLY_MUTATORS[mutatorOrder(block)[week - block * n]];
+}
+
+/* A mutator by id, or null. The mirror of weekMutator(): weekMutator is the
+   forward direction (which rule is in force now), this is the backward one
+   (which rule was this, again) and it exists because a saved run stores the
+   mutator as an id rather than as a copy of the object.
+
+   Storing the id is the whole point, and the copy is what makes it necessary.
+   WEEKLY_MUTATORS is a module constant, so a mutator's moveDelta/autoSortDelta
+   are FUNCTIONS — JSON.stringify drops every one of them, and a save written
+   from a copied object would come back as a rule that changes nothing at all:
+   silently, every round, with nothing on screen to say why. The id survives
+   the round trip and re-resolves to the live object, so a resumed run applies
+   the same rule the board it was handed was generated under.
+
+   Lookup by id, not by index: the array is the natural thing to reach for
+   (weekMutator returns a positional element), and an index into it is exactly
+   the value that goes stale the moment a mutator is added, removed or
+   reordered in a later build — turning a saved run into a different week. */
+export function mutatorById(id) {
+  if (typeof id !== "string") return null;
+  return WEEKLY_MUTATORS.find((m) => m.id === id) || null;
+}
+
+/* Milliseconds until the next Monday 00:00 UTC. Built from the calendar
+   rather than "+7 days" so it can't drift across a DST boundary or a month
+   change — the same reasoning msUntilNextDaily uses. */
+export function msUntilNextWeek() {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 7);
+  return d.getTime() - now.getTime();
+}
+
 /* ─── Level generator ───
    Recovery levels ("hills, not stairs"): after a round that took a retry
    (struggled=true, set by the caller) or barely cleared (prevMovesLeft <= 1),
@@ -642,11 +762,20 @@ export function twistMoveDelta(twistId, round) {
    — one easier round, then the normal ramp resumes from there.
    Normal runs only: seed !== null means this is a daily-challenge board,
    which must be identical for every player on a given date. Both recovery
-   signals (retried, moves left) are this player's own performance, so
-   letting them change colorCount would make the "same board for everyone"
-   guarantee false starting round 2. */
-export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false, twist = null) {
+    signals (retried, moves left) are this player's own performance, so
+    letting them change colorCount would make the "same board for everyone"
+    guarantee false starting round 2.
+
+    `mutator` is the weekly rule for normal runs (see WEEKLY_MUTATORS). It is
+    a separate parameter from `twist` rather than folded into it on purpose:
+    both feed the same three numbers, but one is a per-day daily guarantee and
+    the other is a per-week normal-run flavour, and they must never both apply
+    to the same board. Callers pass `null` for a daily. Every hook is optional
+    and defaults to 0, so a mutator object that defines none of them changes
+    nothing. */
+export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, struggled = false, twist = null, mutator = null) {
   const twistId = twist && typeof twist === "object" ? twist.id : twist;
+  const m = mutator && typeof mutator === "object" ? mutator : null;
   const rng = seed !== null ? mulberry32(seed) : Math.random;
   const isDailyLevel = seed !== null;
   const closeCall = !isDailyLevel && round > 1 && prevMovesLeft >= 0 && prevMovesLeft <= 1;
@@ -657,6 +786,11 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
      the board two rounds further on. Capped at the 7 colours the game has
      always topped out at, so from round 9 on it changes nothing. */
   if (twistId === "rainbow") colorCount = Math.min(7, colorCount + 1);
+  /* Deep Cuts: the same +1 the Rainbow twist gives, but a week at a time.
+     Bounded below at 2 as well as above at 7 — a negative colorDelta (none
+     ship today) would otherwise walk the count under the two colours the
+     generator assumes it always has. */
+  if (m && m.colorDelta) colorCount = Math.min(7, Math.max(2, colorCount + m.colorDelta));
   const balls = [];
   for (let c = 0; c < colorCount; c++) for (let i = 0; i < MAX_HEIGHT; i++) balls.push(c);
 
@@ -672,8 +806,13 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
 
   const extraTubes = runUpgrades.filter((id) => id === "tube").length;
   for (let i = 0; i < extraTubes; i++) tubes.push([]);
-  /* Warm Start is one free Auto-Sort, on top of any the run has taken. */
-  const autoSortCount = runUpgrades.filter((id) => id === "auto").length + (twistId === "warm" ? 1 : 0);
+  /* Warm Start is one free Auto-Sort, on top of any the run has taken.
+     A mutator gets its own count here rather than sharing the twist's +1 —
+     they can't both be active, and adding them together would hand out two
+     free sorts if that ever changed. */
+  const autoSortCount = runUpgrades.filter((id) => id === "auto").length
+    + (twistId === "warm" ? 1 : 0)
+    + (m && m.autoSortDelta ? m.autoSortDelta(round) : 0);
   tubes = applyAutoSort(tubes, autoSortCount, rng);
 
   const baseLimit = Math.round(colorCount * 3 + round * 0.8) + 4;
@@ -681,7 +820,8 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
   const perfectClearBonus = runUpgrades.includes("clear") && prevMovesLeft >= 5 ? 3 : 0;
   const moveLimit = Math.max(
     1,
-    baseLimit + moveBonus + perfectClearBonus + twistMoveDelta(twistId, round),
+    baseLimit + moveBonus + perfectClearBonus + twistMoveDelta(twistId, round)
+      + (m && m.moveDelta ? m.moveDelta(round) : 0),
   );
 
   return { tubes, moveLimit, colorCount };
@@ -787,7 +927,16 @@ export function loadDailyRun() {
    would restore a half-played board, which in a puzzle game hands the
    player very little and costs a lot of surface to get right. Losing the
    moves inside one round is the price, and it is a small one — rounds are
-   short, and someone who leaves mid-round has barely invested in it yet. */
+   short, and someone who leaves mid-round has barely invested in it yet.
+
+   `mutatorId` is this run's weekly rule, and it is what makes a resumed run
+   the same run. Without it the pinned mutator would be re-resolved from
+   whatever week the player comes back in: a run saved on Sunday and opened
+   on Monday would have its next round generated under a different rule than
+   its first, which is the exact seam the session pin in App.jsx exists to
+   close and would reopen for anyone who put the app down for a week. Stored
+   as an id rather than the object for the reason in mutatorById — the hooks
+   are functions and would not survive JSON. */
 export const NORMAL_RUN_KEY = "cascade:normalRun";
 
 export function saveNormalRun(run) {
@@ -830,6 +979,16 @@ export function loadNormalRun() {
        reads .cats off it on every draw. */
     if (r.path && (typeof r.path.id !== "string" || !Array.isArray(r.path.cats))) return null;
     if (!Number.isFinite(r.lastRoundMovesLeft) || r.lastRoundMovesLeft < 0) return null;
+    /* The week's rule has to still exist, or resuming under a different one
+       is the one outcome worse than not resuming at all. An id that no longer
+       resolves is a save from a build that shipped a different mutator set.
+       `undefined` is legal rather than rejected: that is a save written before
+       this field existed, and there was no pinned rule in it to preserve, so
+       the resume path falls back to the current week. `null` is the shape this
+       build writes when a run somehow had no rule at all, and is equally fine
+       to fall back from — what is NOT fine is a non-empty id that resolves to
+       nothing, so only that case throws the save away. */
+    if (r.mutatorId != null && !mutatorById(r.mutatorId)) return null;
     return r;
   } catch {
     return null;

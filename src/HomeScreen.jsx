@@ -3,12 +3,13 @@
    v3: bottom navigation + custom StreakBadge. */
 
 import { useRef, useState } from "react";
-import { D } from "./constants";
-import { isTubeSolved, pickDailyTwist } from "./gameLogic";
+import { D, RULE_KIND_LABEL } from "./constants";
+import { isTubeSolved, pickDailyTwist, dateToSeed } from "./gameLogic";
 import { Haptic } from "./sound";
 import BottomNav from "./components/BottomNav";
 import StreakBadge from "./components/StreakBadge";
 import FriendCompare from "./components/FriendCompare";
+import DailyBoard from "./components/DailyBoard";
 import Tube from "./Tube";
 
 /* The home screen used to be a title and a Play button on an otherwise
@@ -36,12 +37,14 @@ const HERO_SCALE = 0.8;
    so a module-level constant is the right shape here, not a useId. */
 const TWIST_PANEL_ID = "dailyTwistPanel";
 
-/* `kind` is the one piece of twist metadata that was there and unused. The
+/* `kind` is the one piece of twist metadata that is otherwise unused. The
    collapsed row shows it as a category so the expander is offering
    something the closed state doesn't have. "Trade-off" rather than "Mixed"
    because mixed is the internal name and trade-off is what it means to the
-   player — Feast & Famine gives and takes in the same breath. */
-const TWIST_KIND_LABEL = { blessing: "Blessing", curse: "Curse", mixed: "Trade-off" };
+   player — Feast & Famine gives and takes in the same breath.
+
+   The map itself moved to constants.js as RULE_KIND_LABEL: it was duplicated
+   in the Codex, and the weekly mutators need the same three-way read. */
 
 /* Must match the expand transition in globalStyles.js (300ms, = D.tScreen).
    Duplicated rather than shared because the stylesheet is a static string
@@ -58,11 +61,36 @@ const isCalm = () =>
   typeof document !== "undefined" &&
   document.documentElement.getAttribute("data-reduce-motion") === "1";
 
+/* One place that turns a rule's `kind` into the colour it is drawn in.
+
+   This existed three times on this screen already — the twist disclosure, the
+   weekly card, and now the saved run's rule — which is the exact shape
+   constants.js documents having already bitten the codebase once (see the note
+   above RULE_KIND_LABEL, where the same map was copy-pasted into Home and the
+   Codex). Three copies in one file is two more chances to add a fourth kind
+   somewhere and not here.
+
+   Deliberately NOT RULE_KIND_COLOR, which is the same three-way table and
+   already resolves unknown kinds to the friendly green. The difference is
+   which token each half uses: RULE_KIND_COLOR hands out the FILL tokens
+   (var(--go), not var(--go-text)) because it was written for the Codex and for
+   the CSS-driven badge, where the colour becomes a background. Every use here
+   is type on the card's own background, which is the case the -text variants
+   exist for — a fill-token green at 11px on a dark card is the legibility bug
+   the split was made to avoid. So the fallback is spelled out here rather than
+   inherited. */
+const ruleColor = (rule) => !rule ? D.textSub
+  : rule.kind === "curse" ? D.danger
+  : rule.kind === "trade" || rule.kind === "mixed" ? D.goldText
+  : D.goText;
+
 export default function HomeScreen({
   onPlay, onDaily, onSettings, onAwards, onCodex,
   dailyResults, shieldedDates = [], computeStreak, dailyKey,
-  hasPlayedOnce, achievements, ACHIEVEMENTS, todayRounds,
-  dailyPhase = "new", resumeRound = 1,
+  hasPlayedOnce, todayRounds,
+  dailyPhase = "new", resumeRound = 1, weeklyMutator,
+  normalRun = null, onContinue, onNewRun,
+  savedMutator = null, savedMutatorIsCurrent = true,
 }) {
   /* Two different questions, kept apart. `streakSafe`: today already counts
      for the streak (round 1 cleared) -- drives the streak badge and the week
@@ -81,7 +109,12 @@ export default function HomeScreen({
   /* Today's rule change, shown on the card so it's part of the reason to
      open it (see DAILY_TWISTS in constants.js). */
   const twist = pickDailyTwist();
-  const twistColor = twist.kind === "curse" ? D.danger : twist.kind === "mixed" ? D.goldText : D.goText;
+  const twistColor = ruleColor(twist);
+  /* This week's, and the saved run's one on the Continue card. All three go
+     through the same helper (see ruleColor) so a kind added to the mutators
+     can't land in one and miss the others. */
+  const weeklyColor = ruleColor(weeklyMutator);
+  const savedRuleColor = ruleColor(savedMutator);
 
   const [twistOpen, setTwistOpen] = useState(false);
   const panelRef = useRef(null);
@@ -212,6 +245,156 @@ export default function HomeScreen({
           <span style={S.playText}>Play</span>
         </button>
 
+        {/* A normal run that was left part-way through. Same placement logic as
+            the weekly card below — it describes the Play button's run, not the
+            daily's — and it sits ABOVE that one because a run in progress is
+            the more urgent of the two things it tells you.
+
+            Gated on hasPlayedOnce for the same reason, though here it is not
+            really a gate at all: `normalRun` is only ever non-null for someone
+            who has already played, since it is read from a save this app wrote
+            at a round boundary. The condition is there so the two cards cannot
+            disagree if a save ever outlives a reinstall.
+
+            Two buttons, because "continue this run" and "start a different
+            one" are genuinely different actions that happen to start at the
+            same place: onPlay is wired to resume when a save exists, so a
+            player who wants a fresh round 1 needs an explicit way to say so
+            rather than being stuck with the save until it happens to be
+            overwritten. */}
+        {hasPlayedOnce && normalRun && (
+          <div
+            className="fade-up"
+            style={{
+              ...S.dailyCard,
+              animationDelay: "180ms",
+              borderColor: `color-mix(in srgb, ${D.accent} 34%, transparent)`,
+            }}
+          >
+            <div style={S.dailyHeader}>
+              <span style={{ ...S.dailyLabel, color: D.accent }}>
+                RUN IN PROGRESS
+              </span>
+              <span style={S.dailyCta}>Normal run</span>
+            </div>
+            <div style={S.twistHeadline}>
+              <span aria-hidden="true" style={S.twistIcon}>▶</span>
+              <span style={{ color: D.text, fontWeight: 800 }}>
+                Round {normalRun.round}
+              </span>
+            </div>
+            <div style={S.twistDesc}>
+              Saved at the start of this round — the board is exactly as you left it.
+            </div>
+            {/* Only when the saved run is NOT on this week's rule. Same
+                three-way colour mapping as the weekly card below, and for the
+                same reason: a curse reads as a curse at a glance, without the
+                player having to work out which card they are looking at. The
+                "(last week)" is load-bearing rather than decorative — without
+                it this reads as a second, competing "this week" rule, and the
+                two cards directly above each other would appear to disagree
+                about the same fact. */}
+            {savedMutator && !savedMutatorIsCurrent && (
+              <div style={S.savedRuleRow}>
+                <span
+                  aria-hidden="true"
+                  style={{ ...S.twistIcon, color: savedRuleColor }}
+                >
+                  {savedMutator.icon}
+                </span>
+                <span style={{ color: savedRuleColor, fontWeight: 800, fontSize: 12 }}>
+                  {savedMutator.name}
+                </span>
+                <span style={{ color: D.textSub, fontSize: 11, fontWeight: 600 }}>
+                  {" · last week's rule, still in force for this run"}
+                </span>
+              </div>
+            )}
+            <div style={S.continueRow}>
+              <button
+                className="press"
+                style={{ ...S.continueBtn, ...S.continuePrimary }}
+                onClick={onContinue}
+                aria-label={`Continue your normal run at round ${normalRun.round}`}
+              >
+                Continue
+              </button>
+              <button
+                className="press"
+                style={{ ...S.continueBtn, ...S.continueGhost }}
+                onClick={onNewRun}
+                aria-label="Discard the saved run and start a new one from round 1"
+              >
+                New Run
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* This week's mutator — the rule a NEW run gets, which is what the
+            Play button starts when there is nothing saved (and what "New Run"
+            starts when there is). Placed directly under Play rather than beside
+            the daily card because it describes that button's run, and the daily
+            card is a different mode entirely; splitting the two "rule change"
+            cards apart on the screen is the point.
+
+            "THIS WEEK" and "ENDS MONDAY" are what keep it honest next to the
+            Continue card above: that one names the rule a resumed run is
+            actually under, which can be last week's, and the two sitting 60px
+            apart would otherwise look like a contradiction rather than two
+            different questions.
+
+            Deliberately not a disclosure like the twist below. That one needed
+            to be, because its description was long and had to share a line
+            with the twist's name. A mutator's description is a single short
+            clause that fits on its own line, so a second expander here would
+            be a tap that buys one sentence.
+
+            No countdown, unlike the daily card: "this week" is not ambiguous
+            the way "today" is, and a second interval-driven ticker on a
+            screen that already has one costs renders to say nothing. It
+            changes on Mondays 00:00 UTC, same as the daily.
+
+            Gated on hasPlayedOnce to match the daily card, so a first launch
+            is still just the tagline and a Play button. Flip the condition if
+            you'd rather sell the depth up front. */}
+        {hasPlayedOnce && weeklyMutator && (
+          <div
+            className="fade-up"
+            style={{
+              ...S.dailyCard,
+              animationDelay: "220ms",
+              borderColor: weeklyColor,
+              /* S.twistBadge paints off var(--twist-c), and a custom property
+                 only inherits DOWN — the daily sets it on its own twistWrap
+                 (see the note on S.twistWrap), which is a sibling subtree of
+                 this card, not an ancestor. Without setting it here the badge's
+                 colour and both color-mix()s resolve against nothing and it
+                 renders as borderless, untextured text. */
+              "--twist-c": weeklyColor,
+            }}
+          >
+            <div style={S.dailyHeader}>
+              <span style={{ ...S.dailyLabel, color: weeklyColor }}>
+                THIS WEEK
+              </span>
+              <span style={S.dailyCta}>Normal runs</span>
+            </div>
+            <div style={S.twistHeadline}>
+              <span aria-hidden="true" style={S.twistIcon}>{weeklyMutator.icon}</span>
+              <span style={{ color: weeklyColor, fontWeight: 800 }}>{weeklyMutator.name}</span>
+              <span style={{ color: D.textSub, fontSize: 11.5, fontWeight: 600 }}>
+                {" · "}{RULE_KIND_LABEL[weeklyMutator.kind]}
+              </span>
+            </div>
+            <div style={S.twistDesc}>{weeklyMutator.desc}</div>
+            <div style={S.twistMeta}>
+              <span style={S.twistBadge}>ENDS MONDAY</span>
+              <span style={S.twistSame}>Same for everyone</span>
+            </div>
+          </div>
+        )}
+
         {/* Daily card.
             A <div>, not a <button> — the whole structural cost of B10. The
             twist row inside is now a real disclosure button, and a button
@@ -226,7 +409,7 @@ export default function HomeScreen({
             className="fade-up"
             style={{
               ...S.dailyCard,
-              animationDelay: "220ms",
+              animationDelay: "260ms",
               borderColor: dailySoft,
             }}
           >
@@ -289,12 +472,12 @@ export default function HomeScreen({
                 onClick={toggleTwist}
                 aria-expanded={twistOpen}
                 aria-controls={TWIST_PANEL_ID}
-                aria-label={`Today's twist: ${twist.name}, ${TWIST_KIND_LABEL[twist.kind]}. ${twistOpen ? "Hide details" : "Show details"}`}
+                aria-label={`Today's twist: ${twist.name}, ${RULE_KIND_LABEL[twist.kind]}. ${twistOpen ? "Hide details" : "Show details"}`}
               >
                 <span aria-hidden="true" style={S.twistIcon}>{twist.icon}</span>
                 <span style={S.twistText}>
                   <span style={{ color: twistColor, fontWeight: 800 }}>{twist.name}</span>
-                  <span style={{ color: D.textSub }}>{" · "}{TWIST_KIND_LABEL[twist.kind]}</span>
+                  <span style={{ color: D.textSub }}>{" · "}{RULE_KIND_LABEL[twist.kind]}</span>
                 </span>
                 <span
                   aria-hidden="true"
@@ -359,12 +542,43 @@ export default function HomeScreen({
           </div>
         )}
 
+        {/* Today's ghost field (see components/DailyBoard.jsx).
+
+            This card used to exist only on the game-over screen, which made
+            it useless as the thing that makes someone play: you could only
+            ever see where you'd landed AFTER the day's one attempt was spent.
+            The number that drives a decision — "how far is anyone getting?" —
+            was only ever available after it stopped mattering.
+
+            The variant self-selects on todayRounds. Cleared at least one round
+            and there's a real position to show, so it renders like the
+            game-over card (your rank, your row again if you missed the top 3).
+            Cleared none and it falls back to preview: the same seeded field,
+            with no "You" row, because "You · 0" against a field you haven't
+            played yet is a demotivation rather than a target.
+
+            dateToSeed() is called here rather than passed down from App, for
+            the same reason pickDailyTwist() already is: it keeps the seed
+            logic in one place, and this card is about TODAY's field even when
+            the run that just ended belongs to yesterday (a run that crossed
+            UTC midnight) — which is exactly what the game-over card wants to
+            show and not what Home would. */}
+        {hasPlayedOnce && (
+          <div className="fade-up" style={{ width: "100%", animationDelay: "300ms" }}>
+            <DailyBoard
+              rounds={todayRounds}
+              dateSeed={dateToSeed()}
+              variant={todayRounds > 0 ? "full" : "preview"}
+            />
+          </div>
+        )}
+
         {/* A sibling block, not nested in the button above — a button
             can't legally contain another button or an input, and
             FriendCompare has both. Only shown once today's run is
             over, since comparing needs a score to compare with. */}
         {hasPlayedOnce && attemptOver && (
-          <div className="fade-up" style={{ width: "100%", animationDelay: "260ms" }}>
+          <div className="fade-up" style={{ width: "100%", animationDelay: "340ms" }}>
             <FriendCompare rounds={todayRounds} dateKey={dailyKey()} />
           </div>
         )}
@@ -680,5 +894,55 @@ const S = {
     textAlign: "center",
     letterSpacing: "0.01em",
     transition: `color ${D.tQuick}`,
+  },
+
+  /* The Continue card's two actions, side by side.
+     38px rather than the Play button's 64px: they are a secondary pair on a
+     card, not the primary CTA, and the height budget on a 320x568 is already
+     spoken for (see homeContent) — 38px still clears the 24px WCAG 2.5.5
+     floor with room to spare.
+     flex:1 with a gap rather than fixed widths, so the two stay the same size
+     as the card's inner width changes (it is capped at 360px but the card has
+     its own padding, and a 2x text scale narrows the usable row a lot). */
+  continueRow: {
+    display: "flex", gap: 8, marginTop: 10,
+  },
+  /* The "still on last week's rule" line. marginTop 8 rather than 0 because it
+     sits under S.twistDesc's block and would otherwise read as part of the same
+     sentence. flexWrap because at a large text scale the trailing clause wraps
+     to a second line, and without it that second line would sit under the icon
+     instead of aligning with the clause above it. */
+  savedRuleRow: {
+    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+    marginTop: 8,
+  },
+  continueBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    border: "1px solid transparent",
+    appearance: "none", WebkitAppearance: "none",
+    outline: "none",
+    cursor: "pointer",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontSize: 13, fontWeight: 800,
+    letterSpacing: "0.01em",
+    WebkitTapHighlightColor: "transparent",
+  },
+  /* Solid, because this is the action the card exists for. --twist-c is NOT
+     available here (the card does not set it), so the accent is written
+     literally and the two buttons can't drift from the label colour above
+     them, which is the same D.accent. */
+  continuePrimary: {
+    background: "var(--accent)",
+    color: "#fff",
+    boxShadow: `0 4px 12px color-mix(in srgb, ${D.accent} 27.8%, transparent)`,
+  },
+  /* Outline, not a muted fill: "New Run" discards work, and it should not be
+     able to read as the safe default next to the action that keeps it. */
+  continueGhost: {
+    background: "transparent",
+    color: D.textSub,
+    borderColor: D.glassBorder,
   },
 };

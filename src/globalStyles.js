@@ -534,7 +534,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */
 .glass-premium {
-  background: rgba(20, 27, 50, 0.88);
+  background: var(--glass-elevated);
   backdrop-filter: blur(40px) saturate(140%);
   -webkit-backdrop-filter: blur(40px) saturate(140%);
 }
@@ -725,10 +725,16 @@ button:active:not(:disabled) { transform: scale(0.97); }
 }
 .achEmptyTrophy {
   display: inline-block;
-  fontSize: 32,
-  lineHeight: 1,
-  opacity: 0.7,
-  marginBottom: 12,
+  /* These four were written in React inline-style syntax — camelCase names,
+     comma terminators, no units. Inside a plain CSS template literal the
+     parser hits the unknown property "fontSize", skips forward to the next
+     semicolon, and throws away all four declarations as one bad block. Only
+     the "animation" below survived, so the trophy rendered as an unstyled
+     span with a pulse on it: no 32px sizing, no 0.7 opacity, no 12px gap. */
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.7;
+  margin-bottom: 12px;
   animation: achEmptyTrophy 2400ms ease-in-out infinite;
 }
 
@@ -1044,7 +1050,7 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 /* ═══════════ PREMIUM UTILITIES ═══════════ */
 .glass {
-  background: rgba(15, 21, 40, 0.72);
+  background: var(--glass);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
 }

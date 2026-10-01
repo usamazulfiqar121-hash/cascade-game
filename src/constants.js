@@ -383,3 +383,44 @@ export const DAILY_TWISTS = [
   { id: "tide", name: "Rising Tide", icon: "🌊", kind: "curse", desc: "1 fewer move for every 3 rounds you clear" },
   { id: "feast", name: "Feast & Famine", icon: "⚖️", kind: "mixed", desc: "+5 moves every round, but only 2 cards" },
 ];
+
+/* ═══════════ RULE KINDS ═══════════
+   The player-facing name for each `kind`, in ONE place. This map used to be
+   copy-pasted into both the Home twist disclosure and the Codex, which is
+   the exact shape that goes stale: the two looked the same on the day one of
+   them was written, and a fourth kind added later would have rendered as
+   `undefined` in whichever copy nobody remembered to update.
+
+   The keys are deliberately in two vocabularies — the twists say
+   blessing/curse/mixed, the weekly mutators say boon/curse/trade — because
+   they are different kinds of promise (a twist is the day's flavour, a mutator
+   is the whole week's rule) and "Blessing" would read oddly on a card that
+   says THIS WEEK. What they share is the three POSITIONS, which is why they
+   resolve through the same table and the same three colours.
+
+   Both vocabularies map onto the same colour as their counterpart, so a curse
+   looks like a curse whether it lasts a day or a week. */
+export const RULE_KIND_LABEL = {
+  blessing: "Blessing",
+  boon: "Boon",
+  curse: "Curse",
+  mixed: "Trade-off",
+  trade: "Trade-off",
+};
+
+/* The colour half of the same table, as CSS var() strings so it can be handed
+   straight to a style or a color-mix() in either theme. Deliberately NOT the
+   D.* token values: D is what JSX inline styles use, but the Codex and the
+   CSS-driven badge both work in var() terms, and mixing the two forms in one
+   table is how a value ends up undefined in one theme and fine in the other.
+
+   An unknown kind falls back to the blessing green, matching what both call
+   sites did when their own ternary didn't recognise it — the safe direction,
+   since a new kind should read as neutral-good until someone colours it. */
+export const RULE_KIND_COLOR = {
+  blessing: "var(--go)",
+  boon: "var(--go)",
+  curse: "var(--danger)",
+  mixed: "var(--gold-text)",
+  trade: "var(--gold-text)",
+};

@@ -93,17 +93,20 @@ export default function AchievementsScreen({
   const flashTimerRef = useRef(null);
   useEffect(() => () => clearTimeout(flashTimerRef.current), []);
 
-  const revealFirst = () => {
-    const el = firstCardRef.current;
-    if (!el) return;
-    /* Instant, not smooth, under Reduce Motion: a long animated scroll is
-       exactly the kind of self-initiated movement those users are asking not
-       to be subjected to, and the target is one screen-height away. */
-    el.scrollIntoView({ block: "center", behavior: isCalm() ? "auto" : "smooth" });
-    setFlashFirst(true);
-    clearTimeout(flashTimerRef.current);
-    flashTimerRef.current = setTimeout(() => setFlashFirst(false), 1400);
-  };
+   const revealFirst = () => {
+     const el = firstCardRef.current;
+     if (!el) return;
+     /* Instant, not smooth, under Reduce Motion: a long animated scroll is
+        exactly the kind of self-initiated movement those users are asking not
+        to be subjected to, and the target is one screen-height away. */
+     el.scrollIntoView({ block: "center", behavior: isCalm() ? "auto" : "smooth" });
+     /* Move focus to the target so assistive tech announces and can navigate
+        from it. The card already has tabIndex={-1} for programmatic focus. */
+     el.focus({ preventScroll: true });
+     setFlashFirst(true);
+     clearTimeout(flashTimerRef.current);
+     flashTimerRef.current = setTimeout(() => setFlashFirst(false), 1400);
+   };
 
   return (
     <div
@@ -113,6 +116,23 @@ export default function AchievementsScreen({
           ? "slideOutRight 280ms cubic-bezier(0.4, 0, 1, 1) both"
           : "slideInRight 320ms cubic-bezier(0.16, 1, 0.3, 1)",
         pointerEvents: closing ? "none" : "auto",
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Profile"
+      tabIndex={-1}
+      ref={(el) => {
+        if (el && !el.dataset.focused) {
+          el.dataset.focused = "1";
+          const btn = el.querySelector('button[aria-label="Back"]');
+          btn?.focus?.({ preventScroll: true });
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleBack();
+        }
       }}
     >
       {/* Header */}
@@ -327,7 +347,7 @@ const S = {
     background: "var(--bg-0)",
   },
   backBtn: {
-    width: 40, height: 40,
+    width: 44, height: 44,
     borderRadius: 12,
     background: "var(--glass)",
     border: "1px solid var(--glass-border)",
