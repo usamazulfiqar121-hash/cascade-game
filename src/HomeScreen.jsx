@@ -91,6 +91,11 @@ export default function HomeScreen({
   dailyPhase = "new", resumeRound = 1, weeklyMutator,
   normalRun = null, onContinue, onNewRun,
   savedMutator = null, savedMutatorIsCurrent = true,
+  /* Score attack. onScore is required to start a run, so it has no default;
+     the two data props do, because this screen is also what an install with no
+     score run on disk has to render, and a bare `undefined` there would have
+     thrown in the toLocaleString below on the very first launch. */
+  onScore, scoreBest = 0, scoreRuns = [],
 }) {
   /* Two different questions, kept apart. `streakSafe`: today already counts
      for the streak (round 1 cleared) -- drives the streak badge and the week
@@ -326,6 +331,86 @@ export default function HomeScreen({
                 aria-label="Discard the saved run and start a new one from round 1"
               >
                 New Run
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Score attack — the third mode's entire surface on Home.
+
+            Below Play and the Continue card, above the weekly-mutator card,
+            and that order is deliberate. The two cards above it both describe a
+            run you could be resumed INTO, so they are the urgent pair; this
+            one always starts fresh and can never be resumed, so it can never
+            be the answer to "what was I doing". Putting it last of the three
+            also keeps a first launch unchanged (gated on hasPlayedOnce, like
+            every other card here) and keeps the screen's existing hierarchy
+            intact rather than promoting a mode with no save to the same
+            visual weight as the two that have one.
+
+            The copy states the two rules that make the number mean something —
+            no assists, and a run counts only when it ends — because both are
+            invisible from the outside and both change what a player is
+            deciding right now, standing on this screen. And it states the
+            record, so the target is known before committing.
+
+            Only the best and the count, not a board of runs: the full list is
+            on the run-over card where there is room for it and where the
+            player has just earned the right to be looking at it. Repeating
+            eight rows up here would push the daily card — the mode this screen
+            is built around — below the fold on a 320x568. */}
+        {hasPlayedOnce && (
+          <div
+            className="fade-up"
+            style={{
+              ...S.dailyCard,
+              animationDelay: "200ms",
+              borderColor: `color-mix(in srgb, ${D.gold} 34%, transparent)`,
+            }}
+          >
+            <div style={S.dailyHeader}>
+              <span style={{ ...S.dailyLabel, color: D.goldText }}>
+                🏆  SCORE ATTACK
+              </span>
+              <span style={S.dailyCta}>
+                {scoreBest > 0 ? `Best ${scoreBest.toLocaleString("en-US")}` : "Not attempted"}
+              </span>
+            </div>
+            <div style={S.twistHeadline}>
+              <span aria-hidden="true" style={S.twistIcon}>🎯</span>
+              <span style={{ color: D.text, fontWeight: 800 }}>
+                How far can you get?
+              </span>
+            </div>
+            <div style={S.twistDesc}>
+              No undo, no hints. A run counts once you run out of moves.
+            </div>
+            {/* The best run, not a count of them. "3 runs recorded" describes
+                effort; the score describes the result, and this is the one
+                screen where a player decides whether to start another attempt.
+                Shown only once there's something to show, so the card doesn't
+                open with a row of zeroes. */}
+            {scoreRuns.length > 0 && (
+              <div style={S.savedRuleRow}>
+                <span aria-hidden="true" style={{ ...S.twistIcon, color: D.goldText }}>
+                  🏅
+                </span>
+                <span style={{ color: D.goldText, fontWeight: 800, fontSize: 12 }}>
+                  {scoreRuns[0].score.toLocaleString("en-US")}
+                </span>
+                <span style={{ color: D.textSub, fontSize: 11, fontWeight: 600 }}>
+                  top run · reached round {scoreRuns[0].round}
+                </span>
+              </div>
+            )}
+            <div style={S.continueRow}>
+              <button
+                className="press"
+                style={{ ...S.continueBtn, ...S.continuePrimary }}
+                onClick={onScore}
+                aria-label="Start a score attack run"
+              >
+                Start Run
               </button>
             </div>
           </div>

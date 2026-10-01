@@ -8,7 +8,7 @@
    about which theme source it reads from is exactly the kind of thing that
    later gets "used" by accident and reintroduces a hardcoded-to-one-theme
    bug. */
-import { ACHIEVEMENTS } from "./constants";
+import { ACHIEVEMENTS, STREAK_MILESTONES } from "./constants";
 import { useEffect, useRef, useState } from "react";
 import { useEnterShield } from "./useEnterShield";
 
@@ -74,8 +74,50 @@ export default function AchievementsScreen({
      achievement's progress. */
   const locked = ACHIEVEMENTS.filter((a) => !achievements.includes(a.id));
   const nextUp = locked[0] || null;
+
+  /* The nearest streak milestone still ahead, and how many days short of it
+     the player is. These are the ONLY achievements with real, derivable
+     progress: `streak` is a pure function of today's date and dailyResults
+     (computeStreak), and the milestone's own threshold is its `days`. Every
+     other entry would need a stored progress value that does not exist
+     anywhere, which is why the bar above is a count rather than a set of
+     "3/5" rows (see the note on nextUp).
+
+     "Nearest" is the lowest still-locked threshold, which is just the first
+     entry in STREAK_MILESTONES — that list is sorted ascending precisely so
+     this does not have to sort anything, and so a player one day from a week
+     is pointed at the WEEK and not at the century. Preferring the furthest
+     milestone would make the loudest ceremony in the app the one furthest out
+     of reach.
+
+     Gated on streak > 0: with no active streak this is not "one day away", it
+     is "seven days away, and you have not played at all" — which is the daily
+     card's job to say, not a reason to promote an achievement here. It also
+     matches StreakBadge, which Home only renders at all when streak > 0. */
+  const nextStreak = streak > 0
+    ? STREAK_MILESTONES.find((m) => !achievements.includes(m.id)) || null
+    : null;
+  const streakDaysShort = nextStreak ? Math.max(0, nextStreak.days - streak) : 0;
+  /* What the NEXT UP slot shows: the streak milestone when there is one still
+     ahead, else the list-order pick the slot has always shown. The fallback is
+     what keeps the guide honest once all three milestones are claimed — at that
+     point this screen has no streak story left to tell and must not keep
+     gesturing at one. */
+  const streakPick = nextStreak || nextUp;
   const showEmpty = count === 0;
-  const showGuide = count > 0 && count <= 3;
+  /* 1–3 was the window before a streak milestone could be reached in here at
+     all, and the reasoning behind it still holds for a player with no streak
+     story: the guide's job is naming the next step, and at 4+ unlocked the grid
+     below already speaks for itself. But it silently covered the case the whole
+     streak system was built for — a player with eight achievements and a 6-day
+     streak got the bare count and bar, with the week-streak ceremony they are
+     one day away from visible nowhere on the screen.
+
+     So the window is now the earlier one OR an active, unfinished streak. Still
+     bounded: a player at 4+ with no streak gets the bare card, and one who has
+     claimed all three milestones loses the extension too (nextStreak is null),
+     so this cannot become permanent furniture. */
+  const showGuide = (count > 0 && count <= 3) || !!nextStreak;
   /* One variable for the whole block: both states render the same card, and
      the old bare progress card is suppressed for both. Leaving the old card
      up would stack its "N / 11 unlocked" + bar directly above or below a
@@ -210,18 +252,48 @@ export default function AchievementsScreen({
               <>
                 <div style={S.guideTitle}>You&apos;re doing great</div>
                 <ProgressLine count={count} total={total} pct={pct} />
-                {nextUp && (
-                  /* The next trophy, named. This is the whole point of the
-                     1–3 state: the bar says where they are, this says where
-                     to go. A progress bar on its own is a scoreboard; a
-                     progress bar with a named next step is a plan. */
+                {/* What fills the NEXT UP slot. A reachable streak milestone OUTRANKS the
+                    list-order pick (`nextUp`, computed above), and this is the
+                    one substitution in the whole guide. At a 6-day streak the
+                    list order hands over "Getting Good · Reach Round 10" —
+                    something the player may have no path to at all this week
+                    — while the ceremony they are one day from is the loudest
+                    thing the app will do for them. Pointing at the loudest
+                    reachable goal is the Progress Principle's actual claim.
+
+                    It replaces the old pick in the SAME slot rather than being
+                    added beside it, so the card cannot grow a second progress
+                    row saying the same kind of thing twice. And the swap only
+                    ever runs one direction: a streak milestone has a real
+                    progress number to show and a generic entry does not, so this
+                    trades a vague "reach round 10" for a precise "1 more day",
+                    never the reverse. Once all three milestones are claimed,
+                    `streakPick` falls back to `nextUp` and the card reads
+                    exactly as it did before any of this. */}
+                {streakPick && (
                   <div style={S.nextUp}>
                     <span style={S.nextUpLabel}>NEXT UP</span>
                     <div style={S.nextUpRow}>
-                      <span aria-hidden="true" style={S.nextUpIcon}>{nextUp.icon}</span>
+                      <span aria-hidden="true" style={S.nextUpIcon}>{streakPick.icon}</span>
                       <div style={S.nextUpBody}>
-                        <div style={S.nextUpName}>{nextUp.name}</div>
-                        <div style={S.nextUpDesc}>{nextUp.desc}</div>
+                        <div style={S.nextUpName}>{streakPick.name}</div>
+                        <div style={S.nextUpDesc}>{streakPick.desc}</div>
+                        {/* The only real progress figure in the guide, and the reason to
+                            prefer this card. The zero case is a normal render,
+                            not a rounding artefact: streak and the achievement
+                            list are written in the same tick (App.jsx's streak
+                            effect), so the card can paint once with the streak
+                            already past the threshold and the unlock not yet
+                            committed. "Earned" is the honest word for that
+                            frame — it does, or is about to — whereas "0 more
+                            days" reads as a counter that is stuck. */}
+                        <div style={S.streakProgress}>
+                          {streakDaysShort === 0
+                            ? "Earned — tap to claim"
+                            : streakDaysShort === 1
+                            ? "1 more day"
+                            : `${streakDaysShort} more days`}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -588,6 +660,19 @@ const S = {
     fontSize: 11, fontWeight: 600,
     color: "var(--text-sub)",
     marginTop: 2, lineHeight: 1.35,
+  },
+  /* The one real progress figure in the whole guide, and the reason the streak
+     milestone is allowed to outrank the list-order pick (see the NEXT UP
+     block). Gold, not --text-sub: this is the number the card exists to
+     deliver, and the description right above it is supporting text. --gold-text
+     rather than --gold because at 11px this has to clear contrast on both
+     themes, which is the same split every other label on this file uses. */
+  streakProgress: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11, fontWeight: 800,
+    color: "var(--gold-text)",
+    marginTop: 4, lineHeight: 1.3,
+    letterSpacing: "-0.01em",
   },
 
   card: {

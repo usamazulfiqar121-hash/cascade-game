@@ -75,9 +75,23 @@ export const ACHIEVEMENTS = [
   { id: "upgrades_10", name: "Collector", desc: "Hold 10 upgrades in one run", icon: "🎁" },
   { id: "combo_10", name: "Chain Master", desc: "Hit a 10× combo", icon: "🔥" },
   { id: "no_undo_5", name: "Purist", desc: "Clear 5 rounds without undo", icon: "🛡" },
-  { id: "streak_7", name: "Week Streak", desc: "7-day daily streak", icon: "📅", tier: 1 },
-  { id: "streak_30", name: "Month Streak", desc: "30-day daily streak", icon: "🌙", tier: 2 },
-  { id: "streak_100", name: "Century Streak", desc: "100-day daily streak", icon: "💯", tier: 3 },
+  /* `days` is the streak length each one is earned at, and it lives HERE
+     rather than as three literals in App.jsx's streak effect — which is where
+     they were, so the achievement list advertised "7-day daily streak" while
+     the code that actually grants it said `streak >= 7`, with nothing tying
+     the two together. Retuning a milestone to 14 days would have meant
+     finding that effect by memory, and missing it would have silently granted
+     an achievement whose own description contradicted it.
+
+     Unlike every other achievement, these three have REAL, DERIVABLE progress
+     — the current streak is already computed from dailyResults (see
+     computeStreak) and handed to the Profile screen, so a player one day
+     short can be told exactly that. That is the one thing none of the other
+     eight can offer, and it is why they carry a tier: the ceremony scales
+     with them, and the guide can point at the nearest one still ahead. */
+  { id: "streak_7", name: "Week Streak", desc: "7-day daily streak", icon: "📅", tier: 1, days: 7 },
+  { id: "streak_30", name: "Month Streak", desc: "30-day daily streak", icon: "🌙", tier: 2, days: 30 },
+  { id: "streak_100", name: "Century Streak", desc: "100-day daily streak", icon: "💯", tier: 3, days: 100 },
 ];
 
 /* Streak milestone ceremony — one entry per tier, keyed by ACHIEVEMENTS[].tier.
@@ -147,6 +161,26 @@ export const STREAK_CEREMONY = {
     life: 950,
   },
 };
+
+/* The streak achievements as one ordered list, derived from ACHIEVEMENTS
+   rather than hand-written beside it — a second hand-maintained list of the
+   same three entries would be free to drift out of step with the one the
+   Profile screen renders, and the symptom would be a milestone that displays
+   but can never be earned (or the reverse: granted with nothing to show for
+   it). Filtered on `days` rather than on `tier`, because it is the streak
+   LENGTH that unlocks these and tier is the ceremony's scale — they happen to
+   coincide today at 3 entries, but they describe different things.
+
+   Sorted ascending by threshold, and that order matters: App.jsx unlocks these
+   in a single tick, and the ceremony defers to a microtask that keeps only the
+   highest tier of the batch (see flushCeremony). Ascending is what makes the
+   final call in the tick the one that wins. A copy is sorted rather than the
+   ACHIEVEMENTS order being relied on, because that list is hand-authored and
+   a future entry inserted at the top would otherwise silently change which
+   ceremony fires. */
+export const STREAK_MILESTONES = ACHIEVEMENTS
+  .filter((a) => typeof a.days === "number")
+  .sort((a, b) => a.days - b.days);
 
 /* Reduce Motion shortens the streak ceremony by this much rather than
    removing it — see `duration` above. */

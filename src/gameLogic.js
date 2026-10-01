@@ -1121,3 +1121,119 @@ export function pickArchetypes(count = ARCHETYPE_OFFER_COUNT, rng = Math.random)
 export function dailyArchetype(date = new Date()) {
   return pickArchetypes(1, mulberry32(dailyRoundSeed(0, DAILY_STREAM.archetype, date)))[0];
 }
+
+/* ═══════════ SCORE ATTACK ═══════════
+
+   The leaderboard mode. Two rules make its number mean something, and both
+   are enforced by this file's callers rather than here:
+
+     1. No assists. No undo, no hints — an assisted run and an unassisted run
+        are not comparable, and a leaderboard that mixed them would be
+        reporting nothing. See canAssist in App.jsx.
+
+     2. Nothing is written until the run ends. There is deliberately NO
+        saveScoreRun / loadScoreRun / clearScoreRun: the absence of a resume
+        path is the mechanism, not a missing feature. A saved score run could
+        be picked back up after a loss, and then "your runs" would be a list
+        of attempts rather than of runs.
+
+   The two keys are separate from the normal run's best and the daily's best on
+   purpose. Three different "records" for three different modes, and the whole
+   reason this mode can be trusted is that its record means the same thing
+   every time it is read — a score, never a round count. */
+
+export const SCORE_BEST_KEY = "cascade:scoreBest";
+export const SCORE_RUNS_KEY = "cascade:scoreRuns";
+
+/* Eight, not ten or "all of them": the board is rendered as fixed-height rows
+   with no scrolling (it lives on the game-over card, where the viewport is
+   already occupied by the result and two buttons), and a list that outgrows
+   its card is worse than a list that ends. The score is cumulative in the
+   sense that matters — one player's own best survives every overwrite below,
+   because SCORE_BEST_KEY is written independently of this cap. */
+export const SCORE_RUNS_MAX = 8;
+
+/* The personal best, or 0. Math.max with 0 and the || 0 are both load-bearing:
+   a hand-edited or truncated value must never be able to render as "best
+   NaN" or a negative best in the HUD. */
+export function loadScoreBest() {
+  try {
+    const n = parseInt(localStorage.getItem(SCORE_BEST_KEY), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/* The runs list, newest-best first, already trimmed and validated.
+
+   Validated on the way OUT of storage rather than trusted: this key is the one
+   piece of the mode's state a future build, a devtools session or a partial
+   write could put a non-number in, and every consumer renders it — so
+   .toLocaleString() on a string, or `r.score - a.score` sorting by string
+   concatenation, would both surface as visibly wrong output on the card that
+   the player is looking at precisely to check their score.
+
+   Sorted here rather than at each render so every reader (the card, and
+   anything added later) sees one order, and so the order is fixed by what is
+   ON DISK rather than by how long ago the run happened. ts breaks ties, newest
+   first — two runs can genuinely tie on score, and without it their relative
+   order would depend on the sort implementation. */
+export function loadScoreRuns() {
+  try {
+    const raw = localStorage.getItem(SCORE_RUNS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((r) => r && Number.isFinite(r.score) && r.score > 0 && Number.isFinite(r.round) && r.round > 0)
+      .map((r) => ({ score: Math.floor(r.score), round: Math.floor(r.round), ts: Number.isFinite(r.ts) ? r.ts : 0 }))
+      .sort((a, b) => b.score - a.score || b.ts - a.ts)
+      .slice(0, SCORE_RUNS_MAX);
+  } catch {
+    return [];
+  }
+}
+
+/* Records one finished run, and returns everything the results card needs to
+   render without a second read of storage.
+
+   The `best` reported is read BEFORE this run is appended, so `isNew` is a
+   real comparison and a tie correctly does not claim a record. That ordering
+   is also why a failed write cannot produce a "New High Score" on a card whose
+   board does not contain the run — recordScoreRun can report a run that never
+   reached storage (quota, private-mode), and the card's own empty state covers
+   that rather than the two disagreeing.
+
+   `rank` is computed against the FULL merged list, not the trimmed one, so it
+   is this run's true position rather than its index in a list that dropped the
+   bottom — though with the cap applied to the merge below, every run that
+   survives to disk is rank 1..8 by construction. */
+export function recordScoreRun(score, round) {
+  const s = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
+  const r = Number.isFinite(round) ? Math.max(0, Math.floor(round)) : 0;
+  const entry = { score: s, round: r, ts: Date.now() };
+  /* Load the best from disk rather than only from the list: the list is capped,
+     so a record-setting run is written and then evicted from the list by eight
+     better runs in the same session, and deriving the best from the list alone
+     would let the record silently fall back. */
+  const prevBest = loadScoreBest();
+  const merged = [entry, ...loadScoreRuns()]
+    .sort((a, b) => b.score - a.score || b.ts - a.ts);
+  const rank = merged.findIndex((e) => e.ts === entry.ts && e.score === entry.score) + 1;
+  const isNew = s > prevBest;
+  const best = Math.max(prevBest, s);
+  try {
+    localStorage.setItem(SCORE_RUNS_KEY, JSON.stringify(merged.slice(0, SCORE_RUNS_MAX)));
+    if (isNew) localStorage.setItem(SCORE_BEST_KEY, String(best));
+  } catch {
+    /* Storage full or unavailable. The caller still gets a coherent verdict
+       from the in-memory values above; only the board on disk is missing. */
+  }
+  /* ts is returned so the results card can identify THIS run's own row by
+     identity. It cannot use its score or its position: the board is sorted by
+     score, so a run that beat the previous best and a run that finished below
+     it are two different cases, and a tie puts two runs on the same figure.
+     Matching on the timestamp is exact in all three. */
+  return { score: s, round: r, best, isNew, rank, ts: entry.ts };
+}

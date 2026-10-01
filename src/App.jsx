@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, rarityText, rarityTint, STREAK_CEREMONY, CALM_DISCOUNT } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -12,6 +12,7 @@ import {
   DAILY_STATE_KEY, DAILY_RUN_KEY,
   pickDailyTwist, LUCKY_DAY_BONUS, FEAST_CARD_COUNT, WIND_MOVES,
   dailyScore, DAILY_BEST_SCORE_KEY, BEST_STREAK_KEY, SHIELD_KEY,
+  SCORE_BEST_KEY, SCORE_RUNS_KEY, loadScoreBest, loadScoreRuns, recordScoreRun,
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
@@ -271,7 +272,28 @@ export default function Cascade() {
     return "dark";
   });
   const [stats, setStats] = useState({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
-  const [isDaily, setIsDaily] = useState(false);
+  /* Which of the three modes this run is. Was a bare `isDaily` boolean, which
+     could only ever say "daily or not" — and the third mode needs to be
+     distinguishable from BOTH of the others at once: score attack shares the
+     normal run's endless structure and the daily's no-assist rule, while
+     being neither of them. A boolean would have made that either two flags
+     that can disagree or a tri-state string pretending to be a flag.
+
+     isDaily and isScore below are derived, never stored, so there is exactly
+     one source of truth and no way for the three to fall out of step. */
+  const [mode, setMode] = useState("normal");  // "normal" | "daily" | "score"
+  const isDaily = mode === "daily";
+  const isScore = mode === "score";
+  /* Score attack is the leaderboard mode, so it drops the assist layer the
+     same way the daily does: undo and hints exist to make a run easier, and a
+     mode whose entire subject is a comparable number can't hand them out. */
+  const canAssist = mode === "normal";
+  /* Score-attack standings. scoreBest is the number the HUD and Home card
+     read; scoreResult is what the run-over card renders (set once, at the
+     same moment recordScoreRun writes). Neither is written mid-run. */
+  const [scoreBest, setScoreBest] = useState(() => loadScoreBest());
+  const [scoreRuns, setScoreRuns] = useState(() => loadScoreRuns());
+  const [scoreResult, setScoreResult] = useState(null);
   const [dailyState, setDailyState] = useState(null);   /* daily challenge state machine */
   const [toast, setToast] = useState(null);
   const [dailyRun, setDailyRun] = useState({ rounds: [], totalMoves: 0 });
@@ -547,6 +569,17 @@ export default function Cascade() {
   const [shake, setShake] = useState(0);
   const tubesRowRef = useRef(null);
   const wrongFlashRef = useRef(null);
+  /* Round-clear flash target. Driven imperatively like `celebrate`, not
+     through a counter + effect like the wrong-move shake: the clear happens at
+     one known instant (the isSolved branch of attemptPour), so there is no
+     "replay on an unrelated re-render" hazard for a counter to defend against,
+     and the flash must fire BEFORE the ~450ms handoff to the upgrade cards
+     begins — an effect would land a frame or two late for no gain. */
+  const clearFlashRef = useRef(null);
+  /* The combo badge, for the milestone pulse below. The badge already pops on
+     every increment via the comboPop class; this is the louder, less frequent
+     beat on top of it. */
+  const comboBadgeRef = useRef(null);
   /* Board fit (see fitTubeScale in Tube.jsx): tubeScaleFor() picks a size from
      the tube count alone, so on a short/narrow screen the board could run off
      the bottom. The effect measures where the board starts and shrinks the
@@ -654,6 +687,20 @@ export default function Cascade() {
   const reduceMotionRef = useRef(reduceMotion);
 
   const movesLeft = level.moveLimit + bonusMoves - moves;
+
+  /* The score-attack stand-in for gameOverDisplayRound, which is what the
+     count-up effect and the results card both read. Kept separate from that
+     round counter rather than folded into it, because the two mean different
+     things and the round counter is also read by the share card and the daily
+     board: one number, two purposes, and a merge would have quietly changed
+     what the daily's own card displays.
+
+     Scored from dailyRun.rounds — the same log the run-over write scores from
+     (see recordScoreRun's call site) — so what counts up on the card and what
+     lands on the board cannot be two different figures derived two different
+     ways. Zero until the first round clears, which is also exactly when a run
+     stops being recordable. */
+  const scoreDisplay = useMemo(() => (isScore ? dailyScore(dailyRun.rounds) : 0), [isScore, dailyRun.rounds]);
 
   /* What the upgrade screen reports back about the run. Both are pure
      functions of the run's own card list (runArchetype / pityActive in
@@ -805,7 +852,38 @@ export default function Cascade() {
     if (phase !== "gameover") return;
     /* Daily counts ROUNDS CLEARED, the number the board, the share text and
        the friend code all use. `round` is the one you lost on, so the big
-       number used to read one higher than everything else on the card. */
+       number used to read one higher than everything else on the card.
+
+       Score attack counts the SCORE instead — the number the mode is about,
+       and the one everything else on its card is measured against. Counting
+       rounds there and printing the score below it would put two different
+       numbers on the same card with the larger one labelled "rounds".
+
+       isScore reads state directly rather than through a ref: this effect is
+       keyed on [phase, round], and it is the render that carries the new
+       phase which supplies the closure — the same reasoning as canAssist in
+       the level effect above.
+
+       Score attack gets its own 900ms count-up rather than sharing the 700ms
+       one: the value is up to five digits instead of one, so at the same rate
+       the digits visibly blur past, and the mode's whole result is that one
+       number arriving.
+
+       The value is scoreDisplay — the one derivation shared with the run-over
+       write — so the count-up and the recorded figure cannot disagree. */
+    if (isScore) {
+      const s = scoreDisplay;
+      if (reduceMotionRef.current) { setGameOverDisplayRound(s); return; }
+      setGameOverDisplayRound(0);
+      const started = performance.now();
+      let raf2 = requestAnimationFrame(function tick2(now) {
+        const t = Math.min(1, (now - started) / 900);
+        const eased = 1 - Math.pow(1 - t, 3);
+        setGameOverDisplayRound(Math.round(s * eased));
+        if (t < 1) raf2 = requestAnimationFrame(tick2);
+      });
+      return () => cancelAnimationFrame(raf2);
+    }
     const shown = isDailyRef.current ? Math.max(0, round - 1) : round;
     if (reduceMotionRef.current) { setGameOverDisplayRound(shown); return; }
     setGameOverDisplayRound(0);
@@ -819,7 +897,7 @@ export default function Cascade() {
       if (t < 1) raf = requestAnimationFrame(tick);
     });
     return () => cancelAnimationFrame(raf);
-  }, [phase, round]);
+  }, [phase, round, isScore, scoreDisplay]);
 
   /* ═══ THEME ═══ */
 
@@ -887,11 +965,20 @@ export default function Cascade() {
     setBonusMoves(0);
     setSelected(null);
     setComboCount(0);
-    /* Daily = no undo, no hint (pure skill) */
-    const daily = isDailyRef.current;
-    setUndoLeft(daily ? 0 : 2);
+    /* Daily and score attack = no undo, no hint (pure skill). Read from the
+       mode itself rather than the isDailyRef: this effect is keyed on `level`
+       and fires for the round-1 board the run started on, which is generated
+       in the same tick `mode` is set — so the ref could still be holding the
+       PREVIOUS run's answer here, and a run started from Score Attack would
+       have opened with undo and hints before its first pour. `canAssist` is
+       read straight off the render's own state instead, so it is never stale.
+
+       Deliberately opt-OUT: a mode added later gets assists by default and
+       has to say otherwise, rather than inheriting a bare `!isDaily` check
+       that quietly grants them. */
+    setUndoLeft(canAssist ? 2 : 0);
     setSnapshots([]);
-    setHintLeft(daily ? 0 : 2);
+    setHintLeft(canAssist ? 2 : 0);
     setHint(null);
     setFlights([]);
     setLanding(null);
@@ -913,6 +1000,13 @@ export default function Cascade() {
         setPhase("upgrade");
       }
     }
+    /* Deliberately still keyed on `level` alone. `canAssist` is read from this
+       effect's own closure, which is the render's — and the render that
+       produced the new level is the same render that carries the new mode,
+       because both are set in the same batch at run start. Adding it as a dep
+       would make this effect fire again on any mode change alone and tear down
+       a live board (resetting tubes, moves and phase) to re-apply what it had
+       already applied. */
   }, [level]);
 
   useEffect(() => {
@@ -932,6 +1026,42 @@ export default function Cascade() {
       }
     } catch {}
   }, [shake]);
+
+  /* Combo milestone micro-pulse. The badge already pops on every single
+     increment (the comboPop class, keyed on comboCount), so this is not "make
+     the combo move" — it is a second, stronger beat every fifth link, which
+     gives a long streak a rhythm instead of one flat drumroll. It matters
+     because the combo counter's whole job is to make a rising streak feel like
+     it is building toward something; without a milestone the numbers climb
+     with no landmarks.
+
+     An effect rather than a direct call from attemptPour, unlike `celebrate`
+     and `flashClear`: the target is React-rendered and its ref is only
+     populated after the render that changed comboCount, so there is nothing to
+     animate at the instant attemptPour runs. Keying on comboCount is also what
+     makes the multiple-of-five test exact — it fires once per increment, in
+     the render that shows the new number.
+
+     Skipped under Reduce Motion, same as `celebrate`: the badge still pops
+     (comboPop is a small CSS transform) and the count is still there, so the
+     milestone is not the only carrier of "you hit 5×". */
+  useEffect(() => {
+    if (comboCount < 5 || comboCount % 5 !== 0) return;
+    if (reduceMotionRef.current) return;
+    const el = comboBadgeRef.current;
+    try {
+      if (el && typeof el.animate === "function") {
+        el.animate(
+          [
+            { transform: "scale(1)" },
+            { transform: "scale(1.28)", offset: 0.4 },
+            { transform: "scale(1)" },
+          ],
+          { duration: 420, easing: "cubic-bezier(.34,1.56,.64,1)" },
+        );
+      }
+    } catch {}
+  }, [comboCount]);
 
   /* Celebration thump for a combo/mega bonus — the positive twin of the
      effect above. Called from attemptPour at the same instant as
@@ -963,6 +1093,41 @@ export default function Cascade() {
     try {
       if (row && typeof row.animate === "function") {
         row.animate(cheerKeyframes(amp, rot), { duration: ms, easing: "cubic-bezier(.16,1,.3,1)" });
+      }
+    } catch {}
+  }, []);
+
+  /* The round-clear flash: a soft wash of the board's accent colour over the
+     whole play area, at the instant the last tube solves. This is the fourth
+     "something happened" signal in the pour vocabulary and the only one that
+     fires on the ROUND rather than the move — the checkmark burst says "that
+     tube is done", the combo arpeggio says "that was a streak", and this says
+     "that was the round". Without it the win registered only as the boards
+     going quiet before the upgrade cards, which is the least emphatic possible
+     way to mark the most important event in the loop.
+
+     Opacity-only, and skipped outright under Reduce Motion for the same reason
+     `celebrate` is: nothing is lost by dropping it, since the clear still has
+     its chime, its haptic, its Music pulse and the card transition. The
+     overlay is pointer-events:none and aria-hidden, so it cannot intercept a
+     tap or be announced.
+
+     Fired with no await: the handoff to the upgrade cards is already on a
+     timer (impactMs + 450), and this deliberately finishes inside that window
+     rather than extending it. */
+  const flashClear = useCallback(() => {
+    if (reduceMotionRef.current) return;
+    const el = clearFlashRef.current;
+    try {
+      if (el && typeof el.animate === "function") {
+        el.animate(
+          [
+            { opacity: 0 },
+            { opacity: 0.5, offset: 0.28 },
+            { opacity: 0 },
+          ],
+          { duration: 520, easing: "ease-out" },
+        );
       }
     } catch {}
   }, []);
@@ -1008,6 +1173,40 @@ export default function Cascade() {
     armEphemeral(() => setParticles((p) => p.filter((q) => q.id !== id)), life);
   }, [armEphemeral]);
 
+  /* The round-clear burst — the board-wide confetti that marks a whole round
+     rather than a single pour. Centred on the board row and thrown wide, so it
+     reads as "that was the round", not "that tube was done" (the per-tube
+     checkmark burst already covers the latter, and it fires on the same pour).
+
+     Sized by how the round was WON, which is the one thing a clear has to
+     distinguish: a round cleared with moves to spare gets the full celebration,
+     a round scraped home on the last move gets a smaller one. The threshold is
+     five, the same number the Perfect Clear upgrade pays out at — reaching it
+     is already the game's own definition of a clear worth rewarding, so this
+     borrows that line rather than inventing a second.
+
+     reduceMotion halves the count rather than skipping the burst, matching the
+     per-tube burst's own behaviour (see the `burstCount` line in attemptPour):
+     a win should still visibly be a win under Reduce Motion, just calmer. The
+     board rect is measured rather than assumed, with a viewport fallback, so a
+     wrapped two-row board centres on the whole board and not on its top row. */
+  const celebrateClearBurst = useCallback((movesLeft) => {
+    let cx = null, cy = null;
+    try {
+      const row = tubesRowRef.current;
+      if (row) {
+        const r = row.getBoundingClientRect();
+        cx = r.left + r.width / 2;
+        cy = r.top + r.height / 2;
+      }
+    } catch {}
+    if (cx == null) { cx = window.innerWidth / 2; cy = window.innerHeight * 0.42; }
+    const perfect = movesLeft >= 5;
+    const base = perfect ? 28 : 16;
+    const count = reduceMotionRef.current ? Math.ceil(base / 2) : base;
+    spawnParticles(cx, cy, T.accent, count, perfect ? 110 : 66, COLORS, perfect ? 1000 : 760);
+  }, [spawnParticles]);
+
   /* One ceremony per batch, for the highest tier in it.
 
      The streak effect calls unlockAch("streak_7"), then "streak_30", then
@@ -1049,8 +1248,35 @@ export default function Cascade() {
        Palette, spread, count and lifetime are all read off the ceremony in
        constants.js rather than being decided here, so a tier's whole feel
        lives in one readable block. `T.gold` is still passed as the base
-       colour for the tier-1 case, whose `colors` is null. */
-    spawnParticles(window.innerWidth / 2, 86, T.gold, c.particles, c.dist, c.colors, c.life);
+       colour for the tier-1 case, whose `colors` is null.
+
+       Reduce Motion reduces this burst rather than removing it, which is the
+       opposite trade from the celebration shake above — and deliberately so.
+       The shake is decoration on a bonus the player can already see ("+2",
+       the extra move counter); the confetti is the only cue that a CEREMONY
+       happened, because the toast itself is the same card shape at all three
+       tiers. Drop the burst and the reduce-motion path is left with a plain
+       notification, where a week and a century are indistinguishable again.
+
+       Same reduction the pour burst already uses (burstCount in attemptPour):
+       roughly half the pieces, thrown a bit closer, gone sooner. Distance and
+       life scale WITH the count rather than the count alone, because a burst
+       that keeps tier 3's full 100px reach while holding 12 of its 24 pieces
+       still reads as a large fast movement — the piece count alone is not
+       what makes a burst feel big. Life is in the multiplier for the same
+       reason: 950ms of tier-3 drift is precisely the ambient movement the
+       setting exists to stop, and it is also the number that unmounts the
+       burst (see spawnParticles), so the two cannot disagree. */
+    const calm = reduceMotionRef.current;
+    spawnParticles(
+      window.innerWidth / 2,
+      86,
+      T.gold,
+      calm ? Math.ceil(c.particles / 2) : c.particles,
+      calm ? Math.round(c.dist * 0.7) : c.dist,
+      c.colors,
+      calm ? Math.max(400, Math.round(c.life * 0.6)) : c.life,
+    );
   }, [spawnParticles]);
 
   /* achToast shows one achievement at a time, but unlockAch can be called
@@ -1139,13 +1365,30 @@ export default function Cascade() {
   /* Streak milestones — same unlock/toast path as any other achievement.
      Re-checked whenever dailyResults or shieldedDates changes (i.e. right
      after completing today's daily, or once on load); unlockAch's own
-     localStorage check makes repeat calls at the same streak a no-op. */
+     localStorage check makes repeat calls at the same streak a no-op.
+
+     The three thresholds are read off ACHIEVEMENTS[].days rather than written
+     out as literals, so the achievement that says "7-day daily streak" and the
+     check that grants it cannot disagree — they used to be the same number in
+     two files with nothing linking them. The filter is what makes this safe to
+     extend: a milestone is now added by adding one entry to ACHIEVEMENTS, with
+     its own tier, and it is picked up here automatically. Previously a fourth
+     entry would have been listed on the Profile screen and never granted.
+
+     The three unlocks stay explicit rather than looping. A loop over the
+     filtered list is shorter, but the ascending order is load-bearing rather
+     than cosmetic: unlockAch defers the ceremony to a microtask and keeps only
+     the HIGHEST tier of a batch (see flushCeremony), so ascending is what lets
+     the last call in the tick be the one that wins. Handled by the ref, but not
+     worth making the reader re-derive that to save three lines. */
   useEffect(() => {
     const streak = computeStreak(dailyResults, shieldedDates);
     setBestStreak(updateBestStreak(streak));
-    if (streak >= 7) unlockAch("streak_7");
-    if (streak >= 30) unlockAch("streak_30");
-    if (streak >= 100) unlockAch("streak_100");
+    /* days is sorted ascending, so the LAST unlock in the batch is always the
+       highest milestone the streak qualifies for. */
+    STREAK_MILESTONES.forEach((m) => {
+      if (streak >= m.days) unlockAch(m.id);
+    });
   }, [dailyResults, shieldedDates, unlockAch]);
 
   /* `screen` inside a callback's closure is the value it had when the
@@ -1387,6 +1630,15 @@ export default function Cascade() {
         roundDecidedRef.current = true;
         const remainingAtClear = newMovesLeft;
         recordRound();
+        /* Fired here, at the solve, not in the timed upgrade handoff below:
+           the flash belongs to the moment the board is won, and delaying it
+           ~450ms would put it on top of the cards instead of on the win.
+
+           `remainingAtClear`, not `newMovesLeft`: they are the same value here,
+           but the burst is scored on how the round was won and that is exactly
+           what this local was named for. */
+        flashClear();
+        celebrateClearBurst(remainingAtClear);
         /* Daily round clear — increment streak. dailyState.status is
            deliberately NOT touched here. It used to be force-set to
            "completed" on every round clear, which finalized "today's
@@ -1402,19 +1654,29 @@ export default function Cascade() {
            true game-over screen), so dailyState stays "in_progress"
            through every round clear and only becomes terminal in the
            newMovesLeft <= 0 branch below. */
+        /* The round log — the array dailyScore() reads at the end of a run.
+           Built for score attack as well as the daily, and written in exactly
+           one place for both, because the two modes are scored from the same
+           shape: a copy per mode would be two places to keep in step, and the
+           failure mode is a score that quietly disagrees with the rounds the
+           player actually cleared.
+
+           In-memory only for a score run. Nothing reaches disk until the run
+           is over (see recordScoreRun) — that is the whole of the
+           no-mid-run-persistence rule, and this is the line that makes it true. */
+        const clearedRun = isDaily || isScore ? {
+          rounds: [
+            ...dailyRun.rounds,
+            { round, moves: newMovesUsed, moveLimit: level.moveLimit, left: Math.max(0, remainingAtClear) },
+          ],
+          totalMoves: dailyRun.totalMoves + newMovesUsed,
+        } : null;
+        if (clearedRun) setDailyRun(clearedRun);
         if (isDaily) {
           if (round > dailyBest) {
             setDailyBest(round);
             try { localStorage.setItem("cascade:dailyBest", String(round)); } catch {}
           }
-          const clearedRun = {
-            rounds: [
-              ...dailyRun.rounds,
-              { round, moves: newMovesUsed, moveLimit: level.moveLimit, left: Math.max(0, remainingAtClear) },
-            ],
-            totalMoves: dailyRun.totalMoves + newMovesUsed,
-          };
-          setDailyRun(clearedRun);
           /* Saved the moment the round is cleared, not when the upgrade
              cards open ~1s later: leaving in that gap resumes straight at
              the cards. */
@@ -1514,8 +1776,13 @@ export default function Cascade() {
            in round 5 — the achievement's own name and description say
            the whole run, not just the round it unlocks on. Daily runs
            start at undoLeft=0 and can't use undo at all, so they're
-           correctly excluded rather than trivially qualifying. */
-        if (!isDaily && !undoUsedThisRun && round >= 5) unlockAch("no_undo_5");
+           correctly excluded rather than trivially qualifying.
+
+           canAssist, which now covers score attack too: it also starts at
+           undoLeft=0, so the same reasoning applies — and under a bare
+           !isDaily it would have been awarded for a run that structurally
+           cannot undo, which is the achievement being free rather than earned. */
+        if (canAssist && !undoUsedThisRun && round >= 5) unlockAch("no_undo_5");
       } else if (newMovesLeft <= 0) {
         roundDecidedRef.current = true;
         setNearMiss(isOneMoveFromSolved(next));
@@ -1544,8 +1811,14 @@ export default function Cascade() {
            continue a run the player has already lost. Written synchronously,
            before the timer below, so it happens even if they close the app in
            the ~0.5s before the results card — the same reason the daily's
-           state is committed here rather than in the card's render. */
-        if (!isDaily) clearNormalRun();
+           state is committed here rather than in the card's render.
+
+           canAssist, not !isDaily. A score run wrote no save of its own, so
+           there is nothing of ITS to drop — but this line used to fire for any
+           non-daily run, and losing a score attack would have called
+           clearNormalRun() and deleted the player's unrelated half-finished
+           normal run, which they had every reason to believe was safe. */
+        if (canAssist) clearNormalRun();
         roundTransitionRef.current = setTimeout(() => {
           /* Unlike the upgrade transition above, the work here has to
              happen even if the player already walked away: the attempt
@@ -1554,8 +1827,13 @@ export default function Cascade() {
              while tapping it answers "One Attempt Used"). Only the
              presentation is conditional. */
           const stillOnGame = screenRef.current === "game";
-          // Save best if this is a new best (main game only -- see dailyBest)
-          if (!isDaily && round > best) {
+          /* Save best if this is a new best (main game only -- see dailyBest).
+             canAssist rather than !isDaily, for the same reason the clear
+             above is: the main game's round record belongs to the main game,
+             and a score run that cleared 40 rounds has still not beaten a
+             40-round normal run. Score attack has its own record (scoreBest)
+             and mixing the two would quietly redefine what "best" means. */
+          if (canAssist && round > best) {
             setBest(round);
             /* Record the verdict here, where `round > best` is still a
                real comparison — the results card reads this flag instead of
@@ -1577,6 +1855,29 @@ export default function Cascade() {
             }
             setDailyScoreResult({ score, isNew, best: isNew ? score : dailyBestScore });
           }
+          /* Score attack: the one and only write of SCORE_BEST_KEY /
+             SCORE_RUNS_KEY. Being here — inside the run-over branch, and
+             BEFORE the `if (!stillOnGame) return` below — is what makes the
+             mode's contract hold. It has to survive the player walking away
+             in the ~0.5s before the card appears, exactly like the daily's
+             state commit above: the run really did end, so it really counts,
+             whether or not anyone is left to look at it.
+
+             Deliberately unconditional on score > 0. A run that died on round
+             1 still cleared nothing and scored nothing, and recording it as a
+             zero would put an empty row on a board whose whole value is that
+             its entries mean something — so a run is recorded only once it
+             has a score worth ranking. */
+          if (isScore && dailyRun.rounds.length > 0) {
+            const result = recordScoreRun(scoreDisplay, dailyRun.rounds.length);
+             setScoreResult(result);
+             setScoreBest(result.best);
+             setScoreRuns(loadScoreRuns());
+           }
+           /* No scoreResult at all when a run dies on round 1 — see above, and
+              the card's empty state, which is told apart by scoreResult being
+              null rather than by a score of 0. */
+
 
           /* Daily failure: show it (the state itself was saved above) */
           if (failedState) {
@@ -1598,7 +1899,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, runFocus]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -1727,6 +2028,13 @@ export default function Cascade() {
 
   const useHint = useCallback(() => {
     if (phase !== "playing" || roundDecidedRef.current) return;
+    /* Defended at the handler, not only by the buttons being hidden. Both
+       counters read 0 in score mode, so `hintLeft <= 0` already blocks it —
+       but that is a coincidence of two values agreeing, and the first thing
+       that changes hintLeft is also the first thing that could open this.
+       If a keyboard shortcut, a gesture or a future button ever reaches here,
+       the mode's rule has to hold on its own. */
+    if (!canAssist) return;
     /* A hint is on screen (and is cleared the moment the board changes, see
        attemptPour / undo): pressing again just keeps it up, free. */
     if (hint) { armHintTimer(); return; }
@@ -1741,12 +2049,18 @@ export default function Cascade() {
     Snd.select();
     Haptic.light();
     armHintTimer();
-  }, [hintLeft, phase, tubes, hint, armHintTimer]);
+  }, [hintLeft, phase, tubes, hint, armHintTimer, canAssist]);
 
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
     if (snapshots.length === 0) return;
     if (phase !== "playing" || roundDecidedRef.current) return;
+    /* Same reasoning as useHint's guard, and it matters more here. Undo is the
+       one assist that rewrites the round's own history — it can hand back a
+       move the player mis-spent and re-open a board they had already lost. A
+       recorded score has to mean "this was solved without rewinding it", so
+       this refuses on the mode itself rather than trusting undoLeft. */
+    if (!canAssist) return;
     const last = snapshots[snapshots.length - 1];
     setSnapshots((s) => s.slice(0, -1));
     setTubes(last.tubes);
@@ -1776,7 +2090,7 @@ export default function Cascade() {
     setUndoUsedThisRun(true);
     Snd.select();
     Haptic.light();
-  }, [undoLeft, snapshots, phase]);
+  }, [undoLeft, snapshots, phase, canAssist]);
 
   const chooseUpgrade = useCallback((upgrade) => {
     /* Guard against a double-tap racing through two upgrade cards before
@@ -1839,10 +2153,18 @@ export default function Cascade() {
         rounds: dailyRun.rounds,
         totalMoves: dailyRun.totalMoves,
       });
-    } else {
+    } else if (canAssist) {
       /* The "Continue" save, written at the same instant the daily writes
          its own. Round boundary, untouched board — see saveNormalRun for why
          it is stored here and not on every pour.
+
+         Gated on canAssist, which is exactly "is a normal run": the daily
+         writes its own save in the branch above, and score attack writes none
+         at all. That last one is load-bearing rather than incidental — a
+         score-attack run resumed from this save would be a run that was
+         abandoned and picked back up, which is precisely what the leaderboard
+         is not supposed to contain. Score attack's persistence is the finished
+         run alone (see recordScoreRun).
 
          `path` is written rather than re-derived because unlike the daily's
          there is nothing to re-derive FROM: a normal run's opening is the
@@ -1871,7 +2193,7 @@ export default function Cascade() {
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator]);
+  }, [round, runUpgrades, lastRoundMovesLeft, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator]);
 
   /* A retry re-rolls the same round from the same seed, so a daily retry
      reproduces the board exactly as it was — and must NOT pick up the weekly
@@ -1910,7 +2232,10 @@ export default function Cascade() {
        over which retry is reached has already been dismissed, so nothing else
        resets it; restartRun (1924) does, for every other path. */
     setNewBestThisRun(false);
-    if (!isDaily) {
+    /* canAssist, not !isDaily — same gate and same reason as chooseUpgrade's:
+       a score-attack retry must not write the normal run's Continue save, or
+       the run it is retrying would come back from Home after a loss. */
+    if (canAssist) {
       saveNormalRun({
         round,
         upgrades: runUpgrades,
@@ -1920,7 +2245,7 @@ export default function Cascade() {
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
       });
     }
-  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, dailyTwist, weeklyMutator, runPath]);
+  }, [round, runUpgrades, lastRoundMovesLeft, isDaily, canAssist, dailyTwist, weeklyMutator, runPath]);
 
   /* Takes the opening archetype. Deliberately does NOT touch the board: the
      round-1 level was already generated from (round, upgrades) and the
@@ -1949,8 +2274,19 @@ export default function Cascade() {
     setLastRoundMovesLeft(0);
     setShareImage(null);
     setShared(false);
-    setIsDaily(false);
+    /* Normal is the reset default, which is why every abandon path lands back
+       here. Score attack re-asserts its own mode on top of this (see the
+       `if (score)` branch in startNewGame) — the same relationship
+       startFreshNormalRun has with the resume branch. */
+    setMode("normal");
     setDailyTwist(null);
+    /* The round log is cleared here too, not only in the normal run-start and
+       the daily's fresh branch. It is the score-attack scoring input, so a run
+       that inherited the previous run's rounds would be scored for them —
+       board, HUD and board-list all reading one run while dailyScore()
+       counted another. Cheap to reset, and impossible to get wrong by omission. */
+    setDailyRun({ rounds: [], totalMoves: 0 });
+    setScoreResult(null);
     setRetriedThisRound(false);
     setUndoUsedThisRun(false);
     /* Cleared here too, not just at the game-over trigger: the flag has to
@@ -1989,16 +2325,30 @@ export default function Cascade() {
      right after setBest(0), and saving here would immediately undo that. */
   const saveBestRound = useCallback(() => {
     /* A daily run records its own best as it clears rounds, and must not
-       leak into the main game's. */
-    if (!isDaily && round > best) {
+       leak into the main game's. Same for a score run, for the same reason:
+       its record is a score (see scoreBest), not a round count. */
+    if (canAssist && round > best) {
       setBest(round);
       try { localStorage.setItem(BEST_KEY, String(round)); } catch {}
     }
-  }, [round, best, isDaily]);
+  }, [round, best, canAssist]);
 
   /* Single entry point for starting a new run — increments stats safely.
-     Used by Home Play, Home Daily, and Game Over "Start Over". */
-  const startNewGame = useCallback((daily = false) => {
+     Used by Home Play, Home Daily, Home Score Attack, and Game Over "Start Over".
+
+     Two booleans rather than the mode string, deliberately: they only ever
+     mean "which of the two NON-normal modes is this", and the normal branch
+     below already exists as the fallback. Refactoring every one of the ~8
+     existing `startNewGame(false)` call sites to a string would buy no
+     clarity at those sites and would risk exactly the call site nobody was
+     looking at. The comment that used to claim a `mode` parameter here was
+     wrong — it described an API this function never had.
+
+     The daily replay guard below is the one branch that genuinely needed a
+     positive test: it asks whether this is today's daily, which `daily ===
+     false` used to mean by elimination and no longer can — score attack is
+     also not-daily. */
+  const startNewGame = useCallback((daily = false, score = false) => {
     /* Daily replay prevention — block only once today's attempt is truly
        over. dailyState (when one exists for today) is authoritative: it
        distinguishes an ongoing attempt (status "in_progress") from one
@@ -2078,7 +2428,7 @@ export default function Cascade() {
           };
           dailyBestAtStartRef.current = Number.isFinite(saved.bestAtStart) ? saved.bestAtStart : dailyBest;
           setDailyState(fresh);
-          setIsDaily(true);
+          setMode("daily");
           setDailyTwist(twist);
           setDailyScoreResult(null);
           setRound(saved.round);
@@ -2117,10 +2467,10 @@ export default function Cascade() {
        Not credited to the Codex: the path and the mutator were recorded when
        this run first started, and re-recording on every resume would count
        one run once per time it was picked back up. */
-    if (!daily) {
+    if (!daily && !score) {
       const resume = loadNormalRun();
       if (resume) {
-        setIsDaily(false);
+        setMode("normal");
         setDailyTwist(null);
         setDailyScoreResult(null);
         setRound(resume.round);
@@ -2168,7 +2518,7 @@ export default function Cascade() {
       setDailyState(st);
       clearDailyRun();
       syncDailyReminders();
-      setIsDaily(true);
+      setMode("daily");
       setDailyTwist(twist);
       setDailyScoreResult(null);
       /* The twist and the path are both stated up front, in one toast rather
@@ -2211,11 +2561,28 @@ export default function Cascade() {
          deferred, which is what keeps every existing run-start path below
          untouched. */
       restartRun();
+      /* AFTER restartRun, which sets mode back to "normal": that call is the
+         reset for every abandon path, so the mode has to be re-asserted on top
+         of it rather than before it. Score attack reuses the normal run's
+         board, its weekly mutator and its archetype picker verbatim — the
+         thing that makes it different is the no-assist rule and what happens
+         at the end, not how the rounds are built. */
+      if (score) {
+        setMode("score");
+        setScoreResult(null);
+        showToast({
+          icon: "🎯",
+          color: "var(--accent)",
+          title: "Score Attack",
+          message: "No undo, no hints. Every finished run is recorded — how far can you get?",
+          duration: 4200,
+        });
+      }
       setArchOffer(pickArchetypes());
     }
     setScreen("game");
     return true;
-  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest]);
+  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest, score]);
 
   /* Start a normal run from round 1, DISCARDING any save. The one way to say
      "not that one" now that startNewGame resumes when it can.
@@ -2236,6 +2603,35 @@ export default function Cascade() {
   const startFreshNormalRun = useCallback(() => {
     clearNormalRun();
     return startNewGame(false);
+  }, [startNewGame]);
+
+  /* Score attack's own "run it again". Distinct from startFreshNormalRun
+     because it must NOT touch the normal run's Continue save: a player can
+     hold a half-finished normal run and go play score attack, and clearing
+     the save on the way in would silently destroy that run to start a mode
+     that never intended to interfere with it.
+
+     Score attack has no save of its own to clear either — that absence is
+     the mode's contract (see recordScoreRun) — so this is the whole of it:
+     fresh run, no resume, nothing else disturbed.
+
+     A score run is also defined by what it does NOT touch: no normal-run save,
+     no daily save, no daily state, no stats, no achievements.
+
+     startNewGame(false, true) handles the board, the mode and the round log.
+     Everything it doesn't reset for us has to stay put here, and the one that
+     needed fixing was clearDailyRun() — it was in this function from the first
+     draft, which meant starting a score attack deleted the player's in-progress
+     DAILY attempt, the single most destructive thing the new mode could have
+     done and entirely invisible from the screen you trigger it on. The daily
+     card's "In Progress — resume" would have started answering with a wiped
+     run.
+
+     Nothing is cleared and nothing is saved: the score lives only in React
+     state until recordScoreRun writes it, which is the no-mid-run-persistence
+     rule stated as code rather than as a comment elsewhere. */
+  const startFreshScoreRun = useCallback(() => {
+    return startNewGame(false, true);
   }, [startNewGame]);
 
   /* ═══════════ NAVIGATION — Back button infra ═══════════
@@ -2398,12 +2794,20 @@ export default function Cascade() {
        would be wrong in the one direction that loses their work. An event
        handler, so this is a fresh read at the moment of the tap and cannot
        go stale against the save. */
-    const hasSave = !isDaily && !!loadNormalRun();
+    const hasSave = canAssist && !!loadNormalRun();
     setConfirmDialog({
       title: "Exit to Home?",
       /* A daily run is saved as it's played and resumes from
          Home, so "will be lost" would be false there (and the
          old, true version of it pushed people to stay in).
+
+         Score attack has no save at all, by design — but that does not make it
+         the same situation as a fresh normal run with nothing on disk. This
+         mode's entire subject is the score, and the run in hand has never been
+         recorded; leaving here throws away the one attempt at the number the
+         mode exists to produce. So it says so plainly and in the mode's own
+         terms, rather than reusing the normal run's "nothing to save" line and
+         letting a player walk away from a good run believing nothing was lost.
 
          A normal run is saved too, but only at ROUND BOUNDARIES (see
          saveNormalRun), so "saved" would overstate it in the other
@@ -2417,6 +2821,8 @@ export default function Cascade() {
          neither is a destructive "are you sure" the red treatment is for. */
       message: isDaily
         ? "Your daily run is saved. Pick it up from Home any time today."
+        : isScore
+        ? "Score attack isn't saved. Leaving now discards this run — it only counts once you run out of moves."
         : !hasSave
         /* Nothing on disk at all: a run still on its opening round, which has
            not been cleared yet, so no boundary has been written. */
@@ -2436,7 +2842,11 @@ export default function Cascade() {
         ? "Your run is saved, but not this clear — the next board depends on the card you'd pick next. You'll pick this round up again from the start."
         : "Your run is saved at the start of this round, and resumes from Home. Moves made in this round are lost.",
       confirmLabel: "Exit",
-      danger: !isDaily && !hasSave,
+      /* Danger for both kinds of real loss: a normal run with nothing on disk,
+         and any score run (nothing is ever on disk for it). A score run that
+         HAS cleared a round is a large number discarded, which is the same
+         class of thing a red confirm is for. */
+      danger: isScore || (!isDaily && !hasSave),
       onConfirm: () => {
         saveBestRound();
         restartRun();
@@ -2654,6 +3064,13 @@ export default function Cascade() {
                would pick the very save this button exists to throw away. */
             if (startFreshNormalRun()) pushNav("game");
           }}
+          /* Score attack's entry point. pushNav only when the run actually
+             starts, matching onDaily/onContinue — startFreshScoreRun can
+             return false and the Home screen must stay where it is rather than
+             leaving a phantom "game" entry on the back-stack. */
+          onScore={() => { if (startFreshScoreRun()) pushNav("game"); }}
+          scoreBest={scoreBest}
+          scoreRuns={scoreRuns}
         />
       )}
 
@@ -2662,6 +3079,25 @@ export default function Cascade() {
       <div className="screen-transition" style={S.gameRoot}>
       <Particles bursts={particles} />
       <FlyingBalls flights={flights} onDone={removeFlight} />
+
+      {/* Round-clear flash target (see flashClear). Rendered unconditionally,
+          at opacity 0, rather than mounted on clear: a node that appears only
+          for the animation would be mounted in the same commit that calls
+          .animate(), and the ref would still be null at that point. Always
+          present and always inert — pointer-events:none, aria-hidden — it
+          costs one composited layer and nothing else. The gradient is centred
+          on the board (42%, just above centre) rather than the viewport, so
+          the brightest part lands where the last tube actually was. */}
+      <div
+        ref={clearFlashRef}
+        aria-hidden="true"
+        style={{
+          position: "fixed", inset: 0, zIndex: 40,
+          pointerEvents: "none",
+          opacity: 0,
+          background: `radial-gradient(circle at 50% 42%, color-mix(in srgb, ${T.accent} 55%, transparent), transparent 68%)`,
+        }}
+      />
 
       {/* Achievement toast — slides down from top. Keyed on the
           achievement id so two unlocks shown back-to-back (the queue
@@ -2743,7 +3179,12 @@ export default function Cascade() {
         );
       })()}
 
-      {!isDaily && (
+      {/* canAssist, not !isDaily — the hint and the undo button were two more
+          places a score run would have been handed assists it must not have
+          (see canAssist). Their counters are already zero in that mode, so
+          they would have rendered as permanently-dimmed 54px targets rather
+          than simply being absent. */}
+      {canAssist && (
       <button
         onClick={useHint}
         disabled={hintLeft <= 0 || phase !== "playing"}
@@ -2767,7 +3208,7 @@ export default function Cascade() {
       )}
 
       {/* Undo — floats bottom-left, above the footer hint */}
-      {!isDaily && (
+      {canAssist && (
       <button
         onClick={undo}
         disabled={undoLeft <= 0 || snapshots.length === 0 || phase !== "playing"}
@@ -2813,9 +3254,24 @@ export default function Cascade() {
         <div>
           <div style={S.roundLabel} className="hud-round">
             {isDaily && <span style={S.dailyBadge}>DAILY</span>}
+            {/* Score attack's badge is the one mode marker that genuinely has
+                to be on screen: it is the mode where the assists are missing
+                and the run is unsaveable, so a player who arrived here from
+                Home mid-scroll is being told the rules of the run they're
+                looking at. The daily's badge is inherited from an existing
+                style and stays as it is. */}
+            {isScore && <span style={S.dailyBadge}>SCORE</span>}
             Round {round}
           </div>
-          <div style={S.colorCount}>{level.colorCount} colors · best {isDaily ? dailyBest : best}</div>
+          {/* Three different records behind one word, so they can't share a
+              ternary. A score run's personal best is a SCORE, not a round
+              count — showing `best` there would tell a player chasing 12,000
+              points that their record was 9, and would silently mix the two
+              modes' records. */}
+          <div style={S.colorCount}>
+            {level.colorCount} colors · best{" "}
+            {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
+          </div>
         </div>
         <div className="hud-right" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ textAlign: "right" }}>
@@ -2868,7 +3324,7 @@ export default function Cascade() {
           28px + its 8px gap) means the board never moves. */}
       <div style={{ height: 36, flexShrink: 0, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
         {comboCount >= 2 ? (
-          <div style={{ ...S.comboBadge, marginBottom: 0 }} className="comboPop" key={comboCount}>
+          <div ref={comboBadgeRef} style={{ ...S.comboBadge, marginBottom: 0 }} className="comboPop" key={comboCount}>
             <span style={S.comboFlame}>🔥</span>
             <span style={S.comboText}>{comboCount}× combo</span>
           </div>
@@ -3142,19 +3598,40 @@ export default function Cascade() {
           <div style={{ ...S.ovCard, maxWidth: 380 }} className="popIn" role="dialog" aria-modal="true" aria-label="Run over">
             {!shareImage ? (
               <>
-                {/* Big round display — each piece stages in on its own beat
+                {/* Big display — each piece stages in on its own beat
                     (icon → title → number → badges → stats) instead of the
                     whole result landing on screen in one flat block, since
-                    this is the one moment that sums up the entire run. */}
+                    this is the one moment that sums up the entire run.
+
+                    Which number it counts is mode-dependent, and that decision
+                    lives in the count-up effect above; here it is only
+                    formatted.
+
+                    The record flag is scoreResult.isNew rather than
+                    newBestThisRun, because that flag is deliberately NOT set
+                    in a score run (the main game's round record is not this
+                    mode's) — reusing it would mean a score run could never
+                    claim a record even when it set one. The icon and the
+                    banner read the same expression as each other rather than
+                    each keeping its own, so the trophy and the "New High
+                    Score" can never disagree about whether one happened. */}
                 <div style={{ ...S.ovIconCircle, animationDelay: "80ms" }} className="fade-up">
-                  <span style={{ fontSize: 32 }}>{(isDaily ? dailyNewBest : newBestThisRun) ? "🏆" : "💥"}</span>
+                  <span style={{ fontSize: 32 }}>{(isDaily ? dailyNewBest : isScore ? scoreResult?.isNew : newBestThisRun) ? "🏆" : "💥"}</span>
                 </div>
                 <div style={{ ...S.ovTitle, animationDelay: "140ms" }} className="fade-up">Run Over</div>
-                <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">{gameOverDisplayRound}</div>
-                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">{isDaily ? (todayRounds === 0 ? "NO ROUNDS CLEARED" : todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED") : (round === 1 ? "ROUND SURVIVED" : "ROUNDS SURVIVED")}</div>
-                {(isDaily ? dailyNewBest : newBestThisRun) && (
+                <div style={{ ...S.ovBigNum, animationDelay: "200ms" }} className="fade-up">
+                  {isScore ? gameOverDisplayRound.toLocaleString("en-US") : gameOverDisplayRound}
+                </div>
+                <div style={{ ...S.ovBigLabel, animationDelay: "240ms" }} className="fade-up">
+                  {isScore
+                    ? "SCORE"
+                    : isDaily
+                    ? (todayRounds === 0 ? "NO ROUNDS CLEARED" : todayRounds === 1 ? "ROUND CLEARED" : "ROUNDS CLEARED")
+                    : (round === 1 ? "ROUND SURVIVED" : "ROUNDS SURVIVED")}
+                </div>
+                {(isDaily ? dailyNewBest : isScore ? scoreResult?.isNew : newBestThisRun) && (
                   <div style={{ ...S.ovNewBest, animationDelay: "320ms" }} className="fade-up">
-                    {isDaily ? "✨ New Daily Best" : "✨ New Personal Best"}
+                    {isDaily ? "✨ New Daily Best" : isScore ? "✨ New High Score" : "✨ New Personal Best"}
                   </div>
                 )}
                 {nearMiss && (
@@ -3163,19 +3640,59 @@ export default function Cascade() {
 
                 {/* Stats grid */}
                 <div style={{ ...S.ovStats, animationDelay: "380ms" }} className="fade-up">
-                  <div style={S.ovStat}>
-                    <div style={S.ovStatNum}>{runUpgrades.length}</div>
-                    <div style={S.ovStatLabel}>Upgrades</div>
-                  </div>
-                  <div style={S.ovStat}>
-                    <div style={S.ovStatNum}>{isDaily ? dailyBest : best}</div>
-                    <div style={S.ovStatLabel}>{isDaily ? "Daily Best" : "Best"}</div>
-                  </div>
+                    <div style={S.ovStat}>
+                      <div style={S.ovStatNum}>{runUpgrades.length}</div>
+                      <div style={S.ovStatLabel}>Upgrades</div>
+                    </div>
+                    {/* The mode's own record, not the main game's. `best` is a
+                        round count and is deliberately NOT advanced by a score
+                        run (see saveBestRound), so printing it here would show
+                        a player chasing 12,000 points a record of "9" and imply
+                        they were nine rounds from anything. */}
+                    <div style={S.ovStat}>
+                      <div style={S.ovStatNum}>
+                        {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
+                      </div>
+                      <div style={S.ovStatLabel}>{isDaily ? "Daily Best" : isScore ? "Best Score" : "Best"}</div>
+                    </div>
+
                   <div style={S.ovStat}>
                     <div style={S.ovStatNum}>{finalMovesLeft}</div>
                     <div style={S.ovStatLabel}>Moves Left</div>
                   </div>
                 </div>
+                {/* Score attack gets a SECOND row, not a replacement one. The
+                    three cells above are inherited from the other two modes and
+                    only one of them means anything here (Upgrades); the two
+                    that matter — rounds cleared, and where this run landed —
+                    have nowhere to go in a row that's already full. Overwriting
+                    cells would have meant losing Moves Left, which is the last
+                    few moves a player was clinging to when the run ended.
+
+                    Rounds CLEARED, read off the round log, not `round - 1`: the
+                    log is what the score was computed from, so the two figures
+                    on the card come from one place.
+                    "N of M" rather than a bare rank, because the board below is
+                    the player's own runs — a rank on its own would look like a
+                    position among other people. */}
+                {isScore && (
+                  <div style={{ ...S.ovStats, animationDelay: "420ms" }} className="fade-up">
+                    <div style={S.ovStat}>
+                      <div style={S.ovStatNum}>{dailyRun.rounds.length}</div>
+                      <div style={S.ovStatLabel}>Rounds Cleared</div>
+                    </div>
+                    <div style={S.ovStat}>
+                      <div style={S.ovStatNum}>
+                        {scoreResult ? `${scoreResult.rank}/${scoreRuns.length}` : "—"}
+                      </div>
+                      <div style={S.ovStatLabel}>On Board</div>
+                    </div>
+                    <div style={S.ovStat}>
+                      <div style={S.ovStatNum}>{scoreResult ? scoreResult.round : dailyRun.rounds.length}</div>
+                      <div style={S.ovStatLabel}>Reached Round</div>
+                    </div>
+                  </div>
+                )}
 
                 {isDaily ? (
                   <>
@@ -3253,7 +3770,132 @@ export default function Cascade() {
                       )}
                     </div>
                     <button style={{ ...S.ghost, color: T.accent }} onClick={shareDaily}>📋 Share Result</button>
-                    <button style={S.ghost} onClick={() => { popNav(); setIsDaily(false); }}>← Home</button>
+                    {/* setMode("normal"), not the old setIsDaily(false): the
+                        daily's run is over, but leaving `mode` on "daily" would
+                        make the NEXT normal run start as a daily one. */}
+                    <button style={S.ghost} onClick={() => { popNav(); setMode("normal"); }}>← Home</button>
+                  </>
+                ) : isScore ? (
+                  <>
+                    {/* The local board. Own runs only — there is no network and
+                        no shared service behind this game (leaderboard.js
+                        generates the daily's board on-device for the same
+                        reason), so "leaderboard" here means the player's own
+                        finished runs, which is what makes it honest: every row
+                        on it is a run that was played to its end.
+
+                        Deliberately the player's own rows and nothing else. A
+                        field of invented rivals would read as other people,
+                        and in the one mode whose entire claim is that its
+                        number is real, inventing names next to it would
+                        undercut the whole thing.
+
+                        Cap is 8 (SCORE_RUNS_MAX) and rows are fixed height, so
+                        this can't grow into a scroll on a 320x568 screen —
+                        the same budget the Home screen's cards are tuned to. */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{
+                        fontSize: 10, fontWeight: 900, letterSpacing: "0.12em",
+                        color: T.muted, textTransform: "uppercase", marginBottom: 8,
+                      }}>
+                        Your runs
+                      </div>
+                      {scoreRuns.length === 0 ? (
+                        <div style={{
+                          padding: "14px 16px", borderRadius: 14,
+                          background: `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
+                          border: `1px solid ${T.edge}`,
+                          fontSize: 12, fontWeight: 600, color: T.muted, textAlign: "center",
+                        }}>
+                          {scoreResult
+                            ? "That run didn't clear a round, so there's no score to record yet. A run counts once you've cleared at least one."
+                            : "No runs yet. Finish a run to put a score here."}
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          {scoreRuns.map((r, i) => {
+                            /* Identity, not score and not position. The board
+                               is sorted best-first, so this run is NOT
+                               necessarily row 0 — a run that finished below the
+                               player's previous best lands at the bottom, and
+                               highlighting the top row there would have
+                               pointed at a different run entirely. And two runs
+                               can genuinely tie on score, so matching on the
+                               score would highlight both of them. `ts` is the
+                               one field that identifies exactly one entry, which
+                               is why recordScoreRun returns it. */
+                            const mine = !!scoreResult && r.ts === scoreResult.ts;
+                            return (
+                              <div
+                                key={`${r.ts}-${r.score}-${r.round}`}
+                                style={{
+                                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                                  padding: "9px 14px", borderRadius: 12,
+                                  background: mine
+                                    ? `color-mix(in srgb, ${T.accent} 13%, transparent)`
+                                    : `color-mix(in srgb, ${T.bg} 50.2%, transparent)`,
+                                  border: `1px solid ${mine ? `color-mix(in srgb, ${T.accent} 40%, transparent)` : T.edge}`,
+                                }}
+                              >
+                                <span style={{
+                                  fontSize: 12, fontWeight: 900, color: mine ? T.accent : T.muted,
+                                  width: 22, flexShrink: 0, fontVariantNumeric: "tabular-nums",
+                                }}>
+                                  {i + 1}
+                                </span>
+                                <span style={{
+                                  fontSize: 11, fontWeight: 600, color: T.muted, flex: 1, textAlign: "left",
+                                }}>
+                                  Reached round {r.round}
+                                  {mine && (
+                                    <span style={{ color: T.accent, fontWeight: 800 }}> · this run</span>
+                                  )}
+                                </span>
+                                <span style={{
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                  fontSize: 13, fontWeight: 800, color: T.gold,
+                                  fontVariantNumeric: "tabular-nums",
+                                }}>
+                                  {r.score.toLocaleString("en-US")}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {/* Run It Again is the only action, and there is deliberately
+                        no "Retry Round". Retry re-rolls the round you died on and
+                        lets the run continue with its accumulated score intact —
+                        so a score run could always be pushed past the round it
+                        failed, and every row above would stop meaning "a run
+                        that ended". Run It Again starts clean.
+
+                        startFreshScoreRun, not startFreshNormalRun: this must not
+                        touch the normal run's Continue save, which is the one
+                        save that has to survive playing here.
+
+                        Score attack gets no Share Result. The share card is
+                        built from rounds survived and colours, neither of which
+                        is this mode's number — a player posting one would be
+                        posting a figure for a different mode under a heading
+                        that says "score". */}
+                    <button style={S.primary} onClick={startFreshScoreRun}>Run It Again</button>
+
+                    {/* The Home button in the HUD is under this overlay, so without
+                        this the only way out was the OS back gesture. Same route
+                        back does (see onBackFromGame).
+
+                        popNav, NOT restartRun first: this run has already been
+                        recorded, and restartRun resets the round log that
+                        produced the score. The mode itself does not need
+                        resetting here either — the screen is Home from here, and
+                        the next run's start path re-asserts its own mode (see
+                        startNewGame's normal branch). The other three modes can
+                        leave `mode` set, because their next start also sets it;
+                        relying on that is why this is not a one-line
+                        setMode("normal") that would only look tidier. */}
+                    <button style={S.ghost} onClick={popNav}>← Home</button>
                   </>
                 ) : (
                   <>
@@ -3470,10 +4112,25 @@ export default function Cascade() {
                 setAchievements([]);
                 setBestStreak(0);
                 setShieldedDates([]);
-                setBest(0);
-                setDailyBest(0);
-                setDailyBestScore(0);
-                setDailyScoreResult(null);
+                 setBest(0);
+                 setDailyBest(0);
+                 setDailyBestScore(0);
+                 setDailyScoreResult(null);
+                 /* Score attack's standings, the same three-part treatment the
+                    daily just got: keys off disk, then the live state, so the
+                    Home card and the game-over board both read empty the
+                    instant Reset is confirmed rather than after a reload.
+                    Both keys go rather than only the best, because the runs
+                    list is the record — keeping eight old scores next to a
+                    Best of 0 would be a worse inconsistency than either. */
+                 try {
+                   localStorage.removeItem(SCORE_BEST_KEY);
+                   localStorage.removeItem(SCORE_RUNS_KEY);
+                 } catch {}
+                 setScoreBest(0);
+                 setScoreRuns([]);
+                 setScoreResult(null);
+
                 setStats({ gamesPlayed: 0, totalRounds: 0, totalMoves: 0, highestCombo: 0 });
                 /* These three used to only be cleared in localStorage, never
                    in the live React state that actually drives the screen —
