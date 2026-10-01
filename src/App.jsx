@@ -17,7 +17,7 @@ import {
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
-  weekMutator, mutatorById, offerCount, RETRIES_PER_RUN, MOVE_ECONOMY,
+  weekMutator, mutatorById, offerCount, RETRIES_PER_RUN, MOVE_ECONOMY, moveBudget, isBossRound,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -267,15 +267,28 @@ function budgetLine(lvl, ruleName) {
   const sign = (n) => `${n > 0 ? "+" : "−"}${Math.abs(n)}`;
   const playPar = lvl.playPar ?? lvl.par;
   if (lvl.suddenDeath) return `Sudden death · solve in ${playPar} · no bonus moves`;
-  const parts = [`Par ${playPar}`];
-  /* Board cards made this board easier than the par the budget was set from;
-     the difference is theirs, and keeps the line summing to the HUD. */
-  if (lvl.par > playPar) parts.push(`+${lvl.par - playPar} board cards`);
+  /* Four parts at most, read against the target already in the HUD:
+     target + spare − drain + carry + bonus = the moves on screen. The target
+     itself is not repeated here, and board cards (which lower the target)
+     count into "bonus" with the other cards — measured, a fifth part wrapped
+     the line to two rows even on a 390px phone. The rule is named when it is
+     the only bonus, since that is when a "+3" is otherwise unexplained. */
+  const parts = [];
   if (lvl.buffer) parts.push(`+${lvl.buffer} spare`);
   if (lvl.drain) parts.push(`−${lvl.drain} drain`);
   if (lvl.carry) parts.push(`+${lvl.carry} carry`);
-  if (lvl.cards) parts.push(`${sign(lvl.cards)} cards`);
-  if (lvl.rule) parts.push(`${sign(lvl.rule)} ${ruleName || "rule"}`);
+  const board = Math.max(0, (lvl.par || 0) - playPar);
+  const bonus = (lvl.cards || 0) + (lvl.rule || 0) + board;
+  if (bonus) parts.push(lvl.cards || board ? `${sign(bonus)} bonus` : `${sign(bonus)} ${ruleName || "rule"}`);
+  return parts.join(" · ");
+}
+
+/* One line on the upgrade screen about the round being picked FOR. */
+function nextRoundInfo(nextRound) {
+  const drain = moveBudget(nextRound, 0, 0).drain;
+  const parts = [`Next: round ${nextRound}`];
+  if (drain) parts.push(`drain −${drain}`);
+  if (isBossRound(nextRound)) parts.push("👹 boss round");
   return parts.join(" · ");
 }
 
@@ -1016,7 +1029,25 @@ export default function Cascade() {
       });
       return;
     }
-    if (!level.boss) return;
+    if (!level.boss) {
+      /* The drain is the one rule that changes every round without an event
+         to announce it, so its first appearance is explained once, ever. */
+      if (level.drain > 0) {
+        let seen = false;
+        try { seen = localStorage.getItem("cascade:tipDrain") === "1"; } catch {}
+        if (!seen) {
+          try { localStorage.setItem("cascade:tipDrain", "1"); } catch {}
+          showToast({
+            icon: "🩸",
+            color: "var(--gold)",
+            title: "The drain has started",
+            message: `This round has ${level.drain} fewer moves, and every round from now takes a few more. Your upgrades are what keep you ahead.`,
+            duration: 5200,
+          });
+        }
+      }
+      return;
+    }
     showToast({
       icon: "👹",
       color: "var(--danger)",
@@ -1765,7 +1796,7 @@ export default function Cascade() {
           const underPar = clearedUnderPar && !level.suddenDeath;
           /* Glass Cannon gives up Carry, so there is none to announce. */
           const carryNext = runUpgrades.includes("glass") ? 0 : Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
-          const popText = underPar ? `Under par!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
+          const popText = underPar ? `On target!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
           if (popText) {
             const pid = Date.now() + Math.random();
             armEphemeral(() => setBonusPops((p) => [...p, { id: pid, text: popText }]), Math.max(0, impactMs));
@@ -2769,7 +2800,12 @@ export default function Cascade() {
           duration: 4200,
         });
       }
-      setArchOffer(pickArchetypes());
+      /* Not on the player's first run: the picker asks them to choose
+         between upgrade TYPES before they have seen a single upgrade card,
+         which is a blind guess dressed up as a decision. From the second
+         run on they know what a Luck or a Tempo card is. stats.gamesPlayed
+         is read before this run's own start is counted, so 0 = first run. */
+      setArchOffer(stats.gamesPlayed >= 1 ? pickArchetypes() : null);
     }
     setScreen("game");
     return true;
@@ -2778,7 +2814,7 @@ export default function Cascade() {
      scope, so listing `score` threw ReferenceError on the first render
      (no such binding exists there) and blanked the whole app. Only captured
      component-scope values belong below. */
-  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest]);
+  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest, stats.gamesPlayed]);
 
   /* Start a normal run from round 1, DISCARDING any save. The one way to say
      "not that one" now that startNewGame resumes when it can.
@@ -3493,7 +3529,7 @@ export default function Cascade() {
               points that their record was 9, and would silently mix the two
               modes' records. */}
           <div style={S.colorCount}>
-            {level.par ? `par ${level.playPar ?? level.par}` : `${level.colorCount} colors`} · best{" "}
+            {level.par ? `target ${level.playPar ?? level.par}` : `${level.colorCount} colors`} · best{" "}
             {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
           </div>
         </div>
@@ -3644,7 +3680,7 @@ export default function Cascade() {
 
       <div style={S.footer}>
         {phase === "playing" && (
-          <div style={S.hint}>
+          <div style={selected === null && moves === 0 && level.par ? { ...S.hint, fontSize: 11.5, letterSpacing: 0 } : S.hint}>
             {selected === null && moves === 0 && level.par
               ? budgetLine(level, isDaily ? dailyTwist?.name : weeklyMutator?.name)
               : selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}
@@ -3656,7 +3692,12 @@ export default function Cascade() {
         <div style={S.overlay} className="fade-in">
           <div style={{ ...S.ovCard, maxWidth: 360 }} className="popIn" role="dialog" aria-modal="true" aria-label={`Round ${round} cleared. Choose an upgrade`}>
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
-            <div style={{ ...S.ovSub, marginBottom: (jackpotNearMiss || shownArch || offerPity) ? 8 : 20 }}>Choose an upgrade</div>
+            <div style={{ ...S.ovSub, marginBottom: 6 }}>Choose an upgrade</div>
+            {/* What the next round will ask of the build, so the pick can be
+                made against it. Facts only — never which card to take. */}
+            <div style={{ fontSize: 12, fontWeight: 800, textAlign: "center", color: T.muted, marginBottom: (jackpotNearMiss || shownArch || offerPity) ? 8 : 16 }}>
+              {nextRoundInfo(round + 1)}
+            </div>
             {jackpotNearMiss && (
               <div style={{
                 fontSize: 12, fontWeight: 800, textAlign: "center",

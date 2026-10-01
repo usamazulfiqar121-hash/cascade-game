@@ -24,10 +24,10 @@ import { useEnterShield } from "./useEnterShield";
 /* The move budget, in the words the round-start line uses (see budgetLine in
    App.jsx). Numbers come from MOVE_ECONOMY so this cannot drift from the code. */
 const MOVE_RULES = [
-  { icon: "⛳", name: "Par", desc: "About the fewest moves this board needs. Your moves never drop below it, so every round can be won." },
-  { icon: "🫧", name: "Spare", desc: `Extra moves on top of par: +${Math.round(MOVE_ECONOMY.bufferStart * 100)}% on round 1, shrinking to +${Math.round(MOVE_ECONOMY.bufferEnd * 100)}% by round ${MOVE_ECONOMY.bufferRound}.` },
+  { icon: "⛳", name: "Target", desc: "About the fewest moves this board needs. Your moves never drop below it, so every round can be won." },
+  { icon: "🫧", name: "Spare", desc: `Extra moves on top of the target: +${Math.round(MOVE_ECONOMY.bufferStart * 100)}% on round 1, shrinking to +${Math.round(MOVE_ECONOMY.bufferEnd * 100)}% by round ${MOVE_ECONOMY.bufferRound}.` },
   { icon: "🩸", name: "Drain", desc: `From round ${MOVE_ECONOMY.drainFrom + 1}, every round takes a few more moves away — and it speeds up. Your upgrades are what keep you ahead of it.` },
-  { icon: "⚡", name: "Sudden death", desc: "Once the drain eats every spare move, rounds give exactly par and lucky / combo moves switch off. Move cards keep you out of it longer." },
+  { icon: "⚡", name: "Sudden death", desc: "Once the drain eats every spare move, rounds give exactly the target and lucky / combo moves switch off. Move cards keep you out of it longer." },
   { icon: "↪️", name: "Carry", desc: `Half the moves you finish a round with roll into the next one, up to ${MOVE_ECONOMY.carryCap}. Solve tight, start the next board richer.` },
   { icon: "👹", name: "Boss", desc: `Every ${MOVE_ECONOMY.bossEvery}th round has half the spare moves. Clear it and you get one extra upgrade to choose from.` },
 ];
