@@ -276,8 +276,6 @@ function budgetLine(lvl, ruleName) {
   if (lvl.carry) parts.push(`+${lvl.carry} carry`);
   if (lvl.cards) parts.push(`${sign(lvl.cards)} cards`);
   if (lvl.rule) parts.push(`${sign(lvl.rule)} ${ruleName || "rule"}`);
-  const sum = lvl.par + (lvl.buffer || 0) - (lvl.drain || 0) + (lvl.carry || 0) + (lvl.cards || 0) + (lvl.rule || 0);
-  if (lvl.moveLimit > sum) parts.push(`raised to par`);
   return parts.join(" · ");
 }
 
@@ -599,6 +597,10 @@ export default function Cascade() {
      with the snapshot so the counter stays honest. */
   const [snapshots, setSnapshots] = useState([]);
   const [hintLeft, setHintLeft] = useState(2);
+  /* The parts of a normal run's save that describe the ROUND (not the live
+     position), kept current every render so a handler can write the save
+     without listing all of them as dependencies. See saveNormalLive. */
+  const normalSaveBaseRef = useRef(null);
   const [hint, setHint] = useState(null);
   /* A wrong-move counter, not a boolean: it only ever counts up, and every
      new value re-fires the shake+flash effect below even if the previous
@@ -1063,10 +1065,14 @@ export default function Cascade() {
       setMoves(resume.moves);
       setBonusMoves(resume.bonusMoves);
       setComboCount(resume.combo);
+      /* A normal run's saved assists (the daily has none to restore): without
+         this, Exit -> Continue handed back two fresh undos and hints. */
+      if (Number.isInteger(resume.undoLeft)) setUndoLeft(resume.undoLeft);
+      if (Number.isInteger(resume.hintLeft)) setHintLeft(resume.hintLeft);
       if (resume.phase === "upgrade") {
         roundDecidedRef.current = true;
         setPendingUpgrades(resume.pendingUpgrades);
-        setJackpotNearMiss(false);
+        setJackpotNearMiss(!!resume.jackpotNearMiss);
         setPhase("upgrade");
       }
     }
@@ -1473,6 +1479,18 @@ export default function Cascade() {
      card live in the same if/else, so they can never both be queued. */
   const roundTransitionRef = useRef(null);
 
+  normalSaveBaseRef.current = {
+    round, upgrades: runUpgrades, level, lastRoundMovesLeft, path: runPath,
+    mutatorId: weeklyMutator ? weeklyMutator.id : null, retriesLeft,
+  };
+  /* Writes the normal run's save with a live position: every pour, undo and
+     hint, and the cleared board + its offer at the solve. Normal runs only
+     (canAssist) — the daily keeps its own save and score attack keeps none. */
+  const saveNormalLive = (live) => {
+    if (!canAssist || !normalSaveBaseRef.current) return;
+    saveNormalRun({ ...normalSaveBaseRef.current, live });
+  };
+
   const attemptPour = useCallback((fromIdx, toIdx, e) => {
     if (roundDecidedRef.current) return;
     if (canPour(tubes, fromIdx, toIdx)) {
@@ -1703,15 +1721,19 @@ export default function Cascade() {
          an unlimited free retry that made RETRIES_PER_RUN decorative. Now
          leaving resumes exactly where the player was, moves spent included. */
       if (canAssist && !isSolved(next) && newMovesLeft > 0) {
-        saveNormalRun({
-          round,
-          upgrades: upgradesNow,
-          level,
-          lastRoundMovesLeft,
-          path: runPath,
-          mutatorId: weeklyMutator ? weeklyMutator.id : null,
-          retriesLeft,
-          live: { tubes: next, moves: newMovesUsed, bonusMoves: newBonus, combo: newCombo },
+        saveNormalLive({ tubes: next, moves: newMovesUsed, bonusMoves: newBonus, combo: newCombo, undoLeft, hintLeft, undoUsed: undoUsedThisRun });
+      }
+      /* The offer is drawn HERE, at the solve, and saved with the solved
+         board — not ~0.5s later in the transition timer. A live save one pour
+         before the solve let Exit -> Continue -> one pour re-roll the cards
+         (Jackpot included) as often as the player liked. */
+      const solvedOffer = isSolved(next) && !isDaily
+        ? pickRandomUpgrades(offerCount(round), runUpgrades, Math.random, runFocus)
+        : null;
+      if (solvedOffer && canAssist) {
+        saveNormalLive({
+          tubes: next, moves: newMovesUsed, bonusMoves: newBonus, combo: newCombo, undoLeft, hintLeft, undoUsed: undoUsedThisRun,
+          offer: solvedOffer.upgrades.map((u) => u.id), jackpotNearMiss: solvedOffer.jackpotNearMiss, clearedLeft: Math.max(0, newMovesLeft),
         });
       }
 
@@ -1733,7 +1755,7 @@ export default function Cascade() {
            will carry into the next board. One pop, so they never stack on
            top of each other. */
         {
-          const underPar = level.par > 0 && newMovesUsed <= (level.playPar ?? level.par);
+          const underPar = level.par > 0 && !level.suddenDeath && newMovesUsed <= (level.playPar ?? level.par);
           const carryNext = Math.min(MOVE_ECONOMY.carryCap, Math.floor(Math.max(0, remainingAtClear) * MOVE_ECONOMY.carryRate));
           const popText = underPar ? `Under par!${carryNext ? ` +${carryNext} carry` : ""}` : carryNext ? `+${carryNext} carry` : null;
           if (popText) {
@@ -1859,9 +1881,8 @@ export default function Cascade() {
             );
             setJackpotNearMiss(false);
           } else {
-            const { upgrades, jackpotNearMiss } = pickRandomUpgrades(offerCount(round), runUpgrades, Math.random, runFocus);
-            setPendingUpgrades(upgrades);
-            setJackpotNearMiss(jackpotNearMiss);
+            setPendingUpgrades(solvedOffer.upgrades);
+            setJackpotNearMiss(solvedOffer.jackpotNearMiss);
           }
           setPhase("upgrade");
           if (!quietClear) {
@@ -2014,7 +2035,7 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, runPath, weeklyMutator, retriesLeft]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, runPath, weeklyMutator, retriesLeft, hintLeft]);
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -2161,10 +2182,11 @@ export default function Cascade() {
     if (!move) return;
     setHint({ from: move.from, to: move.to, key: Date.now() });
     setHintLeft((h) => h - 1);
+    if (moves > 0) saveNormalLive({ tubes, moves, bonusMoves, combo: comboCount, undoLeft, hintLeft: hintLeft - 1, undoUsed: undoUsedThisRun });
     Snd.select();
     Haptic.light();
     armHintTimer();
-  }, [hintLeft, phase, tubes, hint, armHintTimer, canAssist]);
+  }, [hintLeft, phase, tubes, hint, armHintTimer, canAssist, moves, bonusMoves, comboCount, undoLeft, undoUsedThisRun]);
 
   const undo = useCallback(() => {
     if (undoLeft <= 0) return;
@@ -2203,9 +2225,10 @@ export default function Cascade() {
     setSelected(null);
     setUndoLeft((u) => u - 1);
     setUndoUsedThisRun(true);
+    saveNormalLive({ tubes: last.tubes, moves: last.moves, bonusMoves: last.bonusMoves, combo: last.comboCount, undoLeft: undoLeft - 1, hintLeft, undoUsed: true });
     Snd.select();
     Haptic.light();
-  }, [undoLeft, snapshots, phase, canAssist]);
+  }, [undoLeft, snapshots, phase, canAssist, hintLeft]);
 
   const chooseUpgrade = useCallback((upgrade) => {
     /* Guard against a double-tap racing through two upgrade cards before
@@ -2603,9 +2626,20 @@ export default function Cascade() {
         setRetriesLeft(resume.retriesLeft);
         /* Lay the live position over the restored board (consumed by the
            level effect, the same hand-off the daily resume uses). */
-        pendingResumeRef.current = resume.live
-          ? { phase: "playing", tubes: resume.live.tubes, moves: resume.live.moves, bonusMoves: resume.live.bonusMoves, combo: resume.live.combo }
+        const lv = resume.live;
+        pendingResumeRef.current = lv
+          ? {
+              phase: lv.offer ? "upgrade" : "playing",
+              tubes: lv.tubes, moves: lv.moves, bonusMoves: lv.bonusMoves, combo: lv.combo,
+              undoLeft: lv.undoLeft, hintLeft: lv.hintLeft,
+              pendingUpgrades: lv.offer ? lv.offer.map((id) => UPGRADES.find((u) => u.id === id)) : [],
+              jackpotNearMiss: !!lv.jackpotNearMiss,
+            }
           : null;
+        /* A saved offer means the round was already cleared: the next board
+           is generated from what it was cleared with. */
+        if (lv && lv.offer) setLastRoundMovesLeft(lv.clearedLeft);
+        if (lv && lv.undoUsed) setUndoUsedThisRun(true);
         setRetriedThisRound(false);
         setUndoUsedThisRun(false);
         setNewBestThisRun(false);
@@ -2989,9 +3023,7 @@ export default function Cascade() {
              So leaving here rewinds to the START of the round they just
              cleared, and "moves made in this round are lost" would be
              badly understating it. */
-          phase === "upgrade"
-        ? "Your run is saved, but not this clear — the next board depends on the card you'd pick next. You'll pick this round up again from the start."
-        : "Your run is saved exactly where you are, and resumes from Home.",
+          "Your run is saved exactly where you are, and resumes from Home.",
       confirmLabel: "Exit",
       /* Danger for both kinds of real loss: a normal run with nothing on disk,
          and any score run (nothing is ever on disk for it). A score run that

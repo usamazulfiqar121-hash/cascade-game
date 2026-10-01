@@ -975,7 +975,11 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
      board cards apply (an Auto-Sort saves ~4 moves on average). The budget is
      built from `par`, so the cards pay off; the HUD, "Under par" and the floor
      below use this one, so they describe the board on screen. */
-  const playPar = extraTubes || autoSortCount ? boardPar(tubes, colorCount) : par;
+  /* min(): an extra empty tube cannot make a board need MORE moves; when the
+     approximate search says otherwise (~2% of Extra Tube boards, by 1-2) it
+     is search noise, and letting it through raised the HUD par and the floor
+     because of a card meant to help. */
+  const playPar = extraTubes || autoSortCount ? Math.min(par, boardPar(tubes, colorCount)) : par;
 
   const budget = moveBudget(round, par, prevMovesLeft);
   const moveBonus = sumMoveBonus(runUpgrades);
@@ -1179,7 +1183,11 @@ export function loadNormalRun() {
       && Number.isInteger(L.moves) && L.moves >= 0
       && Number.isInteger(L.bonusMoves) && L.bonusMoves >= 0
       && Number.isInteger(L.combo) && L.combo >= 0
-      && L.moves < r.level.moveLimit + L.bonusMoves)) r.live = null;
+      && (L.offer ? L.moves <= r.level.moveLimit + L.bonusMoves : L.moves < r.level.moveLimit + L.bonusMoves)
+      && (L.undoLeft == null || (Number.isInteger(L.undoLeft) && L.undoLeft >= 0 && L.undoLeft <= 2))
+      && (L.hintLeft == null || (Number.isInteger(L.hintLeft) && L.hintLeft >= 0 && L.hintLeft <= 2))
+      && (!L.offer || (Array.isArray(L.offer) && L.offer.length > 0 && L.offer.every((id) => UPGRADES.some((u) => u.id === id))
+        && Number.isInteger(L.clearedLeft) && L.clearedLeft >= 0)))) r.live = null;
     return r;
   } catch {
     return null;
