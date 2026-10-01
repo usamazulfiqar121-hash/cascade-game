@@ -693,34 +693,60 @@ export const WEEKLY_MUTATORS = [
   },
 ];
 
-/* Days since the epoch, snapped back to that week's Monday (UTC).
-   getUTCDay() is 0 for Sunday, so +6 then mod 7 lands Monday on 0. */
-function weekIndexUTC(date) {
+/* That week's Monday (UTC), as days since 1970. getUTCDay() is 0 for Sunday,
+   so +6 then mod 7 lands Monday on 0. */
+function mondayDayUTC(date) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return Math.floor(d.getTime() / 86400000) - DAILY_EPOCH_DAY;
+  return Math.floor(d.getTime() / 86400000);
 }
 
-/* One shuffled pass of the whole set per six-week block, so every mutator
-   comes round exactly once per block and never twice inside one.
+/* The rotation as first shipped. Its "week" index was really a DAY count
+   (snapped to Monday), so it moved in steps of 7 and changed six-week block
+   almost every week: measured over 520 weeks it put the same rule on two
+   weeks in a row 90 times, held one rule for 4 weeks straight, and showed all
+   six rules inside a six-week window 1 time in 86. Kept, unchanged, ONLY for
+   weeks before WEEK_CUTOVER_DAY so the week that was live when it was fixed
+   keeps the rule players were already shown. */
+function legacyWeekMutator(date) {
+  const n = WEEKLY_MUTATORS.length;
+  const week = mondayDayUTC(date) - DAILY_EPOCH_DAY;
+  const block = Math.floor(week / n);
+  return WEEKLY_MUTATORS[mutatorOrder(block)[week - block * n]];
+}
 
-   The one thing NOT guarded is the seam between two blocks — the last mutator
-   of one block can repeat as the first of the next, roughly one week in six.
-   The daily's twist order goes to real lengths to avoid this (see
-   twistOrder / orderIsFair) because the player sees that rotation as a daily
-   calendar; here it's one card, once a week, and fixing it would mean
-   computing the previous block's order to test against. Judged not worth the
-   complexity, and noted here so it's a known shape rather than a surprise. */
+/* Monday 2026-10-05: the first week counted in real weeks. */
+const WEEK_CUTOVER_DAY = Date.UTC(2026, 9, 5) / 86400000;
+
+/* One shuffled pass of the whole set per six-week block, so every mutator
+   comes round exactly once per block and never twice inside one. */
 function mutatorOrder(block) {
   const ids = WEEKLY_MUTATORS.map((_, i) => i);
   return shuffle(ids, mulberry32(fmix32((block ^ MUTATOR_SALT) >>> 0)));
 }
 
-export function weekMutator(date = new Date()) {
+/* A block's order with the seam guarded: if it would open on the rule the
+   previous week closed on, its first two weeks swap. Swapping positions 0 and
+   1 never touches position n-1, so the previous block's last rule is simply
+   its raw order's last — no recursion. Block 0's previous week is the last
+   legacy week. */
+function blockOrder(block) {
   const n = WEEKLY_MUTATORS.length;
-  const week = weekIndexUTC(date);
+  const order = mutatorOrder(block).slice();
+  const prevLast = block > 0
+    ? mutatorOrder(block - 1)[n - 1]
+    : WEEKLY_MUTATORS.indexOf(legacyWeekMutator(new Date((WEEK_CUTOVER_DAY - 7) * 86400000)));
+  if (order[0] === prevLast) [order[0], order[1]] = [order[1], order[0]];
+  return order;
+}
+
+export function weekMutator(date = new Date()) {
+  const monday = mondayDayUTC(date);
+  if (monday < WEEK_CUTOVER_DAY) return legacyWeekMutator(date);
+  const n = WEEKLY_MUTATORS.length;
+  const week = (monday - WEEK_CUTOVER_DAY) / 7;
   const block = Math.floor(week / n);
-  return WEEKLY_MUTATORS[mutatorOrder(block)[week - block * n]];
+  return WEEKLY_MUTATORS[blockOrder(block)[week - block * n]];
 }
 
 /* A mutator by id, or null. The mirror of weekMutator(): weekMutator is the
