@@ -2574,7 +2574,7 @@ export default function Cascade() {
           icon: "🎯",
           color: "var(--accent)",
           title: "Score Attack",
-          message: "No undo, no hints. Every finished run is recorded — how far can you get?",
+          message: "No undo, no hints. A run counts once you clear a round — how far can you get?",
           duration: 4200,
         });
       }
@@ -2582,7 +2582,12 @@ export default function Cascade() {
     }
     setScreen("game");
     return true;
-  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest, score]);
+  /* `daily`/`score` are this callback's own PARAMETERS and must not appear
+     here: a useCallback dependency array is evaluated in the component's
+     scope, so listing `score` threw ReferenceError on the first render
+     (no such binding exists there) and blanked the whole app. Only captured
+     component-scope values belong below. */
+  }, [recordGameStart, restartRun, dailyResults, showToast, dailyBest]);
 
   /* Start a normal run from round 1, DISCARDING any save. The one way to say
      "not that one" now that startNewGame resumes when it can.
@@ -2616,7 +2621,11 @@ export default function Cascade() {
      fresh run, no resume, nothing else disturbed.
 
      A score run is also defined by what it does NOT touch: no normal-run save,
-     no daily save, no daily state, no stats, no achievements.
+     no daily save, no daily state. Global stats and the run-structure
+     achievements DO still record — a cleared round is a cleared round — and
+     only the assist-dependent no_undo_5 is excluded, by canAssist rather than
+     by mode. What is deliberately absent is the normal run's `best` and its
+     Continue save, not the profile's history.
 
      startNewGame(false, true) handles the board, the mode and the round log.
      Everything it doesn't reset for us has to stay put here, and the one that
@@ -2822,7 +2831,7 @@ export default function Cascade() {
       message: isDaily
         ? "Your daily run is saved. Pick it up from Home any time today."
         : isScore
-        ? "Score attack isn't saved. Leaving now discards this run — it only counts once you run out of moves."
+        ? "Score attack isn't saved. Leaving now discards this run — it only counts if it ends with a round cleared."
         : !hasSave
         /* Nothing on disk at all: a run still on its opening round, which has
            not been cleared yet, so no boundary has been written. */

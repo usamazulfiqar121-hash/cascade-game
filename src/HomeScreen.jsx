@@ -349,10 +349,11 @@ export default function HomeScreen({
             visual weight as the two that have one.
 
             The copy states the two rules that make the number mean something —
-            no assists, and a run counts only when it ends — because both are
-            invisible from the outside and both change what a player is
-            deciding right now, standing on this screen. And it states the
-            record, so the target is known before committing.
+            no assists, and a run counts only once it clears at least one round
+            (a run that dies on round 1 scores nothing and is never recorded) —
+            because both are invisible from the outside and both change what a
+            player is deciding right now, standing on this screen. And it states
+            the record, so the target is known before committing.
 
             Only the best and the count, not a board of runs: the full list is
             on the run-over card where there is room for it and where the
@@ -383,7 +384,7 @@ export default function HomeScreen({
               </span>
             </div>
             <div style={S.twistDesc}>
-              No undo, no hints. A run counts once you run out of moves.
+              No undo, no hints. A run counts once you clear a round.
             </div>
             {/* The best run, not a count of them. "3 runs recorded" describes
                 effort; the score describes the result, and this is the one
