@@ -256,39 +256,124 @@ const UPGRADE_TAP_GUARD_MS = 500;
 const SCREEN_SHIELD_MS = 350;
 const CONFIRM_SCRIM_GUARD_MS = 400;
 
-/* The round's move budget in one line, shown under the board until the first
-   pour: where the number in the HUD came from. Without it the economy is
-   invisible — the count just looks arbitrary, and a player cannot tell a
-   boss squeeze from a bad card from their own leftover paying off. Zero
-   parts are left out so round 1 reads "Par 5 · +4 spare", not a sum of
-   zeros. The rule (daily twist or the week's mutator) is named, because
-   "+3" on round 1 with no cards taken is otherwise a mystery. */
-function budgetLine(lvl, ruleName) {
-  const sign = (n) => `${n > 0 ? "+" : "−"}${Math.abs(n)}`;
-  const playPar = lvl.playPar ?? lvl.par;
-  if (lvl.suddenDeath) return `Sudden death · solve in ${playPar} · no bonus moves`;
-  /* Four parts at most, read against the target already in the HUD:
-     target + spare − drain + carry + bonus = the moves on screen. The target
-     itself is not repeated here, and board cards (which lower the target)
-     count into "bonus" with the other cards — measured, a fifth part wrapped
-     the line to two rows even on a 390px phone. The rule is named when it is
-     the only bonus, since that is when a "+3" is otherwise unexplained. */
-  const parts = [];
-  if (lvl.buffer) parts.push(`+${lvl.buffer} spare`);
-  if (lvl.drain) parts.push(`−${lvl.drain} drain`);
-  if (lvl.carry) parts.push(`+${lvl.carry} carry`);
-  const board = Math.max(0, (lvl.par || 0) - playPar);
-  const bonus = (lvl.cards || 0) + (lvl.rule || 0) + board;
-  if (bonus) parts.push(lvl.cards || board ? `${sign(bonus)} bonus` : `${sign(bonus)} ${ruleName || "rule"}`);
-  return parts.join(" · ");
+/* The round's two numbers, under the board while the round is live: the NEED
+   (the fewest moves this board can be done in — the limit never drops below
+   it) and the moves the round actually gives you. Those are the only two
+   figures a player acts on while choosing a pour.
+
+   It used to print the whole sum instead: "Par 22 · +3 spare · −20 drain ·
+   +2 carry · +16 bonus". Five numbers to add up in your head mid-round, and
+   the two biggest of them cancelled — −20 of drain against +16 from cards —
+   so the line was arithmetic dressed up as information, and it wrapped to two
+   rows even on a 390px phone. Two numbers cannot be misread and cannot be
+   mis-added. The breakdown is one tap away and every part of it is still
+   there, which is the right way round: the economy has to stay legible, but
+   legible on request rather than in the player's face while they pick a pour.
+
+   The words here are the game's fixed vocabulary, not phrasing chosen per
+   line, and the same words are used everywhere else they appear: the tapped
+   breakdown below, the round-5 badge, the upgrade screen's next-round line,
+   and the Codex. NEED is one thing only — the minimum moves this board
+   requires — and the solver's own name for it (par) is never a word the
+   player sees.
+
+   Uppercase because this line is read mid-pour, in a glance, while a finger
+   is already moving toward a tube — and caps is what makes two numbers with
+   four letters each separable at that size without a second read. HAVE is
+   what the round gave out, which is not the same number as the HUD's
+   remaining "moves left" a few pixels above it: that one counts down, this
+   one is the round's whole allowance. */
+/* The board's NEED in one place. This used to be spelled `lvl.playPar ??
+   lvl.par` at six call sites — HUD, toast, breakdown, aria-label, the
+   clearedUnderPar test and nextRoundInfo — and each was free to drift. The
+   `??` is load-bearing rather than belt-and-braces: playPar is stored apart
+   from par only on levels from a recent build, so an older save in
+   localStorage still carries par alone, and dropping the fallback printed
+   "NEED undefined" in the HUD. */
+function needOf(lvl) {
+  return lvl.playPar ?? lvl.par;
 }
 
-/* One line on the upgrade screen about the round being picked FOR. */
+function budgetLine(lvl) {
+  const playPar = needOf(lvl);
+  /* Sudden death is named in words rather than shown as two numbers, because
+     it costs the player something two numbers cannot say: lucky and combo
+     moves switch off, so a board that looked comfortable starts having to be
+     done in the fewest moves possible. NEED and HAVE are the same number here,
+     so printing both would be noise. */
+  if (lvl.suddenDeath) return `NO EXTRA · HAVE ${lvl.moveLimit}`;
+  return `NEED ${playPar} · HAVE ${lvl.moveLimit}`;
+}
+
+/* What the tapped line opens: the same sum, one part per line, in the same
+   words, with the two totals named instead of left for the player to add.
+
+   It starts from NEED — the minimum the board as played can be done in — and
+   every row is one of the things that move that number: Cards (how much room
+   the hand bought on this board), Extra (what the round hands over on top),
+   Lost (the ramp taking it away), Left (what came in from the round before).
+   Extra is deliberately EVERYTHING additive rather than just the round-start
+   buffer: a "+3 Moves" card and a rule that grants moves each round are extra
+   moves by any reading, and folding them into that one row is what keeps this
+   short.
+
+   Cards is the row that keeps the sum landing on the limit. The budget is built
+   from the board AS DEALT, and Extra Tube / Auto-Sort then lower what it
+   actually takes to solve it, so NEED ends up smaller than the number the limit
+   was calculated from — by exactly par - playPar. Without this row the sum came
+   up short by that much on every round holding a board card, and the player was
+   left adding up numbers that did not reach the total printed under them. It is
+   a plus, which is also the truth of it: a card that makes the board easier is
+   not spending its value, it is handing the round that many moves back.
+
+   A zero part is left out, so round 1 with an empty hand is one line rather
+   than a sum of zeros. */
+function budgetBreakdown(lvl) {
+  const playPar = needOf(lvl);
+  if (lvl.suddenDeath) {
+    return [
+      `Need ${playPar}`,
+      "────────",
+      `= ${lvl.moveLimit} Moves`,
+      "No extra moves left, and no lucky or combo moves.",
+    ].join("\n");
+  }
+  /* playPar is min(par, boardPar) and never exceeds par, so this is >= 0 on a
+     level this build wrote; the max only covers a save from before playPar was
+     stored separately, where the two can disagree the other way. */
+  const cardBonus = Math.max(0, (lvl.par ?? playPar) - playPar);
+  /* Split by sign, not just summed. A rule that takes moves away used to render
+     as "− N Extra" — a row whose own name contradicted its sign. It is now
+     folded into Lost, which is the word the vocabulary already uses for moves
+     the round takes off you, so the sum stays honest and no row argues with
+     itself. Reachable only when the drain undercuts the buffer on an early
+     round (drain is 0 through round 2, per MOVE_ECONOMY.drainFrom), which is
+     why it survived this long. */
+  const raw = (lvl.buffer || 0) + (lvl.cards || 0) + (lvl.rule || 0);
+  const extra = raw > 0 ? raw : 0;
+  const ruleLost = raw < 0 ? -raw : 0;
+  const lost = (lvl.drain || 0) + ruleLost;
+  const parts = [];
+  if (cardBonus) parts.push(`+ ${cardBonus} Cards`);
+  if (extra) parts.push(`+ ${extra} Extra`);
+  if (lost) parts.push(`− ${lost} Lost`);
+  if (lvl.carry) parts.push(`+ ${lvl.carry} Left`);
+  return [
+    `Need ${playPar}`,
+    parts.length ? parts.join("\n") : "Nothing added, nothing taken.",
+    "────────",
+    `= ${lvl.moveLimit} Moves`,
+  ].join("\n");
+}
+
+/* One line on the upgrade screen about the round being picked FOR. Same
+   vocabulary as the round-start line (budgetLine above): what the next round
+   takes away is "lost", and the every-5th round is a "hard" one. */
 function nextRoundInfo(nextRound) {
   const drain = moveBudget(nextRound, 0, 0).drain;
   const parts = [`Next: round ${nextRound}`];
-  if (drain) parts.push(`drain −${drain}`);
-  if (isBossRound(nextRound)) parts.push("👹 boss round");
+  if (drain) parts.push(`−${drain} lost`);
+  if (isBossRound(nextRound)) parts.push("👹 hard round");
   return parts.join(" · ");
 }
 
@@ -678,8 +763,8 @@ export default function Cascade() {
      path checks it; the level effect clears it for the next round. */
   const roundDecidedRef = useRef(false);
   const [lastRoundMovesLeft, setLastRoundMovesLeft] = useState(0);
-  /* Whether the round that fed this one was solved within its target — Par
-     Master's trigger. Travels exactly where lastRoundMovesLeft travels (both
+  /* Whether the round that fed this one was solved within its need — Marksman's
+     trigger. Travels exactly where lastRoundMovesLeft travels (both
      saves, retry, resume), for the same reason: it is an input to the next
      board's move limit. */
   const [lastRoundUnderPar, setLastRoundUnderPar] = useState(false);
@@ -1023,18 +1108,18 @@ export default function Cascade() {
       showToast({
         icon: "⚡",
         color: "var(--danger)",
-        title: `Sudden death · round ${round}`,
-        message: `The drain has eaten your spare moves. Solve in ${level.playPar ?? level.par} — no lucky or combo moves this round.`,
+        title: `No extra · round ${round}`,
+        message: `Everything above your need is gone. Clear it in ${needOf(level)} — no lucky or combo moves this round.`,
         duration: 3600,
       });
       return;
     }
     if (!level.boss) {
-      /* The drain is the one rule that changes every round without an event
+      /* The ramp is the one rule that changes every round without an event
          to announce it, so its first appearance is explained once, ever. */
-      /* Round 3 only — the drain's real first appearance. Otherwise an
-         existing player would get "the drain has started" mid-run at round
-         15 the first time they open this build. */
+      /* Round 3 only — its real first appearance. Otherwise an existing
+         player would get "it has started" mid-run at round 15 the first time
+         they open this build. */
       if (level.drain > 0 && round <= 3) {
         let seen = false;
         try { seen = localStorage.getItem("cascade:tipDrain") === "1"; } catch {}
@@ -1043,7 +1128,7 @@ export default function Cascade() {
           showToast({
             icon: "🩸",
             color: "var(--gold)",
-            title: "The drain has started",
+            title: "Moves start getting lost",
             message: `This round has ${level.drain} fewer moves, and every round from now takes a few more. Your upgrades are what keep you ahead.`,
             duration: 5200,
           });
@@ -1054,8 +1139,8 @@ export default function Cascade() {
     showToast({
       icon: "👹",
       color: "var(--danger)",
-      title: `Boss round ${round}`,
-      message: "Half the spare moves. Clear it for one extra upgrade to choose from.",
+      title: `Hard round ${round}`,
+      message: "Half the extra moves. Clear it for one extra upgrade to choose from.",
       duration: 3200,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1767,10 +1852,13 @@ export default function Cascade() {
          board — not ~0.5s later in the transition timer. A live save one pour
          before the solve let Exit -> Continue -> one pour re-roll the cards
          (Jackpot included) as often as the player liked. */
-      /* Not in sudden death: there the limit IS the target, so every clear
+      /* Not in sudden death: there the limit IS the need, so every clear
          would count and Marksman would pay +4 for nothing — the exact
-         "fires by itself" flaw Perfect Clear was replaced for. */
-      const clearedUnderPar = isSolved(next) && level.par > 0 && !level.suddenDeath && newMovesUsed <= (level.playPar ?? level.par);
+         "fires by itself" flaw that card was replaced for. The par > 0 guard
+         this used to carry is gone: boardPar never returns below 1, so it
+         could never be false, and it sat on `par` while the comparison below it
+         was against the board as played. */
+      const clearedUnderPar = isSolved(next) && !level.suddenDeath && newMovesUsed <= needOf(level);
       const solvedOffer = isSolved(next) && !isDaily
         ? pickRandomUpgrades(offerCount(round), runUpgrades, Math.random, runFocus)
         : null;
@@ -1804,7 +1892,7 @@ export default function Cascade() {
              too, but the card picked next (Glass Cannon) can still cancel it,
              so the pop could promise moves that never arrived; the carry is
              shown on the next board's budget line instead. */
-          const popText = underPar ? "On target!" : null;
+          const popText = underPar ? "Need met!" : null;
           if (popText) {
             const pid = Date.now() + Math.random();
             armEphemeral(() => setBonusPops((p) => [...p, { id: pid, text: popText }]), Math.max(0, impactMs));
@@ -3533,7 +3621,7 @@ export default function Cascade() {
                 style and stays as it is. */}
             {isScore && <span style={S.dailyBadge}>SCORE</span>}
             {level.suddenDeath && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>⚡</span>}
-            {level.boss && !level.suddenDeath && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>BOSS</span>}
+            {level.boss && !level.suddenDeath && <span style={{ ...S.dailyBadge, color: T.danger, background: `color-mix(in srgb, ${T.danger} 13%, transparent)`, borderColor: `color-mix(in srgb, ${T.danger} 40%, transparent)` }}>HARD</span>}
             Round {round}
           </div>
           {/* Three different records behind one word, so they can't share a
@@ -3542,7 +3630,7 @@ export default function Cascade() {
               points that their record was 9, and would silently mix the two
               modes' records. */}
           <div style={S.colorCount}>
-            {level.par ? `target ${level.playPar ?? level.par}` : `${level.colorCount} colors`} · best{" "}
+            {level.par ? `NEED ${needOf(level)}` : `${level.colorCount} colors`} · best{" "}
             {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
           </div>
         </div>
@@ -3693,11 +3781,43 @@ export default function Cascade() {
 
       <div style={S.footer}>
         {phase === "playing" && (
-          <div style={level.par ? { ...S.hint, fontSize: 11.5, letterSpacing: 0 } : S.hint}>
-            {level.par
-              ? budgetLine(level, isDaily ? dailyTwist?.name : weeklyMutator?.name)
-              : selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}
-          </div>
+          level.par ? (
+            /* A <button>, not the div it used to be: the line now OPENS
+               something instead of just being read, and a control that looks
+               like text but isn't one is a control nobody finds. Styled back
+               down to the same quiet type S.hint gives the div it replaced — no
+               border, no fill, no card, nothing that pulls the eye off the
+               board — so the only visible addition is the "· tap" that admits
+               there is something behind it.
+
+               showToast replaces whatever toast is already up and restarts its
+               timer (see it in Cascade), so tapping this ten times re-reads
+               one card instead of stacking ten. */
+            <button
+              onClick={() => showToast({
+                icon: "🎯",
+                color: "var(--accent)",
+                title: "This round",
+                message: budgetBreakdown(level),
+                duration: 6000,
+              })}
+              aria-label={`${level.moveLimit} moves this round, need ${needOf(level)}. Tap to see how that number is made up.`}
+              style={{
+                ...S.hint, fontSize: 11.5, letterSpacing: 0,
+                background: "none", border: "none", padding: 0, margin: 0,
+                cursor: "pointer", maxWidth: "100%", lineHeight: 1.35,
+                appearance: "none", WebkitAppearance: "none",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              {budgetLine(level)}
+              <span aria-hidden="true" style={{ opacity: 0.55 }}> · tap</span>
+            </button>
+          ) : (
+            <div style={S.hint}>
+              {selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}
+            </div>
+          )
         )}
       </div>
 

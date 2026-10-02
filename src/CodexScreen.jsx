@@ -21,15 +21,25 @@ import { loadCodex } from "./codex";
 import { useMemo, useState } from "react";
 import { useEnterShield } from "./useEnterShield";
 
-/* The move budget, in the words the round-start line uses (see budgetLine in
-   App.jsx). Numbers come from MOVE_ECONOMY so this cannot drift from the code. */
+/* The move budget, in the words the round-start line uses (see budgetLine and
+   budgetBreakdown in App.jsx, which put these same terms one tap away under
+   the board). Numbers come from MOVE_ECONOMY so this cannot drift from the
+   code.
+
+   These seven words are the game's fixed vocabulary, not descriptions written
+   per row, and they are set in caps here because they are labels rather than
+   sentences: NEED is one thing only (the fewest moves the board requires), the
+   four things that move it are Cards / Extra / Lost / Left, a round with no
+   extras left is "No Extra", and the every-5th round is "Hard". The solver's own
+   name for the floor never reaches the screen, and neither does "goal". */
 const MOVE_RULES = [
-  { icon: "⛳", name: "Target", desc: "About the fewest moves this board needs. Your moves never drop below it, so every round can be won." },
-  { icon: "🫧", name: "Spare", desc: `Extra moves on top of the target: +${Math.round(MOVE_ECONOMY.bufferStart * 100)}% on round 1, shrinking to +${Math.round(MOVE_ECONOMY.bufferEnd * 100)}% by round ${MOVE_ECONOMY.bufferRound}.` },
-  { icon: "🩸", name: "Drain", desc: `From round ${MOVE_ECONOMY.drainFrom + 1}, every round takes a few more moves away — and it speeds up. Your upgrades are what keep you ahead of it.` },
-  { icon: "⚡", name: "Sudden death", desc: "Once the drain eats every spare move, rounds give exactly the target and lucky / combo moves switch off. Move cards keep you out of it longer." },
-  { icon: "↪️", name: "Carry", desc: `Half the moves you finish a round with roll into the next one, up to ${MOVE_ECONOMY.carryCap}. Solve tight, start the next board richer.` },
-  { icon: "👹", name: "Boss", desc: `Every ${MOVE_ECONOMY.bossEvery}th round has half the spare moves. Clear it and you get one extra upgrade to choose from.` },
+  { icon: "⛳", name: "NEED", desc: "The fewest moves this board can be done in. Your moves never drop below it, so every round can be won." },
+  { icon: "🪄", name: "CARDS", desc: "Extra Tube and Auto-Sort make a board easier than the round was budgeted for, so the round arrives with that much more room than your need. This is the row that pays for them." },
+  { icon: "🫧", name: "EXTRA", desc: `Extra moves on top of your need: +${Math.round(MOVE_ECONOMY.bufferStart * 100)}% of it on round 1, shrinking to +${Math.round(MOVE_ECONOMY.bufferEnd * 100)}% by round ${MOVE_ECONOMY.bufferRound}. Cards that grant moves, and any daily rule, land on this same row.` },
+  { icon: "🩸", name: "LOST", desc: `From round ${MOVE_ECONOMY.drainFrom + 1}, every round takes a few more moves away — and it speeds up. Your upgrades are what keep you ahead of it.` },
+  { icon: "⚡", name: "NO EXTRA", desc: "Once everything extra is gone, a round gives exactly your need and lucky / combo moves switch off. Move cards keep you out of it longer." },
+  { icon: "↪️", name: "LEFT", desc: `Half the moves you finish a round with roll into the next one, up to ${MOVE_ECONOMY.carryCap}. Finish tight, start the next board richer.` },
+  { icon: "👹", name: "HARD", desc: `Every ${MOVE_ECONOMY.bossEvery}th round has half the extra moves — unless everything extra is already gone, in which case it is a No Extra round like any other. Clear it and you get one extra upgrade to choose from.` },
 ];
 
 /* The same three-way split the daily twist disclosure already uses, so the
@@ -132,9 +142,10 @@ export default function CodexScreen({ onClose, onBack, closing = false }) {
             First, because every other section is about getting more out of
             this one: paths, cards and rules are all ways of beating the move
             budget, and a player who can't see how the budget is made can't
-            judge any of them. The same five words appear under the board at
-            the start of every round, so this is the long form of a line the
-            player has already read. */}
+            judge any of them. The same terms, in the same words, are one tap
+            away under the board, so this is the long form of an explanation
+            the player can already reach mid-round — just in full, and without
+            a board to look at while reading it. */}
         <div style={S.sectionLabel}>HOW MOVES WORK</div>
         <div style={S.stack}>
           {MOVE_RULES.map((r) => (

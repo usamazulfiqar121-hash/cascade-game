@@ -255,11 +255,11 @@ export const UPGRADES = [
      par economy that fired on its own every early round (carry alone left 5)
      and never late, so it asked nothing of the player. Now it pays for skill:
      the id stays "clear" so saved runs keep the card. */
-  { id: "clear", name: "Marksman", desc: "Solve a round within its target: +4 moves next round", icon: "🏹", rarity: 2, cat: "flow" },
+  { id: "clear", name: "Marksman", desc: "Clear a round within its need: +4 moves next round", icon: "🏹", rarity: 2, cat: "flow" },
   /* Trade-off cards: each one GIVES something and COSTS something, so the
      pick depends on the run and the player rather than on the bigger number.
      Balanced in simulation against the rest of the pool (see MOVE_ECONOMY). */
-  { id: "glass", name: "Glass Cannon", desc: "+5 moves every round, but you lose Carry", icon: "💪", rarity: 3, value: 5, cat: "tempo" },
+  { id: "glass", name: "Glass Cannon", desc: "+5 moves every round, but nothing rolls over", icon: "💪", rarity: 3, value: 5, cat: "tempo" },
   { id: "invest", name: "Investment", desc: "+1 move next round, growing by +1 every round after (max +10)", icon: "🌱", rarity: 2, cat: "tempo" },
   { id: "tube", name: "Extra Tube", desc: "+1 empty tube permanently (max 2)", icon: "🔧", rarity: 3, cat: "board" },
   { id: "auto", name: "Auto-Sort", desc: "1 random tube starts solved each round (max 2)", icon: "🎁", rarity: 4, cat: "board" },
@@ -350,6 +350,15 @@ export const CATEGORY = {
   luck: { name: "Luck", icon: "🍀" },
   flow: { name: "Flow", icon: "🔥" },
   board: { name: "Board", icon: "🔧" },
+  /* Not a category a card is ever IN — catOf() returns it for a spent or
+     unknown id so those can't consume a category slot (see runArchetype, which
+     skips it, and synergyCount, which never matches it). It is here so the
+     screens that print a category name have something to print: the Codex and
+     the offer screen read CATEGORY[cat].name directly, and with this entry
+     missing a legitimate edge case rendered the word "undefined" mid-sentence.
+     Deliberately absent from CATEGORY_ORDER below, so it can never win the
+     runArchetype tie-break or appear as its own block in the Codex. */
+  other: { name: "Other", icon: "•" },
 };
 
 export const CATEGORY_ORDER = ["tempo", "luck", "flow", "board"];
@@ -426,7 +435,7 @@ export const DAILY_TWISTS = [
   { id: "warm", name: "Warm Start", icon: "🌅", kind: "blessing", desc: "One colour starts already sorted" },
   { id: "lucky", name: "Lucky Day", icon: "🍀", kind: "blessing", desc: "+25% chance of a free move on every pour" },
   { id: "thin", name: "Thin Margins", icon: "⏳", kind: "curse", desc: "2 fewer moves every round" },
-  { id: "rainbow", name: "Rainbow", icon: "🌈", kind: "curse", desc: "Colours ramp up two rounds sooner" },
+  { id: "rainbow", name: "Rainbow", icon: "🌈", kind: "curse", desc: "Colours ramp up one round sooner" },
   { id: "tide", name: "Rising Tide", icon: "🌊", kind: "curse", desc: "1 fewer move for every 3 rounds you clear" },
   { id: "feast", name: "Feast & Famine", icon: "⚖️", kind: "mixed", desc: "+5 moves every round, but only 2 cards" },
 ];

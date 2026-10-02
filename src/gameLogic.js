@@ -684,7 +684,7 @@ export const WEEKLY_MUTATORS = [
     colorDelta: 1,
   },
   {
-    id: "warmup", name: "Warm Start", icon: "🌅", kind: "boon",
+    id: "warmup", name: "Free Sort", icon: "🌅", kind: "boon",
     desc: "Round 1 opens with one colour already sorted",
     autoSortDelta: (round) => (round === 1 ? 1 : 0),
   },
@@ -799,31 +799,43 @@ export function msUntilNextWeek() {
    The budget now has four parts, every one of them visible to the player:
 
      par    the fewest moves this board needs (solved, see boardPar).
-     buffer slack on top of par: generous on round 1 (+80%), shrinking to
-            +20% by round 8. Halved on a BOSS round (every 5th).
+     buffer slack on top of par: +50% on round 1, shrinking to +15% by
+            round 6. Halved on a BOSS round (every 5th).
      drain  from round 3 on, a little less every round, accelerating
             (1.8/round + 0.05/round²). This is what the run's cards are
             racing: an average build keeps up, a strong one pulls ahead, a
             weak one falls behind — and eventually everyone is caught.
-     carry  half the moves you finished the last round with, up to 6.
+     carry  half the moves you finished the last round with, up to 5.
             Solving efficiently is rewarded on the very next board.
 
-   Tuned against simulated runs (a greedy no-lookahead player and a solver,
-   picking cards sensibly or at random) for: tight but fair early rounds,
-   8–14 spare moves in mid-game, and runs that end around round 15–20 for an
-   average player and 25–35 for a strong one. Those are model numbers, not
-   player data — the constants below are the knobs to retune from real play. */
+   The buffer is the ONLY slack worth cutting, and the reason is where the
+   balance actually sits. The cards a run picks are worth ~1.6 moves a round
+   on average (tempo cards are ~42% of what gets offered) while the drain
+   takes 1.8 on round 3 and 2.9 by round 15 — so from round 5 on an average
+   build runs at roughly zero surplus, and the buffer is what pays for the
+   rounds in between. Turning the drain up by as little as 0.2, or the carry
+   rate down by 0.1, ends an average run on round 5. The first three rounds
+   were the one part of the buffer doing no work at all: +80/+71/+63% of a
+   5–9 move board is tutorial slack nobody can feel the edge of. That is what
+   the numbers below cut.
+
+   Tuned against hand-computed estimates for: an average build ending on
+   round 14–15 and a strong one on 25–26, with a few spare moves in mid-game.
+   Those are MODEL numbers, not player data and not a measured simulation —
+   the par table they were computed from is an estimate, and they have to be
+   replaced by real play before anyone tunes further from them. The constants
+   below are the knobs. */
 export const MOVE_ECONOMY = {
-  bufferStart: 0.8,   // round 1: par + 80%
-  bufferEnd: 0.2,     // from bufferRound on: par + 20%
-  bufferRound: 8,
+  bufferStart: 0.5,   // round 1: par + 50%
+  bufferEnd: 0.15,    // from bufferRound on: par + 15%
+  bufferRound: 6,
   bossEvery: 5,       // every 5th round is a boss round...
   bossBuffer: 0.5,    // ...with half the buffer
   drainFrom: 2,       // drain is 0 up to and including this round
   drainLinear: 1.8,
   drainSquare: 0.05,
   carryRate: 0.5,
-  carryCap: 6,
+  carryCap: 5,
 };
 export const BOARD_CARD_CAP = 2; // Extra Tube / Auto-Sort: at most two of each
 export const PAR_MASTER_BONUS = 4;
@@ -986,8 +998,8 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
   tubes = applyAutoSort(tubes, autoSortCount, rng);
   /* The par of the board the player actually gets. Lower than `par` once
      board cards apply (an Auto-Sort saves ~4 moves on average). The budget is
-     built from `par`, so the cards pay off; the HUD, "Under par" and the floor
-     below use this one, so they describe the board on screen. */
+built from `par`, so the cards pay off; the HUD, "Need met!" and the floor
+   below use this one, so they describe the board on screen. */
   /* min(): an extra empty tube cannot make a board need MORE moves; when the
      approximate search says otherwise (~2% of Extra Tube boards, by 1-2) it
      is search noise, and letting it through raised the HUD par and the floor
@@ -997,7 +1009,7 @@ export function generateLevel(round, runUpgrades, prevMovesLeft, seed = null, st
   /* Glass Cannon's cost: no carry at all. */
   const budget = moveBudget(round, par, runUpgrades.includes("glass") ? 0 : prevMovesLeft);
   const moveBonus = sumMoveBonus(runUpgrades) + investmentBonus(runUpgrades, round);
-  /* Par Master ("clear"): the last round was solved within its target. */
+  /* Marksman ("clear"): the last round was solved within its need. */
   const perfectClearBonus = runUpgrades.includes("clear") && prevUnderPar ? PAR_MASTER_BONUS : 0;
   const ruleDelta = twistMoveDelta(twistId, round) + (m && m.moveDelta ? m.moveDelta(round) : 0);
   /* Never below the par of the board as played: however far the drain has
@@ -1097,6 +1109,13 @@ export function loadDailyRun() {
     for (const k of ["genPrevLeft", "nextPrevLeft", "moves", "bonusMoves", "combo"]) {
       if (!Number.isFinite(r[k]) || r[k] < 0) return null;
     }
+    /* The two Marksman flags, coerced the same way loadNormalRun coerces
+       lastRoundUnderPar. A save written before they existed leaves them
+       undefined, which is falsy and so quietly pays nothing for one round —
+       defaulting rather than rejecting keeps the rest of that run resumable,
+       which is the whole point of the checks above. */
+    r.genUnderPar = r.genUnderPar === true;
+    r.nextUnderPar = r.nextUnderPar === true;
     return r;
   } catch {
     return null;
@@ -1169,6 +1188,22 @@ export function loadNormalRun() {
     if (!Number.isInteger(r.round) || r.round < 1) return null;
     if (!Array.isArray(r.upgrades) || !r.upgrades.every((x) => typeof x === "string")) return null;
     if (!validLevel(r.level)) return null;
+    /* budgetBreakdown reads these off the resumed level, and from a stored
+       object it cannot tell a field this build never wrote from one worth zero.
+       A save predating playPar would otherwise render a sum short of its own
+       total, with nothing on screen to say why. Defaulted rather than rejected:
+       refusing the save over a missing label would throw away a run the player
+       is still entitled to resume. par and playPar default to each other, so
+       the worst case is an absent Cards row on a sum that still adds up. */
+    const lvNum = (v, d) => (Number.isFinite(v) ? v : d);
+    r.level.par = lvNum(r.level.par, r.level.playPar);
+    r.level.playPar = lvNum(r.level.playPar, r.level.par);
+    r.level.buffer = lvNum(r.level.buffer, 0);
+    r.level.drain = lvNum(r.level.drain, 0);
+    r.level.carry = lvNum(r.level.carry, 0);
+    r.level.cards = lvNum(r.level.cards, 0);
+    r.level.rule = lvNum(r.level.rule, 0);
+    r.level.suddenDeath = r.level.suddenDeath === true;
     /* A run opened without a path (the picker was skipped) stores null, which
        is legal. A non-null one has to be a whole archetype, because runFocus
        reads .cats off it on every draw. */

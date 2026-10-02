@@ -87,31 +87,35 @@ export default function Tutorial({ onClose }) {
           <div style={stepStyle(0)} className={closing ? "" : "fade-up"}>
             <div style={S.tutNum}>1</div>
             <div style={S.tutStepBody}>
-              <div style={S.tutStepTitle}>Tap a tube</div>
-              <div style={S.tutStepDesc}>Pick up the <b style={{ color: T.accent }}>top ball</b></div>
+              <div style={S.tutStepTitle}>Tap a tube, then tap where it goes</div>
+              <div style={S.tutStepDesc}>That&apos;s <b style={{ color: T.accent }}>1 move</b></div>
             </div>
           </div>
 
           <div style={stepStyle(1)} className={closing ? "" : "fade-up"}>
             <div style={S.tutNum}>2</div>
             <div style={S.tutStepBody}>
-              <div style={S.tutStepTitle}>Tap another</div>
-              <div style={S.tutStepDesc}>Pour onto a <b style={{ color: T.go }}>matching color</b> or an <b style={{ color: T.go }}>empty tube</b></div>
+              <div style={S.tutStepTitle}>Finish the board</div>
+              <div style={S.tutStepDesc}><b style={{ color: T.go }}>NEED</b> is the fewest moves that clear it — most rounds give you more</div>
             </div>
           </div>
 
           <div style={stepStyle(2)} className={closing ? "" : "fade-up"}>
             <div style={S.tutNum}>3</div>
             <div style={S.tutStepBody}>
-              <div style={S.tutStepTitle}>Sort them all</div>
-              <div style={S.tutStepDesc}>Each tube one <b style={{ color: T.gold }}>single color</b></div>
+              <div style={S.tutStepTitle}>Use fewer moves</div>
+              <div style={S.tutStepDesc}>Leftover <b style={{ color: T.gold }}>carries to the next round</b></div>
             </div>
           </div>
         </div>
 
+        {/* The fail state, which the three steps above don't state and which a
+            first launch otherwise never learns about: a board can be run out of
+            moves on. Kept as its own line rather than folded into a step — it is
+            a consequence, not a rule, and the rules are already three. */}
         <div style={S.tutWarning}>
           <span style={{ fontSize: 15 }}>⚠️</span>
-          <span>Each pour costs a move. You have a limited number.</span>
+          <span>Every round has a strict limit. Run out of moves and the run is over.</span>
         </div>
 
         <button ref={closeBtn} style={S.primary} onClick={handleClose}>
