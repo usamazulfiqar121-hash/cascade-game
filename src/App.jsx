@@ -3693,8 +3693,8 @@ export default function Cascade() {
 
       <div style={S.footer}>
         {phase === "playing" && (
-          <div style={selected === null && moves === 0 && level.par ? { ...S.hint, fontSize: 11.5, letterSpacing: 0 } : S.hint}>
-            {selected === null && moves === 0 && level.par
+          <div style={level.par ? { ...S.hint, fontSize: 11.5, letterSpacing: 0 } : S.hint}>
+            {level.par
               ? budgetLine(level, isDaily ? dailyTwist?.name : weeklyMutator?.name)
               : selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}
           </div>
