@@ -251,8 +251,21 @@ function DailyResetCountdown() {
 /* How long after the upgrade cards appear before a tap can pick one. The cards
    fade in over ~0.5s but were tappable from the first frame -- while still
    invisible -- so a stray tap from the last pour picked an upgrade the player
-   had never seen. */
+   had never seen.
+
+   This is now only the FLOOR. The cards fade in staggered, so it is the LAST
+   card that decides the real number, and a flat 500ms used to end before it:
+   each card starts CARD_STAGGER_FIRST + i * CARD_STAGGER_STEP late and then
+   runs CARD_STAGGER_FADE (the .fade-up keyframe in globalStyles.js), so the last
+   of three finished at 640ms and the last of a Daily feast's four at 720ms.
+   At 500ms those cards were pickable while still roughly 60% and 48% opaque —
+   the same bug the guard was added for, moved 140-220ms later rather than
+   removed. Both sites read these three numbers, so the stagger and the guard
+   cannot drift apart again. */
 const UPGRADE_TAP_GUARD_MS = 500;
+const CARD_STAGGER_FIRST = 100;
+const CARD_STAGGER_STEP = 80;
+const CARD_STAGGER_FADE = 380;
 const SCREEN_SHIELD_MS = 350;
 const CONFIRM_SCRIM_GUARD_MS = 400;
 
@@ -1027,9 +1040,18 @@ export default function Cascade() {
   const [upgradeReady, setUpgradeReady] = useState(false);
   useEffect(() => {
     if (phase !== "upgrade") { setUpgradeReady(false); return undefined; }
-    const t = setTimeout(() => setUpgradeReady(true), UPGRADE_TAP_GUARD_MS);
+    /* Wait out the whole staggered entrance, not just its first frame — see
+       UPGRADE_TAP_GUARD_MS. `pendingUpgrades.length` (not the array itself) is
+       the dep: the list does not change while this screen is up, and length is
+       exactly the number the guard is derived from. */
+    const count = pendingUpgrades.length;
+    const wait = Math.max(
+      UPGRADE_TAP_GUARD_MS,
+      CARD_STAGGER_FIRST + Math.max(0, count - 1) * CARD_STAGGER_STEP + CARD_STAGGER_FADE,
+    );
+    const t = setTimeout(() => setUpgradeReady(true), wait);
     return () => clearTimeout(t);
-  }, [phase]);
+  }, [phase, pendingUpgrades.length]);
 
   useEffect(() => {
     let mq;
@@ -1789,28 +1811,43 @@ export default function Cascade() {
            since resuming restores the board and `moves` but leaves
            `hasPlayedOnce` true.
 
-           It lands on the pour whose effect the player just watched happen:
-           before it, "1 move" is an abstraction, and after it the HUD counter
-           has visibly dropped. That is the cheapest possible moment to name the
-           number, and it needs no new surface to do it.
-
-           States only what is already true. It promises nothing about carrying
-           moves forward, because the card picked next (Glass Cannon) can still
-           cancel the carry — the reason the announcement at the solve stopped
-           promising it too. Carry becomes visible where it is real: as
-           "+ N Left" in the next board's tapped budget breakdown. */
-        showToast({
+           Waited for the ball to LAND (armEphemeral at impactMs, the same
+           dependency the round-clear transition uses to keep the cards off
+           the winning pour, and "Need met!" uses for its pop). Called
+           straight from here it entered at 0ms, on the same commit as
+           setTubes / setFlights / setLanding, so its 380ms slide-in with
+           overshoot played on top of the ball flight, the landing tick and
+           the HUD counter dropping — three motion events in three places
+           inside one 400ms window, with the eye being pulled to the top of
+           the screen mid-flight. At touchdown it lands after the pour rather
+           than during it, which is what the note below used to only claim.
+           impactMs is already computed above, so this is a delay and nothing
+           else. (A miss would be impactMs 0, i.e. today's behaviour.) */
+        armEphemeral(() => showToast({
           icon: "👆",
           color: "var(--accent)",
           title: "That's 1 move",
-          /* Par-less board gets the shorter line rather than "NEED undefined".
-             The footer already guards this case by falling back to the tap
-             hint, so the two must not disagree about whether a need exists. */
-          message: level.par
-            ? `Every pour costs 1 move. NEED ${needOf(level)} is the fewest that clears this board.`
-            : "Every pour costs 1 move.",
+          /* The title already says it, so the message does not repeat it.
+             "Every pour costs 1 move." restated the card's one bold line
+             verbatim, and toast guidance is explicit that a title which
+             repeats its message only adds bold text, not information.
+
+             Dropping that clause also stops introducing the noun "pour" here:
+             the footer this same instant called the same action a
+             "destination", so the player met two different names for one act
+             three seconds apart. What is left is the one thing the title
+             cannot say — what the number under it is — and "fewest moves that
+             clear it" is the Tutorial's own step-2 wording, so the fact is not
+             taught two different ways.
+
+             Par-less board gets NO message rather than "NEED undefined": the
+             footer already falls back to the tap hint in that case, so the two
+             must not disagree about whether a need exists. Documented as
+             unreachable (boardPar never returns below 1), so the title alone
+             is the honest fallback. */
+          message: level.par ? `NEED ${needOf(level)} is the fewest moves that clear it.` : null,
           duration: 3600,
-        });
+        }), Math.max(0, impactMs));
       }
       Haptic.light();
 
@@ -4039,8 +4076,32 @@ export default function Cascade() {
                 rather than by a promise made before the card that could cancel
                 it has been picked. */}
             {stats.totalRounds === 1 && round === 1 && (
-              <div style={{ fontSize: 12, fontWeight: 800, textAlign: "center", color: T.muted, marginBottom: 6 }}>
-                Every card you take lasts the whole run.
+              /* Styled as guidance instead of as one more grey stat. It was
+                 fontSize 12 / weight 800 / T.muted / centred — byte-identical
+                 to the nextRoundInfo line sitting directly beneath it — so on
+                 the one screen whose only new job was this sentence, it read
+                 as routine metadata and got skipped along with it. Hierarchy
+                 by value colour: `T.go` already owns "cleared" on the title
+                 above, and the lines below are deliberately muted facts, so an
+                 accent-tinted pill is the only thing on this card that is
+                 neither a heading nor a stat.
+
+                 Same words, so nothing is taught twice. Inline only —
+                 globalStyles.js is off-limits here and no component is needed
+                 for one string. No `whiteSpace: nowrap`: at a 320px viewport
+                 S.overlay's 20px padding leaves a 280px card, S.ovCard's own
+                 24px padding leaves 232px of text, and 41 characters at 12px
+                 do NOT fit — this wraps to two lines there and centres. */
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+                <div style={{
+                  fontSize: 12, fontWeight: 800, textAlign: "center", lineHeight: 1.35,
+                  color: "var(--accent)",
+                  background: "color-mix(in srgb, var(--accent) 11%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+                  borderRadius: 12, padding: "7px 12px", maxWidth: "100%",
+                }}>
+                  Every card you take lasts the whole run.
+                </div>
               </div>
             )}
             {/* What the next round will ask of the build, so the pick can be
@@ -4112,7 +4173,7 @@ export default function Cascade() {
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {pendingUpgrades.map((u, i) => (
-                <div key={u.id} className="fade-up" style={{ animationDelay: `${100 + i * 80}ms`, pointerEvents: upgradeReady ? undefined : "none" }}>
+                <div key={u.id} className="fade-up" style={{ animationDelay: `${CARD_STAGGER_FIRST + i * CARD_STAGGER_STEP}ms`, pointerEvents: upgradeReady ? undefined : "none" }}>
                   <UpgradeCard upgrade={u} onPick={() => chooseUpgrade(u)} />
                 </div>
               ))}
