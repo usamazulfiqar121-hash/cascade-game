@@ -32,6 +32,17 @@ export default function AchievementsScreen({
   bestStreak = 0,
   onClose,
   onBack,
+  /* Opens the Codex. This screen was where Codex used to live in the nav bar
+     (BottomNav's 4th tab); that tab is gone, and a rules screen with no
+     permanent entry point is a rules screen nobody opens — so the entry moved
+     HERE, above the Profile's own content, because this is the one screen a
+     player opens to find out how the game works.
+
+     Optional (no default) rather than required: this component is rendered in
+     a couple of places and the row simply doesn't render without it, so a
+     caller that hasn't been wired up yet degrades to the Profile it always was
+     instead of throwing on tap. App.jsx passes it. */
+  onCodex,
   closing = false,
 }) {
   const handleBack = onBack || onClose;
@@ -190,6 +201,36 @@ export default function AchievementsScreen({
 
       {/* Scrollable content */}
       <div style={S.scroll}>
+        {/* Codex row — first thing in the content, above the Best Round hero.
+
+            Placement is the whole argument. The hero is this screen's best
+            number, and a navigation row above it would interrupt the thing the
+            player came to look at; but burying it under the achievements grid
+            would put the app's only reference for how a rule works below a
+            list of eleven trophies, which is not what a player opens this
+            screen for when a run just ended confusingly.
+
+            So: top of the scroll, above the hero, and the ONLY row on this
+            screen that is navigation rather than a statistic. Labelled with
+            what is inside ("Paths, cards & daily rules") rather than just
+            "Codex", because the name is the least informative part — a player
+            who has never opened it has no idea whether it's a wiki or a shop. */}
+        {onCodex && (
+          <button
+            className="press"
+            onClick={onCodex}
+            style={S.codexRow}
+            aria-label="Open the Codex: paths, cards and daily rules"
+          >
+            <span aria-hidden="true" style={S.codexIcon}>📖</span>
+            <span style={S.codexText}>
+              <span style={S.codexName}>Codex</span>
+              <span style={S.codexSub}>Paths, cards &amp; daily rules</span>
+            </span>
+            <span aria-hidden="true" style={S.codexChev}>›</span>
+          </button>
+        )}
+
         {/* Hero — Best Round */}
         <div style={S.hero}>
           <div style={S.heroIcon}>
@@ -439,6 +480,65 @@ const S = {
     flex: 1, overflowY: "auto",
     padding: "20px 20px calc(env(safe-area-inset-bottom, 0px) + 32px)",
     WebkitOverflowScrolling: "touch",
+  },
+
+  /* Codex row — the one navigation control on a screen of statistics.
+
+     Sized to the same tap floor as everything else here (min-height 56 clears
+     the 44px AAA target outright, since this is a whole row rather than an
+     icon) and given a real border rather than the glass fill used for the
+     Back button, so it doesn't read as another control that belongs to the
+     header above it.
+
+     marginBottom 12 rather than the 24 the hero below it uses: the gap after
+     this row separates two different jobs (go somewhere / look at numbers),
+     the gap after the hero separates two sections of the same screen. The
+     second line is why the row is two lines tall and not one — "Codex" alone
+     is a word the player has to already know. */
+  codexRow: {
+    display: "flex", alignItems: "center", gap: 12,
+    width: "100%",
+    minHeight: 56,
+    padding: "12px 14px",
+    marginBottom: 12,
+    borderRadius: 16,
+    background: "var(--glass)",
+    border: "1px solid var(--glass-border)",
+    cursor: "pointer",
+    appearance: "none", WebkitAppearance: "none",
+    /* outline is deliberately NOT set to none. Back-to-back tap targets all
+       round this file suppress it and hang a :focus-visible ring off a
+       stylesheet class instead; this row has no class of its own, so leaving
+       the browser default in place is what keeps it a visible focus stop
+       rather than a button a keyboard user can land on and not see. */
+    textAlign: "left",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    WebkitTapHighlightColor: "transparent",
+  },
+  codexIcon: {
+    fontSize: 20, lineHeight: 1, flexShrink: 0,
+  },
+  /* minWidth 0 so the text column can shrink below its content's natural
+     width and wrap, rather than pushing the chevron off the right edge on a
+     narrow screen at a large text scale. */
+  codexText: {
+    display: "flex", flexDirection: "column", gap: 2,
+    flex: 1, minWidth: 0,
+  },
+  codexName: {
+    fontSize: 14, fontWeight: 800,
+    color: "var(--text)",
+    letterSpacing: "-0.01em",
+  },
+  codexSub: {
+    fontSize: 11.5, fontWeight: 600,
+    color: "var(--text-sub)",
+  },
+  /* Muted and small, the same chevron the Codex uses on its own back rows —
+     this is a "go deeper" affordance, not a primary action. */
+  codexChev: {
+    fontSize: 18, lineHeight: 1, flexShrink: 0,
+    color: "var(--text-sub)", opacity: 0.7,
   },
 
   /* Hero — Best Round.

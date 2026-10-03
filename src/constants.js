@@ -430,14 +430,26 @@ export const FOCUS_OFFERS = 4;
    The effects themselves live where they act: move/board changes in
    generateLevel, Lucky Day in the pour
    handler, Feast & Famine in the upgrade offer. */
+/* `short` is the one-line form the game HUD's modifier badge draws under the
+   round label (App.jsx) — "🌊 Rising Tide · −1/3 rounds" — where `desc` is the
+   sentence the tap opens. It is data here rather than a second lookup table in
+   App.jsx on purpose: a rule's short form is part of the rule, and a hand-kept
+   map beside the definition is the exact shape that goes stale (see
+   RULE_KIND_LABEL below for the same argument about kind names). It describes
+   the rule's SHAPE, not its value on the current round — Rising Tide says
+   "−1/3 rounds" on round 2 and round 14 alike, rather than a number that would
+   be right on one round and quietly wrong on the next.
+   Adding a field changes nothing that reads these entries: the twist order is
+   drawn from array INDEX (twistOrder), never from the contents, so the daily a
+   given date picks is unchanged. */
 export const DAILY_TWISTS = [
-  { id: "tailwind", name: "Tailwind", icon: "🌬️", kind: "blessing", desc: "+3 moves every round" },
-  { id: "warm", name: "Warm Start", icon: "🌅", kind: "blessing", desc: "One colour starts already sorted" },
-  { id: "lucky", name: "Lucky Day", icon: "🍀", kind: "blessing", desc: "+25% chance of a free move on every pour" },
-  { id: "thin", name: "Thin Margins", icon: "⏳", kind: "curse", desc: "2 fewer moves every round" },
-  { id: "rainbow", name: "Rainbow", icon: "🌈", kind: "curse", desc: "Colours ramp up one round sooner" },
-  { id: "tide", name: "Rising Tide", icon: "🌊", kind: "curse", desc: "1 fewer move for every 3 rounds you clear" },
-  { id: "feast", name: "Feast & Famine", icon: "⚖️", kind: "mixed", desc: "+5 moves every round, but only 2 cards" },
+  { id: "tailwind", name: "Tailwind", icon: "🌬️", kind: "blessing", desc: "+3 moves every round", short: "+3 moves" },
+  { id: "warm", name: "Warm Start", icon: "🌅", kind: "blessing", desc: "One colour starts already sorted", short: "free colour on R1" },
+  { id: "lucky", name: "Lucky Day", icon: "🍀", kind: "blessing", desc: "+25% chance of a free move on every pour", short: "+25% free-move odds" },
+  { id: "thin", name: "Thin Margins", icon: "⏳", kind: "curse", desc: "2 fewer moves every round", short: "−2 moves" },
+  { id: "rainbow", name: "Rainbow", icon: "🌈", kind: "curse", desc: "Colours ramp up one round sooner", short: "colours sooner" },
+  { id: "tide", name: "Rising Tide", icon: "🌊", kind: "curse", desc: "1 fewer move for every 3 rounds you clear", short: "−1/3 rounds" },
+  { id: "feast", name: "Feast & Famine", icon: "⚖️", kind: "mixed", desc: "+5 moves every round, but only 2 cards", short: "+5 moves, 2 cards" },
 ];
 
 /* ═══════════ RULE KINDS ═══════════

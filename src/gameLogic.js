@@ -662,7 +662,16 @@ const MUTATOR_SALT = 0x5f3a91;
 
 /* Each mutator describes only what it changes; every hook defaults to 0, so
    adding a rule is one object and no edits anywhere else. `kind` is purely
-   for the Home card's colour — no game logic reads it.
+   for presentation — no game logic reads it.
+
+   `short` is the one-line form the game HUD's modifier badge draws
+   ("🏃 Long Haul · +3 moves") and, like DAILY_TWISTS' short, describes the
+   rule's shape rather than its value on the current round: Escalation reads
+   "−1/3 rounds" on round 2 and round 14 alike, where a number computed from
+   moveDelta(round) would be right once and quietly wrong every other round.
+   It is a field on the rule rather than a lookup table in App.jsx for the same
+   reason `kind` is — the badge's text and the Codex's text are one rule, and
+   two copies of a rule's wording is the shape that drifts.
 
    The three hooks are all consumed by generateLevel, and all three are
    round-aware, so a rule can ramp with the run (escalation) or only fire on
@@ -671,31 +680,37 @@ export const WEEKLY_MUTATORS = [
   {
     id: "longhaul", name: "Long Haul", icon: "🏃", kind: "boon",
     desc: "+3 moves every round",
+    short: "+3 moves",
     moveDelta: () => 3,
   },
   {
     id: "squeeze", name: "Tight Squeeze", icon: "✂️", kind: "curse",
     desc: "2 fewer moves every round",
+    short: "−2 moves",
     moveDelta: () => -2,
   },
   {
     id: "deepcuts", name: "Deep Cuts", icon: "🎨", kind: "curse",
     desc: "Colours ramp up a round sooner",
+    short: "colours sooner",
     colorDelta: 1,
   },
   {
     id: "warmup", name: "Free Sort", icon: "🌅", kind: "boon",
     desc: "Round 1 opens with one colour already sorted",
+    short: "free colour on R1",
     autoSortDelta: (round) => (round === 1 ? 1 : 0),
   },
   {
     id: "escalation", name: "Escalation", icon: "📈", kind: "curse",
     desc: "1 fewer move for every 3 rounds you clear",
+    short: "−1/3 rounds",
     moveDelta: (round) => -Math.floor((Math.max(1, round) - 1) / 3),
   },
   {
     id: "gilded", name: "Gilded Round", icon: "⭐", kind: "trade",
     desc: "Every 5th round opens with +8 moves",
+    short: "+8 moves every 5th",
     moveDelta: (round) => (Math.max(1, round) % 5 === 0 ? 8 : 0),
   },
 ];

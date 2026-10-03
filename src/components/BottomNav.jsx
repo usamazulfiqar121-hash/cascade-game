@@ -1,22 +1,27 @@
 /* ═══════════ BOTTOM NAVIGATION ═══════════
-   Floating glass bar with custom SVG icons. 4 items, thumb-zone
+   Floating glass bar with custom SVG icons. 3 items, thumb-zone
    optimized. (A center Play FAB was here once — removed in cd710f0
    once Play got its own big button on Home, so onPlay/PlayIcon/
    centerFab below aren't dead weight left for someone else to trip
    over wondering what wires into them.)
 
-   Four tabs where there were three (Codex joined the row). The bar's
-   inner layout is a flex with every TabButton at flex:1, so a fourth
-   item takes its own share of the same fixed width rather than
-   squeezing the others — the 320px case, the tightest the Home layout
-   is tuned for, leaves ~66px per tab, comfortably more than the
-   10px "Profile" and "Settings" labels need. Nothing was resized to
-   make room. */
+   Three tabs where there were four. Codex was the 4th and is gone from
+   here: it is a reference screen, not a place you live, and it now has a
+   permanent entry point inside Profile (AchievementsScreen.jsx opens it
+   from a row above its own content) — the one screen a player opens to
+   find out how the game works. Four tabs put the destination a player
+   visits least in the middle of the row, next to Profile, which is where
+   it spent most of its time doing nothing.
+
+   Nothing was resized. The bar's inner layout is a flex with every
+   TabButton at flex:1, so dropping the fourth item widens the three
+   rather than re-tuning them — the 320px case, the tightest the Home
+   layout is tuned for, goes from ~66px per tab to ~88px. */
 
 import { D } from "../constants";
-import { HomeIcon, TrophyIcon, SettingsIcon, CodexIcon } from "../icons";
+import { HomeIcon, TrophyIcon, SettingsIcon } from "../icons";
 
-export default function BottomNav({ activeTab, onTabChange, onAwards, onCodex, onSettings }) {
+export default function BottomNav({ activeTab, onTabChange, onAwards, onSettings }) {
   return (
     <div style={S.navWrap}>
       <div style={S.navGlass}>
@@ -34,18 +39,6 @@ export default function BottomNav({ activeTab, onTabChange, onAwards, onCodex, o
             active={activeTab === "awards"}
             onClick={() => onAwards && onAwards()}
             renderIcon={(a) => <TrophyIcon size={22} active={a} />}
-          />
-
-          {/* Codex sits next to Profile rather than after Settings: both are
-              "what have I done / what does this game contain" reference
-              destinations, while Settings is a fixed set of toggles, and
-              grouping the two lookups together keeps the far tab — the one
-              a player visits least — out of the middle of the row. */}
-          <TabButton
-            label="Codex"
-            active={activeTab === "codex"}
-            onClick={() => onCodex && onCodex()}
-            renderIcon={(a) => <CodexIcon size={22} active={a} />}
           />
 
           <TabButton

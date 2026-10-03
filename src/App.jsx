@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, RULE_KIND_LABEL, RULE_KIND_COLOR, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -34,7 +34,7 @@ import CodexScreen from "./CodexScreen";
 import { recordCodexPath, recordCodexCard, recordCodexTwist, clearCodex } from "./codex";
 import Tutorial from "./Tutorial";
 import SettingsScreen from "./screens/SettingsScreen";
-import DailyBoard from "./components/DailyBoard";
+import TodayGoal from "./components/TodayGoal";
 import FriendCompare from "./components/FriendCompare";
 import { HomeIcon, SettingsIcon, HintIcon, UndoIcon } from "./icons";
 
@@ -377,6 +377,51 @@ function nextRoundInfo(nextRound) {
   return parts.join(" · ");
 }
 
+/* ═══════════ HUD MODIFIER BADGE ═══════════
+
+   The rule in force, as one tappable line under the round label.
+
+   This used to live only on Home — a "This Week" card for a normal run and a
+   twist disclosure inside the daily card. Both were real information and both
+   were on the wrong screen: you read them on Home and then had to remember
+   them while standing on the board where they were changing your move count,
+   and the "This Week" card described a NEW run while the run in progress
+   could still be under the PREVIOUS week's rule (a save carries its rule's
+   id). Here it is one line, always on screen, and always about the run you
+   are actually in, because it reads the run's own pinned rule — weeklyMutator
+   for a normal run, dailyTwist for a daily — not a fresh weekMutator() call.
+
+   Tappable, because a badge that has to fit is a badge that can't explain
+   itself: the tap opens the full sentence and the rule's kind, which is where
+   "is this good or bad for me" is actually answered. Same content the Codex
+   has, minus the trip.
+
+   Score attack deliberately gets nothing, as specified. Null rather than an
+   empty badge: a badge-shaped gap in the HUD is read as a rule that failed to
+   load. Stated here as a presentation decision and nothing more — this
+   deliberately does not assert anything about what the move budget does or
+   doesn't apply in that mode; weekMutator's own note in gameLogic.js is where
+   that is settled.
+
+   `short` falls back to `desc` for any rule added before it was given one,
+   so a new mutator shows a longer line rather than an "undefined" — the same
+   unknown-kind fallback the rest of the rule layer makes. */
+function ruleChip(rule, isDaily) {
+  if (!rule) return null;
+  const kind = RULE_KIND_LABEL[rule.kind] || null;
+  return {
+    icon: rule.icon,
+    name: rule.name,
+    short: rule.short || rule.desc,
+    color: RULE_KIND_COLOR[rule.kind] || "var(--gold-text)",
+    /* Two different questions asked of one badge, so two different prefixes:
+       a mutator is the week, a twist is the day. */
+    toastTitle: `${isDaily ? "Today's twist" : "This week"}: ${rule.name}`,
+    toastMessage: `${rule.desc}${kind ? ` · ${kind}` : ""}`,
+    ariaLabel: `${isDaily ? "Today's twist" : "This week's rule"}: ${rule.name}, ${rule.desc}. Show details.`,
+  };
+}
+
 export default function Cascade() {
   const [round, setRound] = useState(1);
   /* "dark" | "light" | "system". Read from storage when the state is created,
@@ -667,6 +712,17 @@ export default function Cascade() {
      because the two useState calls run in order, and the resume path
      overwrites this level wholesale anyway. */
   const [level, setLevel] = useState(() => generateLevel(1, [], 0, null, false, null, weeklyMutator));
+  /* The rule this run is under, for the HUD badge below. Read from the run's
+     OWN pinned state on both paths rather than resolved fresh: a normal run
+     that started last week must keep showing last week's rule (which is what
+     weeklyMutator holds after a resume, since the save carries a rule id), and
+     a daily that crossed UTC midnight must keep showing the twist it began
+     with. Calling weekMutator()/pickDailyTwist() here instead would put a rule
+     on screen that is not the one generating the board — the exact bug the
+     pinning above exists to prevent, reintroduced in the one place it would be
+     hardest to notice.
+     isScore short-circuits to null before weeklyMutator is even read. */
+  const ruleChipData = ruleChip(isDaily ? dailyTwist : isScore ? null : weeklyMutator, isDaily);
   const [tubes, setTubes] = useState(level.tubes);
   const [moves, setMoves] = useState(0);
   const [bonusMoves, setBonusMoves] = useState(0);
@@ -1130,7 +1186,10 @@ export default function Cascade() {
             color: "var(--gold)",
             title: "Moves start getting lost",
             message: `This round has ${level.drain} fewer moves, and every round from now takes a few more. Your upgrades are what keep you ahead.`,
-            duration: 5200,
+            /* 4000, was 5200. Three lines of text plus a title is a lot of
+               screen on a 320x568, and at 5200ms it was still up when the
+               player had already read it and started looking for the board. */
+            duration: 4000,
           });
         }
       }
@@ -3375,7 +3434,6 @@ export default function Cascade() {
              the way to force the second without discarding anything by hand. */
           onPlay={() => { if (startNewGame(false)) pushNav("game"); }}
           onAwards={() => { setShowAchievements(true); pushNav("awards"); }}
-          onCodex={() => { setShowCodex(true); pushNav("codex"); }}
           onDaily={() => {
             /* pushNav only when startNewGame actually starts a run — it
                returns false when today's daily is already used up and it
@@ -3395,37 +3453,36 @@ export default function Cascade() {
           todayRounds={todayRounds}
           dailyPhase={dailyPhase}
           resumeRound={resumeRound}
-          /* Per-RUN, not per-session: a cold start resolves this week's rule,
-             and a continued run adopts the one its save carries, so the card
-             and the boards being played always describe the same rule even if
-             the app was left closed across a Monday. */
-          weeklyMutator={weekMutator()}
+          /* The "This Week" card that used to take weeklyMutator is gone from
+             Home; the rule itself moved into the game HUD as a tappable badge
+             under the round label (see the modifier badge in the game screen),
+             which is where a player stands while the rule is actually costing
+             them moves. weekMutator() is still resolved here because
+             savedMutatorIsCurrent below compares against it. */
           /* A normal run left mid-way is resumable, and this is the whole of
-             that feature's surface on Home: with a save, the card under Play
-             offers the round back; without one, nothing here renders and Play
-             means "start fresh" like it always did. Deliberately not a
-             confirm — resuming is what the player asked for by coming back,
-             and the run stays on disk until the next round boundary overwrites
-             it, so a mis-tap costs one round boundary, not the run. */
+             that feature's surface on Home: with a save, the line under Play
+             names the round and its need, and the button above becomes
+             "Continue". Deliberately not a confirm — resuming is what the
+             player asked for by coming back, and the run stays on disk until
+             the next round boundary overwrites it, so a mis-tap costs one
+             round boundary, not the run. */
           normalRun={savedNormal}
-          /* Only when it DIFFERS from the card above. Printing the same
-             mutator twice, 60px apart, on the one screen that already stacks
-             three cards, is noise — but printing only the newer one is a lie
-             about which rule continuing would actually apply, which is the
-             one thing on this screen a player cannot check for themselves. */
+          /* Only when it DIFFERS from this week's. Home no longer has a
+             "This Week" card, so this is the ONLY place it draws a rule — and
+             the case it covers is the one that costs something: a run left on
+             Sunday, reopened on Monday, quietly still on last week's rule. */
           savedMutator={savedNormalMutator}
           savedMutatorIsCurrent={savedNormalMutator === weekMutator()}
-          onContinue={() => { if (startNewGame(false)) pushNav("game"); }}
           onNewRun={() => {
             /* Discard-then-start, not just start: onPlay is wired to resume
                when a save exists, so routing this through startNewGame alone
-               would pick the very save this button exists to throw away. */
+               would pick the very save this link exists to throw away. */
             if (startFreshNormalRun()) pushNav("game");
           }}
           /* Score attack's entry point. pushNav only when the run actually
-             starts, matching onDaily/onContinue — startFreshScoreRun can
-             return false and the Home screen must stay where it is rather than
-             leaving a phantom "game" entry on the back-stack. */
+             starts, matching onDaily — startFreshScoreRun can return false and
+             the Home screen must stay where it is rather than leaving a phantom
+             "game" entry on the back-stack. */
           onScore={() => { if (startFreshScoreRun()) pushNav("game"); }}
           scoreBest={scoreBest}
           scoreRuns={scoreRuns}
@@ -3633,6 +3690,77 @@ export default function Cascade() {
             {level.par ? `NEED ${needOf(level)}` : `${level.colorCount} colors`} · best{" "}
             {isDaily ? dailyBest : isScore ? scoreBest.toLocaleString("en-US") : best}
           </div>
+          {/* The rule in force, under the round label — see ruleChip above for
+              why this moved here from Home. Placed BELOW the NEED/best line
+              rather than beside the round number for two reasons: the round
+              number is the one thing that must stay readable at a glance while
+              a finger is moving, and this line is 11px text that would compete
+              with it on the same row.
+
+              It adds one 30px row to a HUD that has none to spare, so it
+              deliberately does NOT reserve space: it is absent in score mode
+              and on the two rounds where the rule is doing nothing anyway.
+              A permanently reserved slot was the alternative and it would
+              have been a permanent blank line on every score run.
+
+              minHeight 30 rather than the row's natural ~15: this is a tap
+              target, and 15px is under even the 24px WCAG 2.5.5 floor — a
+              rule you can't comfortably tap is a rule nobody will tap, and
+              the full sentence behind it is the point.
+              `outline` is deliberately NOT set to none. The app's other flat
+              buttons suppress it because they hang a :focus-visible rule off a
+              stylesheet class (.dailyCardRegion, .twistToggle); this one has no
+              class to hang one on, so leaving the browser default in place is
+              what keeps it a visible focus stop for a keyboard user. */}
+          {ruleChipData && (
+            <button
+              onClick={() => {
+                showToast({
+                  icon: ruleChipData.icon,
+                  color: ruleChipData.color,
+                  title: ruleChipData.toastTitle,
+                  message: ruleChipData.toastMessage,
+                  /* 4000, same as the drain tip. Long enough for the rule's
+                     full sentence plus its kind at 12px, short enough that it
+                     is not still covering the board when the player has read
+                     it and wants to pour. */
+                  duration: 4000,
+                });
+              }}
+              aria-label={ruleChipData.ariaLabel}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                minHeight: 30,
+                marginTop: 1,
+                /* 4px of horizontal padding only — it is a row with no icon
+                   to align against, so unlike the icon-wrap buttons there is
+                   nothing here to optically align and a negative margin would
+                   just push it past the HUD's own inset. */
+                padding: "0 4px",
+                border: "none",
+                borderRadius: 8,
+                background: "transparent",
+                color: T.muted,
+                fontFamily: "'Inter', system-ui, sans-serif",
+                fontSize: 11.5,
+                fontWeight: 700,
+                lineHeight: 1.2,
+                cursor: "pointer",
+                appearance: "none", WebkitAppearance: "none",
+                WebkitTapHighlightColor: "transparent",
+                textAlign: "left",
+              }}
+            >
+              <span aria-hidden="true" style={{ fontSize: 11, lineHeight: 1 }}>{ruleChipData.icon}</span>
+              <span style={{ color: ruleChipData.color, fontWeight: 800 }}>{ruleChipData.name}</span>
+              <span style={{ color: T.muted }}>{" · "}{ruleChipData.short}</span>
+              {/* The "there is more here" affordance, in the muted tone so it
+                  doesn't read as part of the rule's own words. */}
+              <span aria-hidden="true" style={{ color: T.muted, opacity: 0.6 }}>›</span>
+            </button>
+          )}
         </div>
         <div className="hud-right" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ textAlign: "right" }}>
@@ -4127,7 +4255,17 @@ export default function Cascade() {
                         </div>
                       </div>
                     )}
-                    <DailyBoard rounds={todayRounds} dateSeed={dateToSeed(dailyRunDateRef.current || new Date())} />
+                    {/* "result", not "home": the run is over, so the target and what was actually
+                        cleared belong on the same line. Seeded from the RUN's
+                        date, not today's — a run that crossed UTC midnight is
+                        still being judged against the puzzle the player was
+                        actually given, which is why dailyRunDateRef and not a
+                        fresh dateToSeed() here. */}
+                    <TodayGoal
+                      rounds={todayRounds}
+                      dateSeed={dateToSeed(dailyRunDateRef.current || new Date())}
+                      variant="result"
+                    />
                     <div style={{ marginBottom: 12 }}>
                       <FriendCompare rounds={todayRounds} dateKey={dailyKey(dailyRunDateRef.current || new Date())} />
                     </div>
@@ -4635,6 +4773,19 @@ export default function Cascade() {
           streak={computeStreak(dailyResults, shieldedDates)}
           bestStreak={bestStreak}
           onClose={() => popNav()}
+          /* Codex's permanent entry point. It used to be BottomNav's 4th tab;
+             that tab is gone, so without this the Codex could only be reached
+             from Home's nav bar, which is itself reachable only by leaving
+             the Profile you are looking at.
+
+             setShowCodex BEFORE pushNav, and only push when the screen is
+             genuinely being opened — the same ordering as the Home nav's
+             handler, and the same reason: pushNav adds a history entry, so
+             pushing without the flag would leave the back stack one step
+             deeper than the screen accounts for. popNav (not setShowCodex
+             alone) is what closes it, so the Profile underneath is still
+             there when it closes. */
+          onCodex={() => { setShowCodex(true); pushNav("codex"); }}
         />
       )}
 
