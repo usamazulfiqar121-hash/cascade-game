@@ -28,7 +28,7 @@
    anyone who hasn't played today, and that must render the goal rather
    than "You made 0". */
 
-import { T } from "../constants";
+import { T, roundsText } from "../constants";
 import { dailyMedian } from "../leaderboard";
 
 export default function TodayGoal({ rounds, dateSeed, variant = "home", style }) {
@@ -54,7 +54,7 @@ export default function TodayGoal({ rounds, dateSeed, variant = "home", style })
 
       {isResult && (
         <div style={s.result}>
-          <span style={{ color: T.ink, fontWeight: 800 }}>You made {made}</span>
+          <span style={{ color: T.ink, fontWeight: 800 }}>You made {roundsText(made)}</span>
           <span style={{ color: cleared ? T.goText : T.danger, fontWeight: 800 }}>
             {" · "}{cleared ? "cleared" : `${short} short`}
           </span>
@@ -80,7 +80,11 @@ const s = {
   headlineText: {
     fontSize: 11, fontWeight: 900,
     letterSpacing: "0.1em", textTransform: "uppercase",
-    color: T.gold,
+    /* goldText, not gold: 11px uppercase on a translucent card is small text
+       in both themes, and --gold is the bright fill token that does not clear
+       contrast on the light theme at this size. The card's border below still
+       uses the bright token for the same reason the badge keeps its tint. */
+    color: T.goldText,
   },
   /* Same number, louder: on Home this is the only reason the card exists,
      so it is set in the game's own numeric face at the headline's weight

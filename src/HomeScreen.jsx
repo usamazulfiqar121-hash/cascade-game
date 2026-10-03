@@ -166,15 +166,16 @@ export default function HomeScreen({
      "resume" names the round because that is the one state where a number
      is the useful fact — it tells the player they are picking up a run in
      progress rather than starting over, without opening anything. "done"
-     and "used" both read as finished, but for different reasons, and the
-     difference is the badge's colour and the streak, not this line: a
-     player who lost on round 1 has still spent the attempt, and saying
-     "come back tomorrow" to them was the old bug this map exists to fix. */
+     and "used" are both over, but only "done" cleared the round and credited
+     the streak; "used" is an attempt spent on a round-1 loss. Saying
+     "Complete" to that player was the old wording, and it told someone who
+     had just failed that they had finished. The badge's colour and the
+     streak still differ, but the line no longer lies on its own. */
   const dailyCtaText = {
     new: "Tap to play",
-    resume: `Resume R${resumeRound}`,
+    resume: `Resume round ${resumeRound}`,
     done: "Complete",
-    used: "Complete",
+    used: "Attempt used",
   }[dailyPhase];
   /* Same shape for score attack. "Not attempted" only when nothing has ever
      been tried — after a run that scored nothing it says so, because
@@ -282,7 +283,14 @@ export default function HomeScreen({
             : "Play — start a new run"}
         >
           <span style={S.playIcon}>▶</span>
-          <span style={S.playText}>{normalRun ? "Continue" : "Play"}</span>
+          {/* Names the round it goes back to. "Continue" said what the button
+              does but not where it lands, and this is the one control on the
+              screen a returning player is deciding about — do I want round 16
+              or a fresh run. The line below still carries "Round N · Need M"
+              because it also carries the saved rule and the New Run escape,
+              so it cannot simply be dropped. Fits at 22px/900 inside a 360px
+              maxWidth column even at round 999. */}
+          <span style={S.playText}>{normalRun ? `Resume round ${normalRun.round}` : "Play"}</span>
         </button>
 
         {normalRun && (
@@ -383,7 +391,9 @@ export default function HomeScreen({
                 ? "Play today's daily challenge"
                 : dailyPhase === "resume"
                 ? `Resume today's daily challenge at round ${resumeRound}`
-                : "Today's daily challenge is already finished"}
+                : dailyPhase === "used"
+                ? "Today's daily attempt is used — come back tomorrow"
+                : "Today's daily challenge is complete"}
             >
               <span style={{ ...S.modeBtnTop, color: dailyAccent }}>
                 <span aria-hidden="true">🎯</span> Daily
@@ -484,16 +494,25 @@ const S = {
     display: "flex", flexDirection: "column",
     alignItems: "center",
     gap: 18,
-    /* Top padding is 14vh, clamped to 24-96px, not a flat 24. The in-app
-       toast is position:fixed at safe-area-inset-top + 20px (the toast
-       block in App.jsx), so on a 320x568 screen the toast covered y 20-86
-       while this stack's title block sat at y 44.8-92.8 — a ~41px overlap
-       landing right on the word CASCADE. Returning-player content totalled
-       ~550px in a 568px viewport, so "auto 0" only bought ~9px of headroom
-       and the whole stack began ~25px from the top; there was simply no
-       room left at the top for a fixed overlay to sit in. 14vh clears the
-       toast on short screens and still reads as plain top padding on tall
-       ones (clamped at 96px, so a 900px phone doesn't get a 126px gap).
+    /* Top padding is 14vh, clamped to 24-96px, not a flat 24.
+
+       HISTORY, kept because it explains the number: the in-app toast used to
+       be position:fixed at safe-area-inset-top + 20px (the toast block in
+       App.jsx), so on a 320x568 it covered y 20-86 while this stack's title
+       block sat at y 44.8-92.8 — a ~41px overlap landing right on the word
+       CASCADE. Returning-player content totalled ~550px in a 568px viewport,
+       so "auto 0" only bought ~9px of headroom and the whole stack began
+       ~25px from the top; there was simply no room left at the top for a
+       fixed overlay to sit in.
+
+       PRESENT: the toast no longer sits there. It is anchored to the bottom
+       (safe-area-inset-bottom + 120px) so it clears this stack outright and
+       the achievement toast owns the top band alone, which is why 14vh is no
+       longer load-bearing here. It stays because it is independently correct
+       spacing between a notch and a wordmark, and because re-deriving a value
+       whose original justification has quietly expired is a layout change
+       nothing has asked for.
+
        Known cost: total content becomes ~588px on a 320x568, so Home
        scrolls by ~20px there — absorbed by homeRoot's overflow:auto (see
        the note there on scrolling being the fallback of last resort). */

@@ -18,7 +18,46 @@ export default function SettingsScreen({
   const handleBack = onBack || onClose;
   const ready = useEnterShield();
   return (
+    /* Identical treatment to the Profile screen (AchievementsScreen.jsx),
+       which is the same kind of page reached the same way from the same nav:
+       it is a full-page overlay, not a card, and it is the only thing on
+       screen while it is up. Profile's own block is the pattern being copied
+       rather than a new convention — role/aria-modal because the content
+       behind it really is unreachable, tabIndex + the focus ref because a
+       screen reader landing here with focus still on the nav button underneath
+       would read the nav, and Escape because a full-screen page with no
+       keyboard way out is a trap for anyone not using a touchscreen.
+
+       The ref's dataset guard is what makes this mount-only: without it, every
+       re-render of this page (flipping a switch re-renders it) would yank
+       focus off whatever the player had just tabbed to and put it back on
+       Back. Verified there is no app-level Escape listener to double up with
+       — useEnterShield is a tap shield only, and Profile already owns its
+       own keydown.
+
+       Kept as an expression-position comment rather than one between the
+       attributes below: a block comment between JSX attributes relies on the
+       tokenizer treating it as trivia, which is true for the toolchains this
+       repo uses but is exactly the kind of detail that a stricter parser
+       rejects, and nothing here is worth that risk. */
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+      tabIndex={-1}
+      ref={(el) => {
+        if (el && !el.dataset.focused) {
+          el.dataset.focused = "1";
+          const btn = el.querySelector('button[aria-label="Back"]');
+          btn?.focus?.({ preventScroll: true });
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          handleBack();
+        }
+      }}
       style={{
         ...S.page,
         animation: closing
@@ -34,7 +73,11 @@ export default function SettingsScreen({
           </svg>
         </button>
         <div style={S.title}>Settings</div>
-        <div style={{ width: 40 }} />
+        {/* 44, not 40: the spacer exists only to balance the back button so
+            the title sits on the screen's centre line, and the button below is
+            44 wide. Leaving the spacer at 40 pushed the title 2px right of
+            centre — invisible until you look for it. */}
+        <div style={{ width: 44 }} />
       </div>
 
       <div style={S.scroll}>
@@ -127,11 +170,19 @@ function Section({ label }) {
 
 function Row({ icon, label, sub, right, onClick, danger, disabled, role, checked }) {
   return (
+    /* Switches only get an explicit aria-label. A button takes its accessible
+       name from its contents, and a switch row's contents are the label AND
+       the description — so "Sound" announced as "Sound, SFX and effects,
+       switch, off". The description stays exactly where it is for everyone
+       else; this only stops it being read as part of the control's name.
+       Non-switch rows keep their content-derived name, which is already
+       label-then-description and reads correctly. */
     <button
       onClick={disabled ? undefined : onClick}
       className={disabled ? "" : "press"}
       role={role}
       aria-checked={role === "switch" ? !!checked : undefined}
+      aria-label={role === "switch" ? label : undefined}
       aria-disabled={disabled || undefined}
       style={{
         ...S.row,
@@ -140,7 +191,17 @@ function Row({ icon, label, sub, right, onClick, danger, disabled, role, checked
         borderColor: danger ? `color-mix(in srgb, ${D.danger} 14.9%, transparent)` : `color-mix(in srgb, ${D.textSub} 5.1%, transparent)`,
       }}
     >
-      <div style={{
+      {/* Decorative, and said so — for every row, not just some. It has to be a
+          real attribute and not part of the style object: a style spread cannot
+          carry aria-*, and React would treat "aria-hidden" as an unknown CSS
+          property rather than as instructions to the accessibility tree.
+
+          It matters most on the Color-Blind row, whose icon draws a literal
+          "1" as SVG text. Unhidden, a screen reader reached that glyph before
+          the row's own label, so the row announced "1, Color-Blind Mode". The
+          aria-label added above stops the description being read as part of a
+          switch's name; this stops the icon being read at all. */}
+      <div aria-hidden="true" style={{
         ...S.rowIcon,
         background: danger ? `color-mix(in srgb, ${D.danger} 10.2%, transparent)` : `color-mix(in srgb, ${D.textSub} 5.1%, transparent)`,
         borderColor: danger ? `color-mix(in srgb, ${D.danger} 20%, transparent)` : `color-mix(in srgb, ${D.textSub} 5.9%, transparent)`,
@@ -173,24 +234,40 @@ function ThemeRow({ theme, onSetTheme }) {
         <div style={S.rowLabel}>Theme</div>
         <div style={S.rowSub}>Interface appearance</div>
       </div>
-      <div style={S.themeSegment}>
+      <div style={S.themeSegment} role="radiogroup" aria-label="Theme">
         {options.map((opt) => {
           const active = theme === opt.id;
           const Icon = opt.Icon;
           return (
+            /* The button is 44x44 so it is a real target; the CHIP inside it is
+               the 38x34 it has always been, so the control's weight on screen
+               is unchanged and the three of them still read as one segmented
+               widget. Growing the chip to fill the target would have made the
+               selected theme look like the primary button on the page, which is
+               the one thing it is not.
+
+               role=radio rather than aria-pressed on plain buttons: these three
+               are mutually exclusive and one is always selected, which is a
+               radio group, and the selection was previously conveyed by
+               background colour and a scale() alone — nothing a screen reader
+               could read. */
             <button
               key={opt.id}
               onClick={() => onSetTheme && onSetTheme(opt.id)}
               className="press seg-hit"
-              style={{
-                ...S.segmentBtn,
+              style={S.segmentBtn}
+              role="radio"
+              aria-checked={active}
+              aria-label={opt.label}
+            >
+              <span style={{
+                ...S.segmentChip,
                 background: active ? D.accent : "transparent",
                 boxShadow: active ? `0 2px 8px ${D.accentSoft}` : "none",
                 transform: active ? "scale(1.05)" : "scale(1)",
-              }}
-              aria-label={opt.label}
-            >
-              <Icon active={active} onAccent />
+              }}>
+                <Icon active={active} onAccent />
+              </span>
             </button>
           );
         })}
@@ -366,7 +443,12 @@ const S = {
     background: "var(--bg-0)",
   },
   backBtn: {
-    width: 40, height: 40,
+    /* 44x44, was 40x40. 40 is the iOS HIG's minimum and below the 44 both
+       Android and WCAG 2.2 target size (2.5.8) ask for, and this is a control
+       used one-handed, at the top-left corner, by someone who is already
+       navigating away from something. The glyph stays 20px — the box grew,
+       the drawing did not, so no other row on this screen moved. */
+    width: 44, height: 44,
     borderRadius: 12,
     background: "var(--glass)",
     border: "1px solid var(--glass-border)",
@@ -384,7 +466,12 @@ const S = {
   },
   scroll: {
     flex: 1, overflowY: "auto",
-    padding: "16px 20px calc(env(safe-area-inset-bottom, 0px) + 32px)",
+    /* 20px at the top, was 16px, and it is now the same 20px the Profile
+       screen's scroll box uses. Both are full-page screens reached from the
+       same nav with the same header, and a 4px difference in where their
+       first row starts is exactly the kind of thing that reads as "this one
+       is the odd one out" when the two sit in the same navigation flow. */
+    padding: "20px 20px calc(env(safe-area-inset-bottom, 0px) + 32px)",
     WebkitOverflowScrolling: "touch",
   },
   sectionLabel: {
@@ -419,13 +506,21 @@ const S = {
     border: "1px solid var(--glass-border)",
   },
   segmentBtn: {
-    width: 38, height: 34,
-    border: "none", borderRadius: 7,
+    /* 44x44 — the hit area. Nothing is drawn at this size; see segmentChip. */
+    width: 44, height: 44,
+    border: "none", background: "transparent",
     display: "flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer",
     appearance: "none", WebkitAppearance: "none",
     padding: 0, outline: "none",
     WebkitTapHighlightColor: "transparent",
+  },
+  /* What the theme control actually looks like, and what the transition
+     animates. Unchanged from the old segmentBtn: same 38x34, same radius,
+     same 1.05 selected scale, same glow. */
+  segmentChip: {
+    width: 38, height: 34, borderRadius: 7,
+    display: "flex", alignItems: "center", justifyContent: "center",
     transition: `background ${D.tQuick}, box-shadow ${D.tQuick}, transform ${D.tSpring}`,
   },
   toggle: {

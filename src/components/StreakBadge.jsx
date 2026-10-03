@@ -30,7 +30,14 @@ export default function StreakBadge({ streak = 0, complete = false, size = "md" 
   };
   const s = sizes[size] || sizes.md;
 
-  const accent = complete ? D.go : D.gold;
+  /* --go-text/--gold-text, not --go/--gold: the pill's background is a 16%
+     tint of the same colour, and the number is 11-14px. --gold is the bright
+     celebration gold, which is fine as a fill and has nowhere near enough
+     contrast as small text on its own light tint in the light theme; the
+     *-text tokens exist for exactly this and are used for every other small
+     label in the app. The tint and border below stay on the bright token, so
+     the badge keeps its colour — only the glyphs and the number darken. */
+  const accent = complete ? D.goText : D.goldText;
   const soft = complete ? `color-mix(in srgb, ${D.go} 16.1%, transparent)` : `color-mix(in srgb, ${D.gold} 16.1%, transparent)`;
   const border = complete ? `color-mix(in srgb, ${D.go} 34.9%, transparent)` : `color-mix(in srgb, ${D.gold} 34.9%, transparent)`;
 
@@ -50,7 +57,10 @@ export default function StreakBadge({ streak = 0, complete = false, size = "md" 
         padding: s.padding,
         background: soft,
         border: `1px solid ${border}`,
-        /* Custom shape: rounded square with asymmetric corners */
+        /* Uniform 10. The old comment here claimed "rounded square with
+           asymmetric corners", but the code has always been a single radius —
+           the shape it described never existed, so anyone reading the comment
+           and then the style would trust the comment and be wrong. */
         borderRadius: 10,
         boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.2)",
         fontFamily: "'Inter', system-ui, sans-serif",
@@ -60,9 +70,9 @@ export default function StreakBadge({ streak = 0, complete = false, size = "md" 
           props, hence the wrapper. */}
       <span aria-hidden="true" style={{ display: "flex" }}>
         {complete ? (
-          <CheckIcon size={s.icon} color={D.go} />
+          <CheckIcon size={s.icon} color={D.goText} />
         ) : (
-          <FireIcon size={s.icon} color={D.gold} />
+          <FireIcon size={s.icon} color={D.goldText} />
         )}
       </span>
       <span style={{

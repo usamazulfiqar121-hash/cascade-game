@@ -10,7 +10,7 @@
    code format and why it's plain text rather than an opaque blob. */
 
 import { useRef, useState } from "react";
-import { T } from "../constants";
+import { T, roundsText } from "../constants";
 import { nativeShareText } from "../shareCard";
 import {
   buildCompareShareText,
@@ -21,7 +21,9 @@ import {
   compareToFriend,
 } from "../friendCompare";
 
-const roundsText = (n) => `${n} round${n === 1 ? "" : "s"}`;
+/* roundsText used to be defined here. It now lives in constants.js so the
+   share text, the run-over card and this list cannot disagree about how a
+   round count pluralises — see the export there. */
 
 /* Rotates to point up when the panel is open — an SVG, not a text
    glyph (▾/⌄/›), for the same reason the in-game icons were moved off
@@ -158,19 +160,32 @@ export default function FriendCompare({ rounds, dateKey }) {
             </button>
           </div>
 
-          {feedback && (
-            <div
-              role={feedback.type === "err" ? "alert" : "status"}
-              aria-live={feedback.type === "err" ? "assertive" : "polite"}
-              aria-atomic="true"
-              style={{
-                ...s.feedback,
-                color: feedback.type === "err" ? T.danger : T.go,
-              }}
-            >
-              {feedback.message}
-            </div>
-          )}
+          {/* Always mounted, never `{feedback && ...}`. An alert is announced
+              on insertion, but a freshly-mounted polite status region usually is
+              not — so "Added" could land in total silence while the error path
+              worked, which is exactly backwards from what a player needs to
+              hear. Keeping the container in the tree and swapping only its text
+              is the reliable shape.
+
+              The empty state is 0-height with its 10px flex gaps cancelled by
+              negative margins, so when there is nothing to say the panel's
+              spacing is byte-for-byte what it was before. */}
+          <div
+            role={feedback?.type === "err" ? "alert" : "status"}
+            aria-live={feedback?.type === "err" ? "assertive" : "polite"}
+            aria-atomic="true"
+            style={{
+              ...s.feedback,
+              /* goText, not go: 12px feedback on a translucent panel is small
+                 text, and --go is the bright fill token that fails contrast on
+                 the light theme. Error red stays --danger, which is already the
+                 readable one. */
+              color: feedback?.type === "err" ? T.danger : T.goText,
+              ...(feedback ? null : { height: 0, marginTop: -10, marginBottom: -10 }),
+            }}
+          >
+            {feedback?.message || ""}
+          </div>
 
           {friends.length > 0 && (
             <div style={s.list}>
@@ -184,9 +199,12 @@ export default function FriendCompare({ rounds, dateKey }) {
                         <div
                           style={{
                             ...s.status,
+                            /* goText, not go: 11.5px status line, same
+                               small-text rule as the feedback line above.
+                               Ahead/behind sit on that same scale. */
                             color:
                               cmp.ahead === "you"
-                                ? T.go
+                                ? T.goText
                                 : cmp.ahead === "friend"
                                 ? T.danger
                                 : T.muted,
@@ -196,7 +214,7 @@ export default function FriendCompare({ rounds, dateKey }) {
                             ? `Tied at ${f.rounds}`
                             : cmp.ahead === "you"
                             ? `You're ahead by ${Math.abs(cmp.delta)} (${roundsText(f.rounds)})`
-                            : `Ahead by ${Math.abs(cmp.delta)} (${roundsText(f.rounds)})`}
+                            : `They're ahead by ${Math.abs(cmp.delta)} (${roundsText(f.rounds)})`}
                         </div>
                       ) : (
                         <div style={s.stale}>
@@ -204,6 +222,11 @@ export default function FriendCompare({ rounds, dateKey }) {
                         </div>
                       )}
                     </div>
+                      {/* A friend saved without a name has label "" (the
+                         optional field), so the template produced a bare
+                         "Remove " — a control whose only purpose is to be
+                         announced had nothing after the verb. Falls back to
+                         the generic noun instead. */}
                       <button
                         style={{
                           ...s.remove,
@@ -215,7 +238,7 @@ export default function FriendCompare({ rounds, dateKey }) {
                           padding: 0,
                         }}
                         onClick={() => remove(f.id)}
-                        aria-label={`Remove ${f.label}`}
+                        aria-label={f.label ? `Remove ${f.label}` : "Remove friend"}
                       >
                         ✕
                       </button>

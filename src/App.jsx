@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, RULE_KIND_LABEL, RULE_KIND_COLOR, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT } from "./constants";
+import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, RULE_KIND_LABEL, RULE_KIND_COLOR, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT, roundsText } from "./constants";
 import {
   sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
@@ -1213,7 +1213,6 @@ export default function Cascade() {
         let seen = false;
         try { seen = localStorage.getItem("cascade:tipDrain") === "1"; } catch {}
         if (!seen) {
-          try { localStorage.setItem("cascade:tipDrain", "1"); } catch {}
           showToast({
             icon: "🩸",
             color: "var(--gold)",
@@ -1224,6 +1223,16 @@ export default function Cascade() {
                player had already read it and started looking for the board. */
             duration: 4000,
           });
+          /* Marked AFTER the toast is raised, never before. The flag means
+             "this one-time explanation has been delivered", so writing it
+             first meant anything that could go wrong between the write and
+             the paint — a throw inside showToast, a level change that
+             unmounts the screen a frame later — spent the single showing
+             without the player ever reading it. This is the only place in
+             the app that writes the key, and it is not reachable by any tap:
+             opening the budget breakdown reads the breakdown and nothing
+             else, so no amount of curiosity spends the tip. */
+          try { localStorage.setItem("cascade:tipDrain", "1"); } catch {}
         }
       }
       return;
@@ -1935,7 +1944,16 @@ export default function Cascade() {
           icon: "💨",
           color: "var(--gold)",
           title: "Second Wind!",
-          message: `+${WIND_MOVES} moves \u2014 play on`,
+          message: `+${WIND_MOVES} moves — play on`,
+          /* Explicit, because this toast used to carry none and therefore
+             fell through to showToast's default — and the default is sized
+             for a one-line message, while this one is the single most
+             consequential thing that can happen mid-round: the run just
+             survived on a card that is now spent. 3600 is the same budget the
+             sudden-death announcement uses (see the level effect), i.e. long
+             enough to read a title, a number and an instruction before the
+             player has to look back at the board they are about to pour on. */
+          duration: 3600,
         });
       }
       const newBonus = bonusMoves + bonus;
@@ -2319,19 +2337,54 @@ export default function Cascade() {
      drag-pour. Drags stamp this; onTubeClick ignores clicks until it passes. */
   const suppressClickUntilRef = useRef(0);
 
+  /* Tapping an empty source tube now says so, and this is what keeps that from
+     becoming noise. Same shape as suppressClickUntilRef above — a
+     performance.now() deadline rather than React state — because the thing
+     being guarded is a burst of taps inside a few hundred milliseconds, which
+     is far too short for a re-render to be the right place to judge it.
+
+     showToast REPLACES whatever is up and restarts its timer, so without this
+     a player drumming on the empty tube would hold the message on screen
+     indefinitely and it would stop reading as feedback and start reading as
+     something stuck. 1200ms is long enough that one deliberate second tap
+     re-reads it, and short enough that it cannot outlive the player's own
+     hand movement. */
+  const EMPTY_TAP_GUARD_MS = 1200;
+  const emptyTapUntilRef = useRef(0);
+
   const onTubeClick = useCallback((idx, e) => {
     if (phase !== "playing" || roundDecidedRef.current) return;
     Snd.unlock();
     if (performance.now() < suppressClickUntilRef.current) return;
     if (selected === null) {
-      if (tubes[idx].length === 0) return;
+      if (tubes[idx].length === 0) {
+        /* Was a bare `return`: tapping an empty tube did nothing at all, on a
+           board where tapping a full one picks it up. The silence read as a
+           broken board rather than as "that tube has nothing in it", and the
+           board always starts with at least one empty tube — so the very first
+           thing a new player does can be the one thing that answers nothing.
+
+           Says the same thing the empty tube means, in the game's own terms,
+           and changes no game state: no selection, no move, no spend. */
+        if (performance.now() >= emptyTapUntilRef.current) {
+          emptyTapUntilRef.current = performance.now() + EMPTY_TAP_GUARD_MS;
+          showToast({
+            icon: "☝️",
+            color: "var(--accent)",
+            title: "Nothing to move",
+            message: "Pick a tube with balls first.",
+            duration: 2000,
+          });
+        }
+        return;
+      }
       Snd.select();
       setSelected(idx);
       return;
     }
     if (selected === idx) { setSelected(null); return; }
     attemptPour(selected, idx, e);
-  }, [phase, selected, tubes, attemptPour]);
+  }, [phase, selected, tubes, attemptPour, showToast]);
 
   const DRAG_THRESHOLD = 10;
   const WIGGLE_MAX = 40;
@@ -3631,7 +3684,14 @@ export default function Cascade() {
         const c = tier ? STREAK_CEREMONY[tier] : null;
         return (
           <div key={achToast.id} style={{
-            position: "fixed", top: 60, left: 0, right: 0,
+            /* Safe-area aware (was a bare `top: 60`): on a device with a notch
+               or a status bar the old value put this card UNDER the system
+               bar, clipping its top edge on the exact run where an unlock is
+               meant to feel celebrated. 60px is the same visual offset it
+               had, measured from the safe area instead of from the viewport. */
+            position: "fixed",
+            top: "calc(env(safe-area-inset-top, 0px) + 60px)",
+            left: 0, right: 0,
             display: "flex", justifyContent: "center",
             pointerEvents: "none", zIndex: 200,
           }} className="achSlide">
@@ -4053,7 +4113,39 @@ export default function Cascade() {
 
       {phase === "upgrade" && pendingUpgrades.length > 0 && (
         <div style={S.overlay} className="fade-in">
-          <div style={{ ...S.ovCard, maxWidth: 360 }} className="popIn" role="dialog" aria-modal="true" aria-label={`Round ${round} cleared. Choose an upgrade`}>
+          {/* tabIndex={-1} + the ref callback is the Profile screen's own
+              dialog pattern (AchievementsScreen.jsx), applied here so all
+              three modals in this file behave the way the two full-page
+              views already do: the card itself becomes programmatically
+              focusable, and focus is moved onto it once on mount.
+
+              Focus lands on the CARD, not on one of the upgrade buttons. The
+              three cards are a real decision with run-long consequences, and
+              pre-focusing any one of them would land a keyboard or screen
+              reader user on a card that had been chosen for them. The card
+              container is the honest target here for the same reason Profile
+              focuses its Back button rather than a statistic.
+
+              No Escape handler added on purpose: there is no way out of this
+              dialog except taking a card, and the run's next board depends
+              on which card that is. A dismissible Escape here would be a new
+              mechanic, not an accessibility fix. (The archetype picker's own
+              Escape means "skip", which is why that one has an escape route
+              and this one must not grow one.) */}
+          <div
+            style={{ ...S.ovCard, maxWidth: 360 }}
+            className="popIn"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Round ${round} cleared. Choose an upgrade`}
+            tabIndex={-1}
+            ref={(el) => {
+              if (el && !el.dataset.focused) {
+                el.dataset.focused = "1";
+                el.focus({ preventScroll: true });
+              }
+            }}
+          >
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
             <div style={{ ...S.ovSub, marginBottom: 6 }}>Choose an upgrade</div>
             {/* Onboarding, level 4: what the card in hand is FOR.
@@ -4197,6 +4289,20 @@ export default function Cascade() {
             role="dialog"
             aria-modal="true"
             aria-label="Choose your opening path"
+            tabIndex={-1}
+            /* Same Profile pattern as the upgrade overlay, and the same
+               reason for targeting the card rather than a button: there is
+               no correct first pick here (the picker is explicitly optional —
+               see the Escape note below), so focus goes to the dialog itself
+               and the player chooses. Focus also moves ONCE, guarded by the
+               dataset flag, because this ref callback re-runs on every render
+               of an open picker. */
+            ref={(el) => {
+              if (el && !el.dataset.focused) {
+                el.dataset.focused = "1";
+                el.focus({ preventScroll: true });
+              }
+            }}
           >
             <div style={{ ...S.ovTitle, color: T.accent, fontSize: 22 }}>Choose Your Path</div>
             <div style={{ ...S.ovSub, marginBottom: 18 }}>
@@ -4275,7 +4381,31 @@ export default function Cascade() {
 
       {phase === "gameover" && (
         <div style={S.overlay} className="fade-in">
-          <div style={{ ...S.ovCard, maxWidth: 380 }} className="popIn" role="dialog" aria-modal="true" aria-label="Run over">
+          {/* tabIndex={-1} + focus-once ref, the same Profile-screen pattern as the
+              other two dialogs above. The run-over card is a tall scrolling
+              summary (see S.overlay's note on the daily card at ~960px), so
+              focusing the container also puts the top of the summary — the
+              icon, the round count and the result banner — in view rather
+              than leaving a screen reader's cursor wherever the board's last
+              focused element happened to be.
+
+              No Escape handler: the run is over and this card is the only
+              way forward (Retry, Start Over, Home). There is nothing to
+              cancel back to, so Escape has no honest meaning here. */}
+          <div
+            style={{ ...S.ovCard, maxWidth: 380 }}
+            className="popIn"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Run over"
+            tabIndex={-1}
+            ref={(el) => {
+              if (el && !el.dataset.focused) {
+                el.dataset.focused = "1";
+                el.focus({ preventScroll: true });
+              }
+            }}
+          >
             {!shareImage ? (
               <>
                 {/* Big display — each piece stages in on its own beat
@@ -4387,7 +4517,7 @@ export default function Cascade() {
                       >
                         <div>
                           <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: T.muted, textTransform: "uppercase" }}>
-                            Daily score
+                            Daily Score
                           </div>
                           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 800, color: T.gold, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
                             {dailyScoreResult.score.toLocaleString("en-US")}
@@ -4395,8 +4525,8 @@ export default function Cascade() {
                         </div>
                         <div style={{ textAlign: "right", fontSize: 11, fontWeight: 800, color: dailyScoreResult.isNew ? T.goText : T.muted }}>
                           {dailyScoreResult.isNew
-                            ? "New personal best!"
-                            : `Best ${dailyScoreResult.best.toLocaleString("en-US")}`}
+                            ? "New Best Score"
+                            : `Best Score ${dailyScoreResult.best.toLocaleString("en-US")}`}
                           {dailyTwist && (
                             <div style={{ fontWeight: 700, color: T.muted, marginTop: 3 }}>
                               {dailyTwist.icon} {dailyTwist.name}
@@ -4536,7 +4666,7 @@ export default function Cascade() {
                                 <span style={{
                                   fontSize: 11, fontWeight: 600, color: T.muted, flex: 1, textAlign: "left",
                                 }}>
-                                  {r.round} {r.round === 1 ? "round" : "rounds"} cleared
+                                  {roundsText(r.round)} cleared
                                   {mine && (
                                     <span style={{ color: T.accent, fontWeight: 800 }}> · this run</span>
                                   )}
@@ -4590,8 +4720,19 @@ export default function Cascade() {
                 ) : (
                   <>
                     {retriesLeft > 0 ? (
-                      <button style={S.primary} onClick={retry}>
-                        Retry Round {round} <span style={{ opacity: 0.8, fontWeight: 700 }}>· {"❤️".repeat(retriesLeft)} {retriesLeft} left</span>
+                      /* Explicit name: the visible label ends in repeated ❤️
+                         glyphs ("Retry Round 5 · ❤️❤️ 2 left"), and a screen
+                         reader reads each one as "red heart" — a control whose
+                         whole job is to be found and pressed announced itself
+                         as "Retry Round 5 dot red heart red heart 2 left".
+                         The glyphs are aria-hidden, and the count is said once,
+                         correctly pluralised, as "tries". */
+                      <button
+                        style={S.primary}
+                        onClick={retry}
+                        aria-label={`Retry round ${round} — ${retriesLeft} ${retriesLeft === 1 ? "try" : "tries"} left`}
+                      >
+                        Retry Round {round} <span aria-hidden="true" style={{ opacity: 0.8, fontWeight: 700 }}>· {"❤️".repeat(retriesLeft)} {retriesLeft} left</span>
                       </button>
                     ) : (
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.muted, textAlign: "center", margin: "2px 0 4px" }}>
@@ -4651,7 +4792,31 @@ export default function Cascade() {
           aria-hidden="true"
           style={{
             position: "fixed",
-            top: "calc(env(safe-area-inset-top, 0px) + 20px)",
+            /* Anchored to the BOTTOM now, and this is the whole of P1-3.
+
+               It used to be `top: safe-area-inset-top + 20px`, which put it
+               straight through the top of every screen it appears on:
+                 - in game, over the HUD — the round label, the NEED/best
+                   line and the 3px progress track below it all live in
+                   safe+14..safe+78 (S.hud padding + S.progressTrack), so a
+                   toast at safe+20 covered the move counter's row;
+                 - on Home, over the CASCADE title (documented at
+                   HomeScreen homeContent's padding, which was inflated to
+                   14vh purely to duck under this).
+
+               Nothing useful is at the bottom. The game footer (S.footer) is
+               the bottom 80px and is already documented as the Undo/Hint
+               band, and the Home nav bar (BottomNav navWrap + navGlass +
+               tabBtn) measures ~110px, so `safe + 120` clears BOTH with a
+               gap instead of landing on top of either.
+
+               It also resolves P1-1 outright: the achievement toast is a
+               separate card anchored to the top at safe+60, so a bottom
+               anchor cannot overlap it no matter how tall either one grows
+               with a long title or a large text scale. Neither z-index nor
+               ordering had to change, and the toast still sits above the nav
+               (50) and both full-page screens (80) at its existing 300. */
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)",
             left: 20, right: 20,
             display: "flex", justifyContent: "center",
             pointerEvents: "none",

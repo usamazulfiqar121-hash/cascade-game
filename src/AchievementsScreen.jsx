@@ -196,7 +196,12 @@ export default function AchievementsScreen({
           </svg>
         </button>
         <div style={S.title}>Profile</div>
-        <div style={{ width: 40 }} />
+        {/* 44, matching backBtn. The spacer exists only to balance the header,
+            and backBtn is already 44 wide here — at 40 the title sat 2px right
+            of the screen's centre line. Settings had the same mismatch in the
+            other direction (a 40 button against a 40 spacer) and both are now
+            44/44, so the two headers centre their titles identically. */}
+        <div style={{ width: 44 }} />
       </div>
 
       {/* Scrollable content */}
@@ -733,7 +738,14 @@ const S = {
   },
   nextUpLabel: {
     display: "block",
-    fontSize: 9.5, fontWeight: 900,
+    /* 10.5, was 9.5. 9.5px is below the floor the rest of this file's labels
+       hold (heroLabel and sectionLabel are both 10), and this one carries the
+       gold-text colour that has to clear contrast on BOTH themes — at 9.5px
+       there was very little left to give. 0.5px over the neighbouring labels
+       rather than a jump to 11, because the tracking below is set for a
+       small-caps eyebrow and widening that tracking at 11px would push this
+       label onto two lines inside the card. */
+    fontSize: 10.5, fontWeight: 900,
     color: "var(--gold-text)",
     letterSpacing: "0.16em",
     marginBottom: 10,

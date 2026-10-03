@@ -115,7 +115,7 @@ export default function Tutorial({ onClose }) {
             a consequence, not a rule, and the rules are already three. */}
         <div style={S.tutWarning}>
           <span style={{ fontSize: 15 }}>⚠️</span>
-          <span>Every round has a strict limit. Run out of moves and the run is over.</span>
+          <span>Every round has a strict limit. Run out of moves and the round ends.</span>
         </div>
 
         <button ref={closeBtn} style={S.primary} onClick={handleClose}>

@@ -3,6 +3,13 @@
 
 export const MAX_HEIGHT = 4;
 
+/* The one place "1 round" vs "2 rounds" is decided. This existed as a private
+   helper inside components/FriendCompare.jsx while App.jsx spelled the same
+   pluralisation out three more times by hand; two of those had already drifted
+   into different shapes ("round"/"rounds" vs "rounds cleared"), and the only
+   way that stays true is a single exported function every caller imports. */
+export const roundsText = (n) => `${n} round${n === 1 ? "" : "s"}`;
+
 export const COLORS = [
   "#FF4D6A", "#2F7BF6", "#0E9F6E", "#FFC24B",
   "#8B5CF6", "#F2761B", "#22C5C5", "#FF85C8",
