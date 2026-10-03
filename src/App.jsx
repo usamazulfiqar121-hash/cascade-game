@@ -991,12 +991,23 @@ export default function Cascade() {
           });
         }
       } catch {}
+      /* Tutorial is no longer fired at the player.
+         It used to open 700ms after the very first launch — a three-rule card
+         sitting between Home and the board, which is the one place a first-time
+         player was told things rather than shown them, and which also had to
+         share the screen with the opening path picker.
+
+         Everything it said is now said where it is true: the tap instruction in
+         the footer under the board, the cost of a move on the first pour, what a
+         card is for on the first upgrade screen, and the modifier rules from the
+         round they first bite (unchanged, and already once-ever). The card
+         itself is untouched and still one tap away in Settings -> How to Play,
+         and Reset Progress still re-arms it.
+
+         The flag is still read and still written on dismissal. Nothing reads it
+         to decide whether to interrupt any more, because nothing interrupts. */
       if (t === "1") setTutorialSeen(true);
-      else {
-        setTutorialSeen(false);
-        const timer = setTimeout(() => setShowTutorial(true), 700);
-        return () => clearTimeout(timer);
-      }
+      else setTutorialSeen(false);
     } catch {}
   }, []);
 
@@ -1770,6 +1781,36 @@ export default function Cascade() {
       if (!hasPlayedOnce) {
         setHasPlayedOnce(true);
         try { localStorage.setItem("cascade:hasPlayedOnce", "1"); } catch {}
+        /* Onboarding, level 2: what that move cost.
+
+           Fired from inside the block that already runs exactly once per
+           install — the flag is persisted and re-tested on every pour, so this
+           cannot repeat, and it cannot repeat across Exit -> Continue either,
+           since resuming restores the board and `moves` but leaves
+           `hasPlayedOnce` true.
+
+           It lands on the pour whose effect the player just watched happen:
+           before it, "1 move" is an abstraction, and after it the HUD counter
+           has visibly dropped. That is the cheapest possible moment to name the
+           number, and it needs no new surface to do it.
+
+           States only what is already true. It promises nothing about carrying
+           moves forward, because the card picked next (Glass Cannon) can still
+           cancel the carry — the reason the announcement at the solve stopped
+           promising it too. Carry becomes visible where it is real: as
+           "+ N Left" in the next board's tapped budget breakdown. */
+        showToast({
+          icon: "👆",
+          color: "var(--accent)",
+          title: "That's 1 move",
+          /* Par-less board gets the shorter line rather than "NEED undefined".
+             The footer already guards this case by falling back to the tap
+             hint, so the two must not disagree about whether a need exists. */
+          message: level.par
+            ? `Every pour costs 1 move. NEED ${needOf(level)} is the fewest that clears this board.`
+            : "Every pour costs 1 move.",
+          duration: 3600,
+        });
       }
       Haptic.light();
 
@@ -3421,6 +3462,25 @@ export default function Cascade() {
     }
   }, [shareImage, round]);
 
+  /* Onboarding, level 1: the move itself.
+     These two strings were already written and already correct — the footer
+     just never reached them, because it rendered them only in the `!level.par`
+     fallback and every board a normal run deals has a par. So the one thing a
+     new player was never told, in the game's own words, on the board where a
+     move happens, was how a move is made.
+
+     The footer is where this belongs: already the one line under the board,
+     already keyed to `selected`, so it costs no new surface and disappears the
+     moment it stops being true.
+
+     Gated on `!hasPlayedOnce` — the per-install flag attemptPour writes on the
+     first legal pour. That makes it normal-mode-only for free: HomeScreen gates
+     the entire Daily/Score row on the same flag, so neither mode is reachable
+     until after the first pour, and nothing here can leak into a daily or a
+     score run. No new state, no new key, no new save field. */
+  const tapHint = selected === null ? "Tap a tube to pick it up" : "Tap a destination tube";
+  const showTapHint = !hasPlayedOnce;
+
   return (
     <div style={S.root}>
       <style>{CSS}</style>
@@ -3909,7 +3969,14 @@ export default function Cascade() {
 
       <div style={S.footer}>
         {phase === "playing" && (
-          level.par ? (
+          showTapHint ? (
+            /* Before the first move the budget line yields to the one
+               instruction the player actually needs: what a move IS. It comes
+               back on the next render after the first pour, because
+               `hasPlayedOnce` flips inside that pour. Nothing else about the
+               round changes — same slot, same S.hint type, same place. */
+            <div style={S.hint}>{tapHint}</div>
+          ) : level.par ? (
             /* A <button>, not the div it used to be: the line now OPENS
                something instead of just being read, and a control that looks
                like text but isn't one is a control nobody finds. Styled back
@@ -3942,9 +4009,7 @@ export default function Cascade() {
               <span aria-hidden="true" style={{ opacity: 0.55 }}> · tap</span>
             </button>
           ) : (
-            <div style={S.hint}>
-              {selected === null ? "Tap a tube to pick it up" : "Tap a destination tube"}
-            </div>
+            <div style={S.hint}>{tapHint}</div>
           )
         )}
       </div>
@@ -3954,6 +4019,30 @@ export default function Cascade() {
           <div style={{ ...S.ovCard, maxWidth: 360 }} className="popIn" role="dialog" aria-modal="true" aria-label={`Round ${round} cleared. Choose an upgrade`}>
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
             <div style={{ ...S.ovSub, marginBottom: 6 }}>Choose an upgrade</div>
+            {/* Onboarding, level 4: what the card in hand is FOR.
+                The only new fact this screen was missing. "Choose an upgrade"
+                tells the player an upgrade exists; nothing told them it is a
+                decision with a run-long consequence, which is the whole reason
+                the choice is worth pausing over.
+
+                One line, first round only, and deliberately not a tour of the
+                cards: UpgradeCard already explains each one, and listing them
+                here is the information dump this onboarding exists to avoid.
+                `totalRounds === 1` is durable and needs no new state — it is
+                persisted in cascade:stats and incremented by recordRound() at
+                the solve, before this screen is reached.
+
+                It says nothing about carrying leftover moves forward. That is
+                real but not yet: the next round's budget line shows the carried
+                moves as part of HAVE, and its tapped breakdown names them
+                "+ N Left" — so it is taught by the number the player can check,
+                rather than by a promise made before the card that could cancel
+                it has been picked. */}
+            {stats.totalRounds === 1 && round === 1 && (
+              <div style={{ fontSize: 12, fontWeight: 800, textAlign: "center", color: T.muted, marginBottom: 6 }}>
+                Every card you take lasts the whole run.
+              </div>
+            )}
             {/* What the next round will ask of the build, so the pick can be
                 made against it. Facts only — never which card to take. */}
             <div style={{ fontSize: 12, fontWeight: 800, textAlign: "center", color: T.muted, marginBottom: (jackpotNearMiss || shownArch || offerPity) ? 8 : 16 }}>
