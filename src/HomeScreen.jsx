@@ -20,8 +20,8 @@ import Tube from "./Tube";
    It then carried FOUR tubes, and that is what is back. Four tubes at the
    board's own 0.8 scale, drawn with the real Tube component, so the first
    screen a player sees is literally the thing they are about to play rather
-   than an icon of it: two colours, neither tube sorted, which is the whole
-   game in one picture.
+   than an icon of it: one tube sorted, one mixed, one half full and one empty,
+   which is the whole game in one picture.
 
    Measured, not eyeballed (tubeDims: width 62 x scale, height 192 x scale
    + 22, MAX_HEIGHT 4):
@@ -42,11 +42,11 @@ import Tube from "./Tube";
    with the real Tube component so it is pixel-for-pixel the same
    glass-and-ball look the actual board uses.
 
-   None of the four arrangements is sorted on purpose: isTubeSolved() is
-   still passed to Tube, and a solved tube would draw the board's solved
-   glow inside a decorative graphic, which is the one thing on this screen
-   that would be a lie about the game. */
-const HERO_TUBES = [[1, 0, 1, 0], [0, 1, 1, 0], [1, 1, 0, 0], [0, 1, 0, 1]];
+   The second tube IS sorted ([1,1,1,1]) on purpose, and it is the point of the
+   picture: isTubeSolved() is passed to Tube exactly as it is on the board, so
+   that tube comes back with data-state="solved" and picks up the real green
+   glow and checkmark from globalStyles.js. Goal state first, mess after. */
+const HERO_TUBES = [[2, 0, 2, 0], [1, 1, 1, 1], [3, 3], []];
 const HERO_SCALE = 0.8;
 
 /* The daily twist's disclosure (B10) used to live here, in the middle of
