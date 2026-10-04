@@ -37,17 +37,26 @@ Read this before changing anything. It is written for any AI coding agent
   run ends (loss, or Exit after clearing ≥1 round). Recorded at most once.
 
 **Move economy** (`MOVE_ECONOMY` in gameLogic.js) — every round:
-`moves = target(par) + spare − drain + carry + card bonus + rule (twist/mutator)`
+`moves = target(par) + buffer − drain + carry + card bonus + rule (twist/mutator)`
 - `par` = fewest moves to solve the board (weighted A* `boardPar`, ~1–8 ms).
   Measured on the board BEFORE Extra Tube / Auto-Sort, so those cards help.
   `playPar` = par of the board actually played. Shown to players as "target".
-- spare: +80% of par on round 1 → +20% by round 8; halved on boss rounds (every 5th).
+- buffer (was called "spare"): +50% of par on round 1 → +15% by round 6;
+  halved on boss rounds (every 5th).
 - drain: from round 3, `1.8k + 0.05k²` (k = round − 2).
-- carry: half of last round's leftover, max 6 (0 with Glass Cannon).
+- carry: half of last round's leftover, max 5 (0 with Glass Cannon).
 - **Floor:** moves never below `playPar` → every round is winnable.
 - **Sudden death:** when the budget falls below `playPar`, moves = `playPar` and
   lucky/combo/mega refunds switch off.
-- Boss clear → one extra upgrade card. Per-pour refunds are capped (luck ≤ 40%).
+- Boss clear → one extra upgrade card. Per-pour refunds are capped at the shared
+  `LUCK_CAP = 0.4` (40%) — normal **and** daily alike, so a daily Lucky Day is 40%
+  too (Batch 2's A-04 removed the old 50%). Lucky Drop 20% + Super Lucky 25% =
+  45%, which clamps to 40%. The cap is now stated in **both** places a player
+  meets it: Super Lucky's own `desc` in `constants.js` names the ceiling on the
+  pair, and the Codex "How moves work" table has a `LUCKY` row (Phase 2's V-03,
+  interpolating the cap from `LUCK_CAP`) that also explains WHY it is capped.
+  The card text is not interpolated — it is prose — so `LUCK_CAP` is still typed
+  by hand in that one string; retuning the cap means editing both.
 
 **Cards with trade-offs:** Glass Cannon (+5/round, no carry), Investment
 (+1 growing +1/round, max +10, derived from its position in the upgrade list),
@@ -109,6 +118,15 @@ Termux has no browser automation, so test by playing in the browser
 Balance changes: change ONE number in `MOVE_ECONOMY`, play 3–4 runs, write
 down the round you died on, compare with before. Target feel: average player
 dies around round 15–25; good play/builds go further; every run ends.
+
+⚠️ UNVERIFIED (audit finding C-7, 2026-10-04): the "15–25" above has never been
+measured. Arithmetic from the constants says sudden death — the round where the
+buffer stops existing — arrives far earlier: with no cards at all, round 3;
+with an average card count and carry, somewhere around rounds 7–9. The floor
+(`moves ≥ playPar`) still holds, so every round stays winnable; what is in doubt
+is whether the buffer is doing the job it was tuned for. Log `round`,
+`unclamped`, `playPar` and `suddenDeath` from `generateLevel` over 5–6 real runs
+before trusting or retuning this number.
 
 ## Before you finish, report
 

@@ -538,8 +538,16 @@ button:active:not(:disabled) { transform: scale(0.97); }
   backdrop-filter: blur(40px) saturate(140%);
   -webkit-backdrop-filter: blur(40px) saturate(140%);
 }
+/* var(--glass), not a literal. This was rgba(15, 21, 40, 0.72) — the DARK
+   theme's value, hardcoded, so a light-theme player who reached this class
+   got a dark navy panel. Both tokens are defined per theme above, and the two
+   sibling utilities in this same file already did it right: .glass uses
+   var(--glass) and .glass-premium uses var(--glass-elevated). On the dark
+   theme this is not a visual change at all — 0.72 is exactly what --glass
+   resolves to — so the only thing that moves is light theme, which is the
+   point. */
 .glass-standard {
-  background: rgba(15, 21, 40, 0.72);
+  background: var(--glass);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
 }
@@ -1058,8 +1066,12 @@ button:active:not(:disabled) { transform: scale(0.97); }
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
 }
+/* var(--glass-elevated), same reasoning as .glass-standard above, and the
+   same dark-theme value (0.85 vs the token's 0.88 — a 3-point alpha
+   difference on the one theme where this class is certainly still
+   reachable). Light theme gets the white panel the token already holds. */
 .glass-elevated {
-  background: rgba(20, 27, 50, 0.85);
+  background: var(--glass-elevated);
   backdrop-filter: blur(28px) saturate(140%);
   -webkit-backdrop-filter: blur(28px) saturate(140%);
 }

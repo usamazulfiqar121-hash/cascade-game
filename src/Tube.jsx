@@ -68,7 +68,14 @@ const BOTTOM_RESERVE_WRAPPED = 146;
 export const MIN_FIT_SCALE = 0.5;
 export function fitTubeScale(count, base, boardTop, viewH, viewW) {
   const rowW = Math.min(400, viewW - 40);
-  for (let s = base; s >= MIN_FIT_SCALE - 1e-9; s = Math.round((s - 0.02) * 100) / 100) {
+  /* Clamped entry point. Without this, a caller passing base < MIN_FIT_SCALE
+     skipped the loop entirely and got MIN_FIT_SCALE back — a LARGER scale than
+     it asked for, so the board grew and overflowed, which is the exact failure
+     this function exists to prevent. Unreachable today (tubeScaleFor bottoms
+     out at 0.56) and silent if it ever isn't: no caller error, just a quietly
+     wrong board. */
+  const start = Math.max(base, MIN_FIT_SCALE);
+  for (let s = start; s >= MIN_FIT_SCALE - 1e-9; s = Math.round((s - 0.02) * 100) / 100) {
     const d = tubeDims(s);
     const perRow = Math.max(1, Math.floor((rowW + 12) / (d.width + 12)));
     const rows = Math.ceil(count / perRow);
@@ -116,7 +123,16 @@ export function topRunLength(balls) {
 }
 
 export function ballBackground(colorIdx) {
-  return `linear-gradient(180deg, ${COLORS[colorIdx]} 0%, ${shade(COLORS[colorIdx], -0.15)} 100%)`;
+  /* Bounded, because this is the one colour lookup in the codebase with no
+     fallback. In normal play colorIdx is always in range (colorCount is capped
+     at 7, COLORS has 8), so this guard never fires — but `undefined` here goes
+     straight into shade(), which calls .replace on it and throws, and there is
+     no error boundary, so the React root goes blank. App.jsx's particle path
+     already guards the identical lookup with `COLORS[colorIdx] || T.accent`;
+     these two halves of the same lookup should not disagree about whether a
+     miss is possible. A hex, not T.accent, because shade() needs to parse it. */
+  const hex = COLORS[colorIdx] || "#888888";
+  return `linear-gradient(180deg, ${hex} 0%, ${shade(hex, -0.15)} 100%)`;
 }
 
 /* The ball's face (gloss + optional color-blind number) — shared with the
@@ -135,6 +151,11 @@ export function BallFace({ colorIdx, d, colorBlind }) {
 }
 
 export const BALL_STYLE_BASE = {
+  /* Explicit because the ball is a <span> (see Ball): as a flex item it would
+     be blockified anyway, but stating it means the element is still correct if
+     it is ever rendered outside a flex parent, where a bare span would
+     collapse to inline and lose its box. */
+  display: "block",
   position: "relative",
   boxShadow: `
       inset 0 -4px 8px rgba(0, 0, 0, 0.25),
@@ -167,7 +188,13 @@ function Ball({ colorIdx, d, colorBlind, lift, liftDelay, landAt }) {
      the rest of the level. */
   const [promoting, setPromoting] = useState(true);
   return (
-    <div
+    /* A <span>, not a <div>: button's content model is phrasing content, and
+       div is flow content, so a div in here is invalid HTML even though every
+       browser renders it. Both are flex items of the tube (column-reverse), so
+       both are blockified identically — which is why BALL_STYLE_BASE can carry
+       display:block and keep this correct if it is ever used outside a flex
+       parent. Nothing about the layout changes. */
+    <span
       className={`${landing ? "cascade-ball landing" : "cascade-ball"}${promoting ? " promoting" : ""}`}
       onAnimationEnd={(e) => {
         /* Guarded on target: animationend bubbles, and this ball's children
@@ -193,7 +220,7 @@ function Ball({ colorIdx, d, colorBlind, lift, liftDelay, landAt }) {
       }}
     >
       <BallFace colorIdx={colorIdx} d={d} colorBlind={colorBlind} />
-    </div>
+    </span>
   );
 }
 
@@ -230,7 +257,31 @@ export default function Tube({
       className="tube-btn"
       data-state={state}
       data-tube-idx={idx}
-      aria-label={`Tube${selected ? ", selected" : ""}${solved ? ", solved" : ""}${hintFrom ? ", hint source" : ""}${hintTo ? ", hint destination" : ""}`}
+      /* The contents are in the label now, which they were not before. The old
+         label described only UI state — selected / solved / hint source /
+         hint destination — so a screen-reader user knew a tube existed and
+         nothing about what was in it. In a ball-sort puzzle the distribution
+         of balls across tubes IS the game, so that made the board
+         unplayable without sight, and the colour-blind numbers did not fill the
+         gap because they are aria-hidden (correctly, for the visual layer).
+
+         Numbers are `colorIdx + 1` because that is exactly what the
+         colour-blind mode paints on the ball, so the spoken board and the seen
+         board agree. They are 1-based indices into COLORS, not colour names —
+         the accessible version of a colour-blind mode is numbers, and inventing
+         names here would mean maintaining a second palette in a screen reader. */
+      aria-label={[
+        `Tube ${idx + 1}`,
+        balls.length
+          ? `${balls.length} ball${balls.length === 1 ? "" : "s"}, colours ${balls.map((c) => c + 1).join(" ")}`
+          : "empty",
+        selected ? "selected" : null,
+        solved ? "solved" : null,
+        hintFrom ? "hint source" : null,
+        hintTo ? "hint destination" : null,
+      ]
+        .filter(Boolean)
+        .join(", ")}
       style={{
         ...S.tube,
         width: d.width,

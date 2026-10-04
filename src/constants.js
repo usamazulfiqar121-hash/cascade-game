@@ -10,6 +10,17 @@ export const MAX_HEIGHT = 4;
    way that stays true is a single exported function every caller imports. */
 export const roundsText = (n) => `${n} round${n === 1 ? "" : "s"}`;
 
+/* The ball palette — 8 entries, and that is NOT an off-by-one to "fix" down
+   to 7. Boards cap colourCount at 7 (generateLevel clamps to [2,7], as do the
+   Deep Cuts and Rainbow mutators), so tubes only ever hold COLORS[0..6] and
+   index 7 — #FF85C8 — cannot appear on a board.
+
+   It is still used: STREAK_CEREMONY[3].colors below is [0, 5, 7, 3] and
+   indexes into this array on purpose for the 100-day-streak confetti.
+
+   Spelled out because a palette one longer than the board cap looks exactly
+   like a stray entry, and the obvious "fix" — dropping the last colour — would
+   silently repaint the century-streak confetti (or break it on undefined). */
 export const COLORS = [
   "#FF4D6A", "#2F7BF6", "#0E9F6E", "#FFC24B",
   "#8B5CF6", "#F2761B", "#22C5C5", "#FF85C8",
@@ -229,13 +240,19 @@ export const rarityTint = (color, pct) => `color-mix(in srgb, ${color} ${pct}%, 
 export const rarityText = (color) => `color-mix(in srgb, ${color}, var(--ink) var(--rarity-ink))`;
 
 /* Roguelike upgrades pool.
-   "start" was 10 — only +2 over Rare's m8 (8), barely distinguishable from
+   "start" was 10 — only +2 over Rare's m8, barely distinguishable from
    the tier below despite being Legendary. Widened to make the top tier feel
    materially different, not just differently colored (research: rarity
    should vary the actual outcome, not just its presentation).
    "jackpot" and "dawn" are pulled from this pool by id in pickRandomUpgrades/
    pickDailyUpgrades respectively — see the JACKPOT_CHANCE roll there and the
    dailyOnly flag below.
+
+   The +2 still holds, but note m8 is now +4, NOT the +8 its id suggests. The
+   ids kept their old names when the values were retuned (see the note on the
+   array below), so reading "m8" as "+8" — which this comment used to do, and
+   which the `dawn` comment below still did — is wrong: it is the reason that
+   comment's reasoning no longer holds.
 
    `cat` groups cards by what they change rather than how big they are:
    "tempo" (a flat +N moves every round), "luck" (per-pour chance), "flow"
@@ -253,8 +270,25 @@ export const UPGRADES = [
   { id: "m5", name: "+3 Moves", desc: "+3 moves every round", icon: "🔥", rarity: 2, value: 3, cat: "tempo" },
   { id: "m8", name: "+4 Moves", desc: "+4 moves every round", icon: "💎", rarity: 3, value: 4, cat: "tempo" },
   { id: "start", name: "Head Start", desc: "+6 moves every round", icon: "🚀", rarity: 4, value: 6, cat: "tempo" },
+  /* The two luck rates ADD, then the total is clamped to LUCK_CAP (0.4) — so
+     holding both is 40%, not the 45% these two descriptions literally add up
+     to. Stated plainly here because the cap is invisible everywhere else, and
+     because a player who adds up the card text deserves to be told why the
+     number they get is smaller. The clamp is a deliberate economy bound (see
+     the top of gameLogic.js): uncapped, two luck cards refund more than one
+     move per pour and a round becomes unwinnable in the player's favour.
+
+     Now the card DESCRIPTIONS say so too, not just the comment above them.
+     A comment is invisible to the player; these two strings are what they read
+     when deciding whether to take the card, and "20%" on one, "25%" on the
+     other, tells them the wrong thing about the pair. Each string states its
+     own rate alone, because the cap only binds when BOTH are held — a player
+     with just one of them gets exactly the number on the card, and a player
+     who never holds both should never see a caveat that does not apply to
+     them. The cap therefore appears on the second card as what it is: the
+     ceiling on the PAIR. */
   { id: "lucky", name: "Lucky Drop", desc: "20% chance per pour: +1 move", icon: "🍀", rarity: 1, cat: "luck" },
-  { id: "lucky2", name: "Super Lucky", desc: "25% chance per pour: +1 move", icon: "🌟", rarity: 3, cat: "luck" },
+  { id: "lucky2", name: "Super Lucky", desc: "25% chance per pour: +1 move — combined with Lucky Drop the pair is capped at 40%", icon: "🌟", rarity: 3, cat: "luck" },
   { id: "combo3", name: "Combo Master", desc: "Every 4th pour in a row: +1 move", icon: "🎯", rarity: 2, cat: "flow" },
   { id: "combo2", name: "Combo Legend", desc: "Every 3rd pour in a row: +1 move", icon: "🎪", rarity: 3, cat: "flow" },
   { id: "mega", name: "Mega Bonus", desc: "Every 8th pour in a row: +2 moves", icon: "🎊", rarity: 2, cat: "flow" },
@@ -281,10 +315,20 @@ export const UPGRADES = [
      extra field. "wind_used" is not in this list on purpose: the run strip
      skips ids it doesn't know, so a spent card just disappears. */
   { id: "wind", name: "Second Wind", desc: "Once: out of moves? Get +5 and play on", icon: "💨", rarity: 3, dailyOnly: true, cat: "flow" },
-  /* Retired. +6 moves for Rare was strictly worse than +8 Moves at the same
-     rarity, so nobody had a reason to take the "daily exclusive". Kept in
-     the list only so a run saved with it still resolves; pickDailyUpgrades
-     skips retired cards. */
+  /* Retired. At the time: "+6 moves for Rare was strictly worse than +8 Moves
+     at the same rarity", so nobody had a reason to take the "daily exclusive".
+     Kept in the list only so a run saved with it still resolves;
+     pickDailyUpgrades skips retired cards.
+
+     ⚠️ THAT REASON NO LONGER HOLDS. m8 has since been retuned from +8 to +4
+     (see the `start` comment above), so this card's +6 is now strictly BETTER
+     than the Rare move card rather than worse — the retirement is now
+     justified by nothing at all. It is still retired because retuning the pool
+     is a balance change, not a comment fix. Anyone re-enabling it should
+     re-simulate first: the numbers at the top of this file say an extra empty
+     tube moved a run from ~9 rounds to ~40, so this file's author did have a
+     model, but a run simulation against the current constants is the only
+     trustworthy answer here. */
   { id: "dawn", name: "Dawn Bonus", desc: "+6 moves every round", icon: "🌅", rarity: 3, value: 6, dailyOnly: true, retired: true, cat: "tempo" },
 ];
 
@@ -448,10 +492,24 @@ export const FOCUS_OFFERS = 4;
    be right on one round and quietly wrong on the next.
    Adding a field changes nothing that reads these entries: the twist order is
    drawn from array INDEX (twistOrder), never from the contents, so the daily a
-   given date picks is unchanged. */
+   given date picks is unchanged.
+
+   ⚠️ `warm`'s text was WRONG until Phase 2 and has been corrected above; read
+   this before trusting any twist's `desc` to describe its scope. It said "free
+   colour on R1", but generateLevel applies it as `+ (twistId === "warm" ? 1 : 0)`
+   with NO round condition — every round of the run, not round 1. Since an
+   Auto-Sort is worth ~4 moves (see the comment above playPar), that is ~4
+   moves EVERY round rather than ~4 once, on a card whose `kind` is only
+   "blessing".
+
+   The TEXT is now fixed to match the code. Whether the CODE should instead be
+   narrowed to round 1 is an open balance question and was deliberately left
+   alone: the note above records that these twists were run through a simple
+   player model, so Warm Start being strong may already be priced in. That
+   needs the C-7 measurement, not a guess — see AUDIT_v1.md BATCH 4. */
 export const DAILY_TWISTS = [
   { id: "tailwind", name: "Tailwind", icon: "🌬️", kind: "blessing", desc: "+3 moves every round", short: "+3 moves" },
-  { id: "warm", name: "Warm Start", icon: "🌅", kind: "blessing", desc: "One colour starts already sorted", short: "free colour on R1" },
+  { id: "warm", name: "Warm Start", icon: "🌅", kind: "blessing", desc: "One extra colour starts already sorted, every round", short: "free sorted colour" },
   { id: "lucky", name: "Lucky Day", icon: "🍀", kind: "blessing", desc: "+25% chance of a free move on every pour", short: "+25% free-move odds" },
   { id: "thin", name: "Thin Margins", icon: "⏳", kind: "curse", desc: "2 fewer moves every round", short: "−2 moves" },
   { id: "rainbow", name: "Rainbow", icon: "🌈", kind: "curse", desc: "Colours ramp up one round sooner", short: "colours sooner" },

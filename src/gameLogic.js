@@ -13,8 +13,23 @@ export function sumMoveBonus(ups) {
    a run stops spending moves at all: the old numbers (luck stacking to 70%,
    +1 every 2nd pour, +2 every 5th) refunded about 1.6 moves per pour at the
    top, i.e. every pour was free and the run could not be lost. Now the most a
-   run can stack is 0.40 + 0.33 + 0.25 = ~0.98 only with ALL of them, and
-   each is a rare-ish pick — a real engine you build, not a default. */
+   NORMAL run can stack is 0.40 + 0.33 + 0.25 = ~0.98 only with ALL of them,
+   and each is a rare-ish pick — a real engine you build, not a default.
+
+   Now that the ceiling applies to EVERY mode, not just the normal one. It used to
+   read `0.40 + 0.33 + 0.25 = ~0.98` as a normal-run figure and go on to admit
+   that a daily on a Lucky Day re-capped at 0.5 for a true ceiling of ~1.08 —
+   above one move per pour, which is the one thing this comment exists to
+   prevent. Both modes are now capped by the same LUCK_CAP (the caller in
+   App.jsx applies it, which is why nothing here caps the daily).
+
+   Being honest about the number that leaves: ~0.98 is UNDER one move per
+   pour, but it is not "well under" it, and it only exists on a run holding
+   BOTH luck cards AND combo2 AND mega. Every one of those is a card the player
+   chose, so it is an engine rather than a default — but if a future card
+   raises any term, this ceiling crosses 1 again with no code change at all.
+   That is the thing to watch when tuning, and it is why the cap is a named
+   constant instead of a literal in the caller. */
 export const LUCK_CAP = 0.4;
 export function getLuckyChance(ups) {
   return Math.min(LUCK_CAP, ups.reduce((s, id) => s + (id === "lucky" ? 0.2 : id === "lucky2" ? 0.25 : 0), 0));
@@ -46,13 +61,36 @@ export function getMegaEvery(ups) {
    wastes a choice and makes the offer read as noise. The daily already had
    this filter and is measurably better for it.
 
-   The filter can never empty the offer. At most five cards in this pool can be
-   dead for a given run (clear, mega, combo2, combo3 and lucky), so at least
-   eight of the thirteen stay eligible — always more than the three an offer
-   needs, which is why the relax ladder in drawOffer does not have to give up
-   this rule. Super Lucky is never among them: getLuckyChance's 0.7 ceiling is
-   only ever a clamp, and 0.2 + 0.35 = 0.55 never reaches it, so taking Super
-   Lucky always moves the chance. */
+   The filter can never empty the offer, and it is in fact far weaker than this
+   comment used to claim. Only three cards in this pool can EVER be filtered
+   out of an offer, and only under the conditions in isDeadUpgrade:
+
+     combo3 — dead once combo2 is owned (combo2 pays every 3 pours against
+              combo3's 4, so it subsumes it)
+     tube   — dead once BOARD_CARD_CAP copies are owned
+     auto   — same
+
+   The rest cannot fire at all, for a reason worth stating because it is not
+   obvious from reading the switch: clear, mega, combo2, glass and invest are
+   all tested with `owned.includes(id)`, and a card can only be a CANDIDATE if
+   the run does not own it — so for a candidate those tests are false by
+   construction. A run that owns Perfect Clear does not get Perfect Clear
+   filtered out of the offer; it simply never sees it in the pool to begin
+   with, which is drawOffer's `owned` handling doing a different job.
+
+   NEITHER luck card is ever filtered, which is the part that had been written
+   wrong here twice. isDeadUpgrade asks whether taking the card moves the
+   chance, and a candidate is always unowned — so at most ONE of the pair can
+   be owned, capping the current chance at 0.2 or 0.25. Adding the other takes
+   it to min(0.4, 0.45) = 0.4 either way. 0 changes to 0.25, 0.2 changes to
+   0.4, 0.25 changes to 0.4: never a tie, so the equality test at the bottom
+   of the switch can never be true for a candidate. (An earlier version of this
+   comment claimed the opposite — that Super Lucky is dead whenever Lucky Drop
+   is owned — which is wrong, and self-contradictory two sentences later.)
+
+   So at most three of fifteen are ever removed, leaving at least twelve
+   eligible against the three an offer needs. That is why the relax ladder in
+   drawOffer never has to give up this rule. */
 const JACKPOT_ID = "jackpot";
 const JACKPOT_CHANCE = 0.03;
 const JACKPOT_NEAR_MISS_MARGIN = 0.07;
@@ -470,9 +508,21 @@ export function computeStreak(results, shieldedDates = []) {
   const start = todayDone ? 0 : 1;
   /* Stops at the first missed day, so this only ever walks as far as the
      player's real streak. The cap is a safety net against a corrupt save,
-     not a limit: it used to be 365, which froze a 400-day streak at 365. */
+     not a limit: it used to be 365, which froze a 400-day streak at 365.
+
+     One Date, stepped backwards, instead of a fresh one per day. The old
+     `new Date(today)` inside the loop allocated (and re-derived the local
+     calendar fields for) up to 36,500 objects on a corrupt save, and callers
+     reach this from render bodies, so the cost was paid on paint rather than
+     once. App.jsx now also memoises its own call sites on [dailyResults,
+     shieldedDates], so it runs on change rather than on every render — the two
+     fixes are independent and both hold. setUTCDate on a copy mutates only the
+     copy, so `today` itself is untouched and dailyKey(today) above still
+     describes the real today. Mutating the copy is also what keeps this correct
+     across a DST boundary: setUTCDate works in UTC days throughout, exactly as
+     dailyKey's toISOString does. */
+  const d = new Date(today);
   for (let i = start; i < 36500; i++) {
-    const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - i);
     const key = dailyKey(d);
     if (results[key] || shieldedDates.includes(key)) streak++;
@@ -606,12 +656,72 @@ function orderIsFair(order) {
   return true;
 }
 
+/* How many shuffles one cycle's order may be re-drawn before it is accepted as
+   it stands. Reaching it means the fairness rules are hard to satisfy for some
+   combination of twist kinds, not that the player had bad luck — see the
+   fallback below. */
+const TWIST_ATTEMPTS = 2000;
+
 function twistOrder(block) {
   const ids = DAILY_TWISTS.map((_, i) => i);
   let order = ids;
-  for (let attempt = 0; attempt < 2000; attempt++) {
+  for (let attempt = 0; attempt < TWIST_ATTEMPTS; attempt++) {
     order = shuffle(ids, mulberry32(fmix32((block ^ TWIST_SALT ^ Math.imul(attempt, 0x9e3779b1)) >>> 0)));
-    if (orderIsFair(order)) break;
+    if (orderIsFair(order)) return order;
+  }
+  /* Reached only when every shuffle failed the checks. The old code fell out of
+     the loop and returned whatever the last shuffle produced, with nothing to
+     say so — and because the choice is a function of the block, a cycle that
+     broke its own stated rules hit every player on that day identically and
+     permanently, indistinguishable from every other cycle.
+
+     The fallback is an EXHAUSTIVE deterministic search, not more luck and not
+     a smarter sample. It walks all n! permutations of the ids in ascending
+     lexicographic order, starting from the sorted ids, and returns the first
+     fair one. Lexicographic order matters: it is a fixed function of n alone,
+     so two players who reach this line on the same block get the same cycle
+     without the block ever entering the comparison.
+
+     Why exhaustive and not "try some more swaps": an earlier version of this
+     fallback tested every single pair-swap out of one base order, which is
+     n(n-1)/2 arrangements — only the immediate neighbourhood of that one
+     order. If the fair cycle needed two or three disjoint swaps away, it was
+     not in the set, and the fallback could fail while a perfectly good order
+     existed. After 2,000 shuffles have missed, the useful question is no
+     longer "what is likely" but "does one exist at all", and only a complete
+     search answers that. Cost is 5,040 orderIsFair calls for seven twists,
+     once per seven-day cycle, and only on this path — against the ~1ms of
+     shuffling it replaces, on a code path that essentially never runs.
+
+     If even a complete search finds nothing, the fairness rules are stricter
+     than this twist mix can satisfy, and this is a genuine calendar bug worth
+     seeing: it hits every player on that day identically and permanently. The
+     last shuffled order is returned rather than rejected, because the caller
+     indexes straight into DAILY_TWISTS and a null here would throw inside
+     pickDailyTwist — taking the daily down completely instead of degrading it.
+     So the warning is the whole of the response, deliberately loud, and it
+     fires once per seven-day cycle where that happens. */
+  const cand = ids.slice();
+  for (;;) {
+    if (orderIsFair(cand)) return cand;
+    /* Next permutation in lexicographic order. The array is sorted ascending on
+       entry, so this visits every permutation exactly once and terminates
+       when no pivot remains (i < 0 means the whole array is descending). */
+    let i = cand.length - 2;
+    while (i >= 0 && cand[i] >= cand[i + 1]) i--;
+    if (i < 0) break;
+    let j = cand.length - 1;
+    while (cand[j] <= cand[i]) j--;
+    const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp;
+    for (let l = i + 1, r = cand.length - 1; l < r; l++, r--) {
+      const s = cand[l]; cand[l] = cand[r]; cand[r] = s;
+    }
+  }
+  if (typeof console !== "undefined" && console.warn) {
+    const n = cand.length;
+    let factorial = 1;
+    for (let k = 2; k <= n; k++) factorial *= k;
+    console.warn(`[cascade] twistOrder: no fair order for cycle ${block} in ${TWIST_ATTEMPTS} shuffles or all ${factorial} permutations`);
   }
   return order;
 }
@@ -915,11 +1025,26 @@ export function boardPar(tubes, colorCount = 0) {
   const push = (n) => { heap.push(n); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p].f <= heap[i].f) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l].f < heap[m].f) m = l; if (r < heap.length && heap[r].f < heap[m].f) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
   const start = tubes.map((t) => [...t]);
-  const seen = new Map([[key(start), 0]]);
-  push({ T: start, g: 0, f: h(start) });
+  const k0 = key(start);
+  const seen = new Map([[k0, 0]]);
+  push({ T: start, g: 0, k: k0, f: h(start) });
   let expanded = 0;
   while (heap.length && expanded++ < CAP) {
     const c = pop();
+    /* Throw away a stale entry instead of expanding it. `seen` is written at
+       PUSH time below, so a node can still be sitting in the heap carrying a
+       dearer g than the one now recorded for its key by a path found after it
+       was queued. Expanding that copy is not WRONG — its g is the true cost of
+       the path that produced it, so the par this function returns is always
+       FEASIBLE — but it is wasted expansions, and it is what lets par come back
+       1-2 above the true optimum on some boards. Every push is guarded by
+       `seen.get(k) <= g` and values only ever decrease, so seen.get(c.k) <= c.g
+       always holds here and this fires only on the strictly-dearer case.
+
+       The key rides on the node rather than being recomputed with key(c.T):
+       key() sorts and joins every tube, which on a 7-colour board costs more
+       per pop than the whole check saves. */
+    if (c.g > seen.get(c.k)) continue;
     if (c.T.every((t) => !t.length || done(t))) return c.g;
     for (let a = 0; a < c.T.length; a++) {
       const from = c.T[a];
@@ -938,7 +1063,7 @@ export function boardPar(tubes, colorCount = 0) {
         const k = key(N), g = c.g + 1;
         if (seen.has(k) && seen.get(k) <= g) continue;
         seen.set(k, g);
-        push({ T: N, g, f: g + W * h(N) });
+        push({ T: N, g, k, f: g + W * h(N) });
       }
     }
   }
@@ -1042,6 +1167,43 @@ built from `par`, so the cards pay off; the HUD, "Need met!" and the floor
      are what keeps a run OUT of sudden death for longer. */
   const suddenDeath = unclamped < playPar;
 
+  /* ── C-7 INSTRUMENT — DELETE THIS BLOCK ONCE MEASURED ──────────────
+     Phase 1 could only prove the SHAPE of the C-7 problem from the
+     constants: sudden death is `buffer + carry + cards + rule < drain`, and
+     that inequality is satisfied far earlier than the source comment's
+     "round 14-15" target or AGENTS.md's "round 15-25". What it could not do is
+     run `boardPar`, so it could not say which round a real run actually
+     crosses on. That number decides whether MOVE_ECONOMY needs retuning at
+     all, and it is not derivable on paper — `par` varies per board, so the
+     crossover depends on the boards you happen to be dealt.
+
+     This is the measurement AGENTS.md asks for: play 5-6 runs and write the
+     numbers down. One line per board generated, in the browser console.
+
+     It logs the four fields the audit asked for (round, unclamped, playPar,
+     suddenDeath) PLUS budget.buffer/carry/drain and the card and rule
+     contributions, because the four on their own cannot be acted on — you
+     cannot tell from `unclamped` and `playPar` alone whether a round crossed
+     because the drain grew, the carry ran out, or the cards stopped paying.
+     The full line is the whole inequality, so a crossing can be read straight
+     off it.
+
+     `mode` separates daily from normal: they share these formulas but not
+     their twist and mutator inputs, and a daily regenerates its level on
+     resume, so its boards appear more than once and would otherwise be
+     double-counted.
+
+     Fires on every generateLevel call — new round, retry, and resume. That is
+     wanted: it is the retry and resume boards too, and the only noise is
+     repeat lines for the same round. */
+  console.log(
+    `[C7] r=${round} mode=${isDailyLevel ? "daily" : "normal"} ` +
+    `unclamped=${unclamped} playPar=${playPar} limit=${moveLimit} suddenDeath=${suddenDeath} ` +
+    `| buffer=${budget.buffer} carry=${budget.carry} drain=${budget.drain} boss=${budget.boss} ` +
+    `cards=${moveBonus + perfectClearBonus} rule=${ruleDelta}`
+  );
+  /* ── END C-7 INSTRUMENT ─────────────────────────────────────────── */
+
   return {
     tubes, moveLimit, colorCount, par, playPar, suddenDeath,
     boss: budget.boss, buffer: budget.buffer, carry: budget.carry, drain: budget.drain,
@@ -1143,20 +1305,25 @@ export function loadDailyRun() {
    system actually lives in: leaving a normal run threw the whole thing away,
    and the Exit dialog's "Progress will be lost" meant exactly that.
 
-   Saved at ROUND BOUNDARIES only — right after an upgrade is taken, while
-   the board on screen is one nobody has poured into yet. That single
-   decision is what keeps this cheap: the level is stored verbatim rather
-   than regenerated, because a normal run's level comes from Math.random, so
-   regenerating it would hand the player a DIFFERENT board for a round they
-   had already begun thinking about — sometimes kinder, sometimes much
-   worse, and never the one they actually left.
+   The LEVEL is saved verbatim rather than regenerated, because a normal run's
+   level comes from Math.random, so regenerating it would hand the player a
+   DIFFERENT board for a round they had already begun thinking about —
+   sometimes kinder, sometimes much worse, and never the one they actually
+   left. That is the decision that keeps this cheap.
 
-   Not persisting the mid-pour position is the deliberate half. It would
-   need the same tubesMatchLevel-style validation the daily has, and it
-   would restore a half-played board, which in a puzzle game hands the
-   player very little and costs a lot of surface to get right. Losing the
-   moves inside one round is the price, and it is a small one — rounds are
-   short, and someone who leaves mid-round has barely invested in it yet.
+   The live POSITION is saved too, on every pour, undo and hint (see
+   saveNormalLive in App.jsx), in a `live` block alongside it, and it is that
+   block — not the level — which is validated on load. This half came later
+   than the comment above used to admit, which still claimed the mid-pour
+   position was deliberately not persisted.
+
+   The one thing still written only at the boundary is the save that has the
+   PICK RESOLVED — the next board, in chooseUpgrade. A normal run's next board
+   depends on the card about to be picked, so there is nothing coherent to
+   store until the choice exists. The offer itself is not in that category: it
+   is written live at the solve, alongside the cleared board, precisely so a
+   player cannot leave and come back to re-roll it. So a run left sitting on
+   the upgrade screen loses the tap, not the choice.
 
    `mutatorId` is this run's weekly rule, and it is what makes a resumed run
    the same run. Without it the pinned mutator would be re-resolved from
@@ -1315,9 +1482,15 @@ export function formatCountdown(ms) {
    Perfect Clear and Mega Bonus are on/off, Combo Master is covered by Combo
    Legend (but not the other way round), and Lucky Drop / Super Lucky are
    judged by whether taking them actually moves the chance — not by
-   getLuckyChance's 0.7 ceiling, which is only ever a CLAMP: the two luck
-   cards sum to 0.2 + 0.35 = 0.55, so the old `>= 0.7` test could never be
-   true and silently filtered nothing. Measured over 200 simulated days with
+   getLuckyChance's ceiling, because that ceiling is LUCK_CAP = 0.4 and it IS
+   reachable: the two luck cards sum to 0.2 + 0.25 = 0.45, which clamps to 0.4,
+   so once one of them is owned the other is genuinely dead. That is why the
+   test is an equality on the before-and-after chance rather than a threshold.
+   (This used to describe a 0.7 ceiling that 0.2 + 0.35 = 0.55 "could never
+   reach", so an old `>= 0.7` test silently filtered nothing. Under the real
+   0.4 cap the equivalent threshold test WOULD have been wrong the other way —
+   it would have filtered Super Lucky even when Lucky Drop was not owned.)
+   Measured over 200 simulated days with
    random picks, 13.8% of all daily cards and 35.6% of all offers had at
    least one of these, and from round 9 on more than half of the offers. */
 export function isDeadUpgrade(id, owned = []) {
@@ -1484,6 +1657,13 @@ export function loadScoreRuns() {
   }
 }
 
+/* Monotonic per-session counter behind recordScoreRun's `id`. Module scope, so
+   it is not a fresh binding per call the way a body-scope let would be. It only
+   has to be unique among the rows in one merged list, which is why resetting it
+   on a reload is harmless: the ids it produced are gone with the rows they
+   identified. */
+let scoreRunSeq = 0;
+
 /* Records one finished run, and returns everything the results card needs to
    render without a second read of storage.
 
@@ -1501,7 +1681,27 @@ export function loadScoreRuns() {
 export function recordScoreRun(score, round) {
   const s = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
   const r = Number.isFinite(round) ? Math.max(0, Math.floor(round)) : 0;
-  const entry = { score: s, round: r, ts: Date.now() };
+  const ts = Date.now();
+  /* Identity for THIS row, and it is deliberately not derived from anything
+     stored. `ts` alone was the old key, and two runs can genuinely finish
+     inside the same millisecond with the same score — the sort then puts them in
+     an order that is stable rather than meaningful, and findIndex on
+     (ts, score) returned whichever of the two happened to be merged first. The
+     results card would then show a rank belonging to the other run.
+
+     A module-local counter makes the identity unique per call, which is the
+     only property findIndex needs: the entry compared against is the very
+     object this function built, so the comparison cannot match a different row
+     no matter what else is in the list. Wrapping past MAX_SAFE_INTEGER is not a
+     concern — two calls would have to be 9e15 apart.
+
+     This never outlives the call. loadScoreRuns maps every row it reads back to
+     exactly {score, round, ts}, dropping id, so the id cannot collide with a
+     future session's counter and a save written by this build is read back
+     identically by any other. Writing id to disk is harmless but pointless, so
+     the row is stripped on the way out rather than left to be dropped on the
+     way in. */
+  const entry = { score: s, round: r, ts, id: ++scoreRunSeq };
   /* Load the best from disk rather than only from the list: the list is capped,
      so a record-setting run is written and then evicted from the list by eight
      better runs in the same session, and deriving the best from the list alone
@@ -1509,11 +1709,15 @@ export function recordScoreRun(score, round) {
   const prevBest = loadScoreBest();
   const merged = [entry, ...loadScoreRuns()]
     .sort((a, b) => b.score - a.score || b.ts - a.ts);
-  const rank = merged.findIndex((e) => e.ts === entry.ts && e.score === entry.score) + 1;
+  const rank = merged.findIndex((e) => e.id === entry.id) + 1;
   const isNew = s > prevBest;
   const best = Math.max(prevBest, s);
   try {
-    localStorage.setItem(SCORE_RUNS_KEY, JSON.stringify(merged.slice(0, SCORE_RUNS_MAX)));
+    /* id stripped on the way out, so what lands on disk is exactly the shape
+       loadScoreRuns reads — see the note on `entry`. */
+    localStorage.setItem(SCORE_RUNS_KEY, JSON.stringify(
+      merged.slice(0, SCORE_RUNS_MAX).map(({ score, round, ts }) => ({ score, round, ts })),
+    ));
     if (isNew) localStorage.setItem(SCORE_BEST_KEY, String(best));
   } catch {
     /* Storage full or unavailable. The caller still gets a coherent verdict
@@ -1523,6 +1727,14 @@ export function recordScoreRun(score, round) {
      identity. It cannot use its score or its position: the board is sorted by
      score, so a run that beat the previous best and a run that finished below
      it are two different cases, and a tie puts two runs on the same figure.
-     Matching on the timestamp is exact in all three. */
-  return { score: s, round: r, best, isNew, rank, ts: entry.ts };
+     Matching on the timestamp separates the first two but not the third.
+
+     `id` comes back too, and it is the stronger key: ts is only unique to the
+     millisecond. Nothing in the app matches the card's row by either field —
+     "On Board" shows the `rank` computed above, not a row lookup — so `id`
+     exists to make THAT number unambiguous rather than to be consumed by a
+     caller. ts is kept in the return because it is the card's only other
+     handle on this run, and adding an id to what is written would break
+     loadScoreRuns' shape for no gain. */
+  return { score: s, round: r, best, isNew, rank, ts: entry.ts, id: entry.id };
 }

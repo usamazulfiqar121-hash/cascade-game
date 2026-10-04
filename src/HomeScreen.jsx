@@ -219,11 +219,26 @@ export default function HomeScreen({
             to the mode buttons and today's goal instead. Both blocks are
             gated on the same flag, so they are never on screen together. */}
         {!hasPlayedOnce && (
-          /* Decorative only: aria-hidden and pointer-events: none take it
-             out of the tab order and the a11y tree entirely rather than
-             leaving an unlabeled, do-nothing button for a screen reader to
-             announce. */
-          <div className="fade-up" style={{ ...S.hero, animationDelay: "0ms" }} aria-hidden="true">
+          /* Decorative only: no interaction, no announcement, nothing for a
+             keyboard to land on.
+
+             inert is what actually does all three, and it was missing.
+             aria-hidden alone only hides the subtree from screen readers —
+             it does NOT remove it from the tab order, and pointer-events:none
+             only stops mouse and touch. Tab still walked into these four
+             tubes, each one a real <button> (Tube is the board's own
+             component, deliberately, so the hero is pixel-identical to
+             gameplay), landing on an unlabeled control that does nothing
+             when pressed: the a11y version of the empty dead space this
+             comment already said it didn't want. A focused element inside an
+             aria-hidden subtree is also a WCAG 4.1.2 failure, and Chrome can
+             log it as an aria-hidden-while-focused error in the console —
+             which would have been noise on a screen that is otherwise clean.
+
+             React 19 takes inert as a real boolean; on React 18 and below it
+             had to be the string "" and inert={true} would not have applied
+             at all, so this is a version-coupled line. */
+          <div className="fade-up" style={{ ...S.hero, animationDelay: "0ms" }} aria-hidden="true" inert>
             {HERO_TUBES.map((balls, i) => (
               <div
                 key={i}

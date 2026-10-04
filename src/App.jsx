@@ -1,12 +1,37 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from "react";
-import { T, D, MAX_HEIGHT, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, RULE_KIND_LABEL, RULE_KIND_COLOR, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT, roundsText } from "./constants";
+import { T, D, COLORS, BEST_KEY, ACH_KEY, ACHIEVEMENTS, RARITY, UPGRADES, CATEGORY, FOCUS_OFFERS, RULE_KIND_LABEL, RULE_KIND_COLOR, rarityText, rarityTint, STREAK_CEREMONY, STREAK_MILESTONES, CALM_DISCOUNT, roundsText } from "./constants";
+/* A-02: six names were removed from these two import lists —
+   sumMoveBonus, shuffle, mulberry32 and applyAutoSort from ./gameLogic,
+   MAX_HEIGHT from ./constants. MOVE_ECONOMY went too (it was on the gameLogic
+   list), which leaves `RETRIES_PER_RUN, moveBudget, LUCK_CAP` as the
+   survivors of that clause.
+
+   Verified by reading this file end to end, not by grep — the shell has
+   been dead for every batch (see AUDIT_v1.md PRE-CHECK), so an absent
+   reference could not be proved absent any other way. Every one of the six
+   appeared on the import line and nowhere else in code. MOVE_ECONOMY does
+   appear in two comments ("see MOVE_ECONOMY.drainFrom", "Balanced in
+   simulation against the rest of the pool (see MOVE_ECONOMY)") — those are
+   prose pointing at the object in gameLogic.js, not uses of the binding, so
+   they survive and still read correctly.
+
+   `moveBudget` is what actually replaced MOVE_ECONOMY here: the render asks
+   moveBudget(round, carry, ...) for a round's drain and never reads the
+   economy object directly, which is the right direction — a component asking
+   a function for one number it needs cannot drift from how that number is
+   computed. `MAX_HEIGHT` was the same kind of leftover: the tube geometry
+   lives in Tube.jsx (tubeDims reads it there), so App.jsx had no use for it.
+
+   Removing an import that WAS used is a ReferenceError at build time, not a
+   silent no-op — so this is a change the build will catch if the read was
+   wrong. VERIFICATION: none yet; no build has run. */
 import {
-  sumMoveBonus, getLuckyChance, getComboEvery, getMegaEvery,
+  getLuckyChance, getComboEvery, getMegaEvery,
   pickRandomUpgrades, isTubeSolved, canPour, pour, isSolved,
-  shuffle, mulberry32, dailyKey, dateToSeed, computeStreak,
+  dailyKey, dateToSeed, computeStreak,
   reconcileStreakShield, isOneMoveFromSolved, updateBestStreak,
-  applyAutoSort, generateLevel, findHint,
   loadDailyState, saveDailyState,
+  generateLevel, findHint,
   msUntilNextDaily, formatCountdown, pickDailyUpgrades,
   dailyRoundSeed, dailyLuckRoll, DAILY_STREAM,
   DAILY_STATE_KEY, DAILY_RUN_KEY,
@@ -17,7 +42,7 @@ import {
   saveDailyRun, clearDailyRun, loadDailyRun, tubesMatchLevel,
   saveNormalRun, clearNormalRun, loadNormalRun,
   pityActive, runArchetype, pickArchetypes, dailyArchetype,
-  weekMutator, mutatorById, offerCount, RETRIES_PER_RUN, MOVE_ECONOMY, moveBudget, isBossRound,
+  weekMutator, mutatorById, offerCount, RETRIES_PER_RUN, LUCK_CAP, moveBudget, isBossRound,
 } from "./gameLogic";
 import { S } from "./theme";
 import { CSS } from "./globalStyles";
@@ -204,6 +229,30 @@ function achToastMs(meta, reduceMotion) {
   return Math.max(1200, base - (reduceMotion ? CALM_DISCOUNT : 0));
 }
 
+/* Tapping an empty source tube says so, and this is what keeps that from
+   becoming noise. Same shape as suppressClickUntilRef — a performance.now()
+   deadline rather than React state — because the thing being guarded is a
+   burst of taps inside a few hundred milliseconds, which is far too short for
+   a re-render to be the right place to judge it.
+
+   showToast REPLACES whatever is up and restarts its timer, so without this a
+   player drumming on the empty tube would hold the message on screen
+   indefinitely and it would stop reading as feedback and start reading as
+   something stuck. 1200ms is long enough that one deliberate second tap
+   re-reads it, and short enough that it cannot outlive the player's own hand
+   movement.
+
+   Module scope, which is the whole point of it living here: declared inside
+   the component body this was a NEW BINDING on every render, so it looked
+   like a constant to every reader while being a fresh value each time. That
+   is harmless until the first person adds it to a dependency array — and
+   react-hooks/exhaustive-deps does not flag a body-scope `const` as unstable,
+   because a body-scope const is a perfectly legitimate dependency. So the
+   mistake would ship with no lint error at all, as a callback recreated on
+   every render. At module scope it is a real number and the question is
+   settled. */
+const EMPTY_TAP_GUARD_MS = 1200;
+
 /* ═══════════  COMPONENTS  ═══════════ */
 
 /* The daily challenge's "next puzzle in HH:MM:SS" label, on the daily
@@ -268,6 +317,15 @@ const CARD_STAGGER_STEP = 80;
 const CARD_STAGGER_FADE = 380;
 const SCREEN_SHIELD_MS = 350;
 const CONFIRM_SCRIM_GUARD_MS = 400;
+
+/* How long the lifetime-stats write waits for the changes to stop arriving.
+   Long enough that a fast sequence of pours collapses into one storage write
+   (a pour is ~300ms of flight and landing, so several can land inside this),
+   short enough that the Profile screen a player taps straight after a round
+   almost always reads a settled number. It is flushed unconditionally when the
+   app is hidden or unmounted, so this is a debounce on WHEN, never a risk of
+   losing the value. */
+const STATS_FLUSH_MS = 1200;
 
 /* The round's two numbers, under the board while the round is live: the NEED
    (the fewest moves this board can be done in — the limit never drops below
@@ -580,11 +638,11 @@ export default function Cascade() {
      on Home that depends on "today" (the card, the week strip, the streak,
      the shield) is worked out while rendering. Nothing re-renders at
      midnight by itself, and the old watcher only reloaded dailyState if a
-     one-second tick happened to land in the last second before midnight.
+     tick happened to land in the last minute before midnight.
      A phone that sleeps through midnight never gets that tick, so the app
      kept showing yesterday's "Daily Attempt Used" / "Come back tomorrow"
      card and yesterday's week (reproduced with a faked clock). Now the day
-     key itself is compared, every second while the app is awake and again
+     key itself is compared, on a timer while the app is awake and again
      the moment it becomes visible, so it doesn't matter how the midnight
      was slept through. dayTick exists only to force that re-render. */
   const [, setDayTick] = useState(0);
@@ -609,7 +667,19 @@ export default function Cascade() {
       syncDailyReminders();
     };
     const onVisible = () => { if (!document.hidden) refreshDay(); };
-    const id = setInterval(refreshDay, 1000);
+    /* 60s, not 1s. refreshDay() calls dailyKey() — which is a new Date() and
+       a toISOString() string allocation — and this interval fires for as long
+       as the app is open, including on Home where nothing else is happening.
+       At 1s that was 3,600 needless date allocations an hour, forever, for a
+       comparison that can only ever change at UTC midnight. The visible-change
+       hook above already covers the case this interval was added for (a phone
+       asleep through midnight wakes to a fresh check), and at a minute's
+       granularity the worst a live app can be late by is 59s past midnight —
+       against a daily puzzle that resets on a 24h cycle, i.e. invisible.
+
+       Not 60_000 exactly: no reason to prefer it, and a plain number is one
+       fewer thing to read. */
+    const id = setInterval(refreshDay, 60_000);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(id);
@@ -619,11 +689,12 @@ export default function Cascade() {
   const [screen, setScreen] = useState("home");   // "home" | "game"
   /* Home <-> game switches instantly, and a confirm dialog vanishes the moment it is
      answered, so a second tap on the button that caused either (a double-tap on "Exit"
-     in the Exit-to-Home dialog, on Play, or on the dialog's Cancel) landed on
+     in the Exit-to-Home dialog, or on the dialog's Cancel) landed on
      whatever the screen underneath had at that spot: coming home, the Daily Challenge
      card, which started a Daily run; after Cancel on the Reset dialog, the
      Color-Blind row, which toggled it. A transparent layer swallows input for
-     SCREEN_SHIELD_MS after every screen change and every dialog close. */
+     SCREEN_SHIELD_MS after those two, and after nothing else — see the two
+     effects below for why arriving at the board is not one of them. */
   const [screenShield, setScreenShield] = useState(false);
   const shieldTimerRef = useRef(null);
   const raiseShield = useCallback(() => {
@@ -632,11 +703,29 @@ export default function Cascade() {
     shieldTimerRef.current = setTimeout(() => setScreenShield(false), SCREEN_SHIELD_MS);
   }, []);
   useEffect(() => () => clearTimeout(shieldTimerRef.current), []);
+  /* The shield exists for exactly one shape of accident: a tap that has already
+     been spent on the control the player pressed, arriving a frame later on
+     whatever now occupies those pixels. Both cases below are that — arriving
+     Home, where the Daily card would start a run; a dialog closing, where the
+     Reset dialog's Cancel would land on the Color-Blind row.
+
+     Arriving at the GAME screen is not that shape, and used to be treated as
+     if it were. The player has just tapped Play or Daily and is watching the
+     board arrive; nothing about that transition is a second tap waiting to
+     land, and for the first SCREEN_SHIELD_MS the board was sitting under a
+     transparent input sink — so a player who moved straight on to the puzzle
+     had their first tap swallowed with nothing on screen to explain it. That
+     is the same "nothing answers me" failure the empty-tube tap used to have,
+     one screen earlier in the same gesture.
+
+     Deliberate navigation is therefore not shielded. Only the two transitions
+     above are, which is what the shield's own comment above describes. */
   const shieldScreenRef = useRef(screen);
   useEffect(() => {
     if (shieldScreenRef.current === screen) return;
+    const cameFromGame = shieldScreenRef.current === "game";
     shieldScreenRef.current = screen;
-    raiseShield();
+    if (screen === "home" && cameFromGame) raiseShield();
   }, [screen, raiseShield]);
   const shieldConfirmRef = useRef(confirmDialog);
   useEffect(() => {
@@ -692,6 +781,17 @@ export default function Cascade() {
     ? mutatorById(savedNormal.mutatorId) || weekMutator()
     : null;
   const [shieldedDates, setShieldedDates] = useState([]);
+  /* The streak, computed once per change rather than once per render.
+     computeStreak walks back day by day until it finds a miss, so it is cheap
+     for a new install (one or two entries) and can walk 36,500 days on a
+     corrupt save — and it was being called straight from the render body, on
+     every paint, for a number that only changes when a daily is finished or a
+     shield is spent. Memoised on exactly those two inputs, which are the only
+     things it reads; nothing else can change the answer.
+
+     Not a useState: it is derived, it is never written, and a state copy would
+     be one more thing that can disagree with dailyResults after a reload. */
+  const streak = useMemo(() => computeStreak(dailyResults, shieldedDates), [dailyResults, shieldedDates]);
   const [runUpgrades, setRunUpgrades] = useState([]);
   const [pendingUpgrades, setPendingUpgrades] = useState([]);
   /* Opening archetype. `archOffer` is non-null exactly while the run-start
@@ -788,8 +888,9 @@ export default function Cascade() {
   const [snapshots, setSnapshots] = useState([]);
   const [hintLeft, setHintLeft] = useState(2);
   /* The parts of a normal run's save that describe the ROUND (not the live
-     position), kept current every render so a handler can write the save
-     without listing all of them as dependencies. See saveNormalLive. */
+     position), kept current on every commit so a handler can write the save
+     without listing all of them as dependencies. See saveNormalLive, and the
+     effect near roundTransitionRef that fills it. */
   const normalSaveBaseRef = useRef(null);
   const [hint, setHint] = useState(null);
   /* A wrong-move counter, not a boolean: it only ever counts up, and every
@@ -1191,10 +1292,48 @@ export default function Cascade() {
      than inside the setStats updater above. An updater has to be pure:
      React is free to run one more than once (StrictMode runs every one
      twice in dev) and free to discard a render outright, so a write inside
-     it happened twice, or happened for state that was never committed. */
+     it happened twice, or happened for state that was never committed.
+
+     Coalesced rather than written on every `stats` change. recordMoves is
+     called per pour and touches totalMoves, so this used to be a synchronous
+     JSON.stringify + localStorage write on the critical path of every single
+     pour — a blocking main-thread write between two animations, repeated for
+     the whole length of a round. The run save next door already batches the
+     same way (the boundary write in chooseUpgrade), and these are lifetime
+     counters shown on a Profile screen, where a few hundred ms of lag is
+     invisible.
+
+     Flushed wherever the number could otherwise be seen or lost: on every
+     change (debounced by STATS_FLUSH_MS, so a burst of pours is one write),
+     when the app is hidden — the moment Android may kill the process — and on
+     unmount. A run abandoned mid-round still persists everything up to its
+     last flush, which is the same guarantee the run save itself gives. */
+  const statsTimerRef = useRef(null);
+  /* A render-phase write, unlike the normalSaveBaseRef one above which moved
+     into an effect — and deliberately so. This one exists ONLY so the debounced
+     flush reads the newest stats without listing `stats` as its own dependency
+     (which would defeat the debounce it is debouncing). It writes no external
+     state and no ref another system reads; the value is discarded with the
+     render. It is the standard latest-value-for-a-debounced-callback pattern. */
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
+  const flushStats = useCallback(() => {
+    if (statsTimerRef.current) { clearTimeout(statsTimerRef.current); statsTimerRef.current = null; }
+    try { localStorage.setItem("cascade:stats", JSON.stringify(statsRef.current)); } catch {}
+  }, []);
   useEffect(() => {
-    try { localStorage.setItem("cascade:stats", JSON.stringify(stats)); } catch {}
-  }, [stats]);
+    if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
+    statsTimerRef.current = setTimeout(flushStats, STATS_FLUSH_MS);
+    return () => clearTimeout(statsTimerRef.current);
+  }, [stats, flushStats]);
+  /* Unmount, and the moment the app goes to the background — Android can kill
+     a WebView process with no further warning once it is hidden, so this is the
+     last point a pending counter change can still be written. */
+  useEffect(() => {
+    const onHide = () => { if (document.hidden) flushStats(); };
+    document.addEventListener("visibilitychange", onHide);
+    return () => { document.removeEventListener("visibilitychange", onHide); flushStats(); };
+  }, [flushStats]);
   const recordGameStart = useCallback(() => recordStats((p) => ({ ...p, gamesPlayed: p.gamesPlayed + 1 })), [recordStats]);
 
   /* Shows a toast, replacing whatever is up, and arms its timer.
@@ -1253,6 +1392,45 @@ export default function Cascade() {
     dismissToast();
   }, [toast, dismissToast]);
 
+  /* ═══ TOAST vs SCREEN CHANGE ═══
+
+     The toast is rendered at the app ROOT (see the render), not inside either
+     screen, so it outlived every navigation. Three separate consequences, all
+     from the same missing piece:
+
+       - An arrival toast was raised against a board, and the board went away
+         underneath it. The placement effect below stops treating a toast as an
+         arrival toast the moment `screen` is no longer "game" (toastIsArrival),
+         so the card visibly JUMPED out of the band above the tubes and down to
+         the bottom anchor, then sat there for the rest of its timer.
+       - The budget breakdown and the empty-tube reply belong to a board that
+         is no longer on screen at all, and were carried onto Home with it.
+       - Both timers kept running, so a card that was supposed to be gone was
+         still being tracked by the clock that would eventually remove it.
+
+     dismissToast rather than a bare setToast(null), because it cancels BOTH
+     timers. Leaving either one armed means a callback fires into whatever
+     toast has taken this one's place by then. */
+
+  /* One exemption, and it earns its place: a score-attack run exited straight
+     from the Exit dialog raises its result toast ("New High Score!" / "Score
+     recorded") in the SAME tick it navigates home — that toast is the entire
+     payoff of the mode, and it belongs on the Home screen, where the new best
+     it is reporting is actually on display. Clearing it on arrival would throw
+     away the only feedback the mode ever gives.
+
+     A ref rather than a field on the toast config, so the toast object itself
+     keeps exactly the shape showToast and its __id guard already assume. Read
+     by BOTH screen-change and level-change clears, because exiting a score run
+     changes the level too (restartRun) — one flag, two readers, and the 800ms
+     timer in openExitDialog resets it if the popstate never arrives. */
+  const toastKeepOnExitRef = useRef(false);
+
+  useEffect(() => {
+    if (toastKeepOnExitRef.current) { toastKeepOnExitRef.current = false; return; }
+    dismissToast();
+  }, [screen, dismissToast]);
+
   /* The free band an arrival toast may occupy: 24px is exactly the distance the
      toastIn animation starts from (translateY(-24px) at 0%), so a card placed
      here slides in flush with the top of the board box instead of sweeping up
@@ -1303,6 +1481,25 @@ export default function Cascade() {
      fires once per new board (a retry of a boss round re-announces it, which
      is right — it is a new attempt at the same squeeze). */
   useEffect(() => {
+    /* Every board gets a clean slate, before anything is announced about it.
+       Placed HERE rather than at the top of the later [level] effect (the one
+       that lays the tubes out) because this effect is declared first and
+       therefore runs first: this is the effect that raises the sudden-death /
+       drain / boss announcement, so a clear placed after it would take down
+       the very card it had just put up.
+
+       Unconditional, and before the guard below, so it also covers the paths
+       that return early: a resume straight onto the upgrade cards, and a level
+       regenerated while the player is on Home. A toast has no meaning on a
+       board that no longer exists, and it is the OLD one being dropped here —
+       the announcement for the incoming board is raised further down, after
+       this line.
+
+       Honours the score-exit exemption for the same reason the screen-change
+       clear does: exiting a score run calls restartRun, which regenerates the
+       level, so an unconditional dismiss would wipe the "New High Score!" card
+       that openExitDialog raised one statement earlier. */
+    if (!toastKeepOnExitRef.current) dismissToast();
     /* pendingResumeRef is still set here (this effect runs before the level
        effect that consumes it): a daily resumed onto its upgrade cards has
        already cleared this boss, so announcing it would be wrong. */
@@ -1726,6 +1923,31 @@ export default function Cascade() {
     achToastTimerRef.current = next ? setTimeout(showNextAchToast, achToastMs(next, reduceMotionRef.current)) : null;
   }, []);
 
+  /* Drops the achievement toast and anything still queued behind it.
+
+     The achToast render sits INSIDE {screen === "game"}, so the card itself
+     unmounted on leaving the game screen and there was never anything to see
+     off it. Everything behind the card was left running, though: the queue
+     kept draining on its timer with no screen showing it, and — worse — the
+     streak effect re-runs on every dailyResults change, which is exactly what
+     finishing a daily does. So an unlock could be raised while the player was
+     already on Home, land in an invisible queue, and still be drawn if they
+     were back on a board before its window closed.
+
+     Nothing is lost by dropping it: unlockAch has already written the id to
+     ACH_KEY and pushed it into `achievements` before this can run, so the
+     unlock is permanent and visible in the Profile. Only the announcement is
+     being cancelled, and it was never one the player could see. */
+  const clearAchQueue = useCallback(() => {
+    if (achToastTimerRef.current) { clearTimeout(achToastTimerRef.current); achToastTimerRef.current = null; }
+    achToastQueueRef.current = [];
+    setAchToast(null);
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "game") clearAchQueue();
+  }, [screen, clearAchQueue]);
+
   const unlockAch = useCallback((id) => {
     /* Read from localStorage first — early return prevents repeat toasts */
     let current = [];
@@ -1801,14 +2023,13 @@ export default function Cascade() {
      the last call in the tick be the one that wins. Handled by the ref, but not
      worth making the reader re-derive that to save three lines. */
   useEffect(() => {
-    const streak = computeStreak(dailyResults, shieldedDates);
     setBestStreak(updateBestStreak(streak));
     /* days is sorted ascending, so the LAST unlock in the batch is always the
        highest milestone the streak qualifies for. */
     STREAK_MILESTONES.forEach((m) => {
       if (streak >= m.days) unlockAch(m.id);
     });
-  }, [dailyResults, shieldedDates, unlockAch]);
+  }, [streak, unlockAch]);
 
   /* `screen` inside a callback's closure is the value it had when the
      callback was created, so the deferred round transitions below can't
@@ -1822,10 +2043,30 @@ export default function Cascade() {
      card live in the same if/else, so they can never both be queued. */
   const roundTransitionRef = useRef(null);
 
-  normalSaveBaseRef.current = {
-    round, upgrades: runUpgrades, level, lastRoundMovesLeft, lastRoundUnderPar, path: runPath,
-    mutatorId: weeklyMutator ? weeklyMutator.id : null, retriesLeft,
-  };
+  /* The base every normal-run save is written from — the run-level fields that
+     do not change mid-round, so the per-pour save below can carry just the live
+     position and merge it over these.
+
+     This was a bare assignment in the render body. It is an effect now, and the
+     reason is StrictMode: React may run a render and throw it away, and a
+     discarded render that writes a ref has mutated something the committed tree
+     never produced. The value is pure derived state so nothing observable was
+     wrong — but a render that gets discarded should not be able to write at
+     all, and "harmless today" is how the next version of this file ends up
+     reading a value it thought came from a commit.
+
+     Effect rather than assignment-in-place, so the ref can only ever hold the
+     committed run. Every reader is downstream of a commit — saveNormalLive is
+     called from pointer handlers and from the deferred round-transition timers,
+     never during render — so the ref is populated before any of them can run,
+     and the `!normalSaveBaseRef.current` guard below is only ever the "no run
+     to save" case, never "the effect has not fired yet". */
+  useEffect(() => {
+    normalSaveBaseRef.current = {
+      round, upgrades: runUpgrades, level, lastRoundMovesLeft, lastRoundUnderPar, path: runPath,
+      mutatorId: weeklyMutator ? weeklyMutator.id : null, retriesLeft,
+    };
+  }, [round, runUpgrades, level, lastRoundMovesLeft, lastRoundUnderPar, runPath, weeklyMutator, retriesLeft]);
   /* Writes the normal run's save with a live position: every pour, undo and
      hint, and the cleared board + its offer at the solve. Normal runs only
      (canAssist) — the daily keeps its own save and score attack keeps none. */
@@ -1983,8 +2224,35 @@ export default function Cascade() {
       // bigger combo can make that same burst bigger, not just score more.
       // tier: 0 = plain pour, 1 = lucky roll, 2 = combo bonus, 3 = mega bonus.
       let bonus = 0, tier = 0;
+      /* ONE cap for both modes, and this used to be a bare 0.5 on the daily —
+         which put a Lucky Day's refund ceiling at 0.50 + 1/3 (combo2) + 2/8
+         (mega) = ~1.08 moves per pour, i.e. every pour came back with MORE
+         than it cost and the round could not be lost. That is invariant 4 in
+         AGENTS.md ("well under 1 move per pour") broken on exactly one twist,
+         on the twist whose whole identity is handing out extra moves. Twenty-
+         four meaningful pours is the clean way to see it: 12 lucky drops +
+         8 combo bonuses + 3 mega bonuses × 2 = 26 moves back for 24 spent.
+
+         Reusing LUCK_CAP rather than typing 0.4 is the point. Two literals is
+         how the daily drifted above the normal ceiling in the first place, and
+         it would drift again the next time the cap is tuned — this is the same
+         trap A-02 records about MOVE_ECONOMY surviving as a number in a
+         comment. One constant, one meaning: getLuckyChance already clamps to
+         it, so the clamp below is only about the twist's bonus on top.
+
+         Lucky Day keeps its meaning, because twistMoveDelta returns 0 for
+         "lucky" — this bonus IS the twist, there is no second payout to lose.
+         On a run with no luck card it is 0.25 against a normal 0, and on Lucky
+         Drop alone it is the full 0.4 against a normal 0.2. It only adds
+         nothing on a run that already holds BOTH luck cards, because that run
+         is already sitting at the cap — the same situation in which the second
+         luck card is filtered out of the offer for being dead.
+
+         Balance is unaffected in every other way: dailyLuckRoll is unchanged,
+         so the roll for a given (day, round, pour) is identical, and two
+         players on the same day with the same cards still see the same drops. */
       const luckyChance =
-        level.suddenDeath ? 0 : Math.min(0.5, getLuckyChance(runUpgrades) + (isDaily && dailyTwist?.id === "lucky" ? LUCKY_DAY_BONUS : 0));
+        level.suddenDeath ? 0 : Math.min(LUCK_CAP, getLuckyChance(runUpgrades) + (isDaily && dailyTwist?.id === "lucky" ? LUCKY_DAY_BONUS : 0));
       /* Daily: the roll is fixed by (day, round, pour number) so every
          player with the same luck upgrade gets the same drops. Math.random
          here made the daily a different game for each player, and let
@@ -2447,7 +2715,43 @@ export default function Cascade() {
       setSelected(null);
       setComboCount(0);
     }
-  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, dailyResults, hasPlayedOnce, recordRound, recordMoves, recordCombo, dailyState, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, runPath, weeklyMutator, retriesLeft, hintLeft, lastRoundUnderPar]);
+  }, [tubes, moves, bonusMoves, comboCount, level, runUpgrades, round, best, spawnParticles, unlockAch, isDaily, isScore, canAssist, hasPlayedOnce, recordRound, recordMoves, recordCombo, undoLeft, undoUsedThisRun, colorBlindOn, lastRoundMovesLeft, dailyRun, persistDailyRun, dailyBest, dailyBestScore, dailyTwist, showToast, celebrate, flashClear, celebrateClearBurst, runFocus, scoreDisplay, hintLeft, lastRoundUnderPar]);
+
+  /* Five entries were removed from the array above, and the way they were
+     chosen is the only safe way to touch this list without a working
+     exhaustive-deps: they are the ones the body provably NEVER READS.
+
+       dailyResults  — only setDailyResults(dr) at the round clear
+       dailyState    — only setDailyState(failedState) in the run-over branch
+       runPath       — not referenced anywhere in the body
+       weeklyMutator — not referenced anywhere in the body
+       retriesLeft   — not referenced anywhere in the body
+
+     Removing a dep that IS read is what produces a stale closure, and on a
+     callback this size that failure is invisible until it ships: a pour reads
+     last round's moves left, or saves the wrong upgrade list. Removing one
+     that is NOT read cannot do that, because there is no read to go stale —
+     the closure never captured it, so the recreated function and the kept one
+     behave identically. That asymmetry is the whole reason these five and
+     nothing else were cut.
+
+     The first two are also the two that churned most: dailyResults is a fresh
+     object on every daily round clear and dailyState on every state
+     transition, and each one rebuilt this ~640-line closure for nothing.
+
+     The remaining 35 were each read and are kept. The audit's "callback
+     churn" framing overstated this: none of the survivors change identity on a
+     plain re-render (every one is set from an event or a round boundary, not
+     from the render itself), so the array's LENGTH was never the cost —
+     recreation happens when a dep's identity actually moves, and that is
+     correct behaviour for a function this wide. The real cost was five dead
+     entries, which is what this fixes.
+
+     saveNormalLive is used in here but is deliberately not listed: it is a
+     plain function rebuilt every render, and the only state it closes over is
+     canAssist (already a dep above, so this callback is rebuilt with it) and
+     normalSaveBaseRef (a ref, always current). Listing it would add a
+     per-render dependency and guarantee the churn this array avoids. */
 
   /* A drag ends in a pointerup, and the browser then fires a click on the
      tube the pointer was captured by (a mouse always does; a touch does if it
@@ -2456,19 +2760,9 @@ export default function Cascade() {
      drag-pour. Drags stamp this; onTubeClick ignores clicks until it passes. */
   const suppressClickUntilRef = useRef(0);
 
-  /* Tapping an empty source tube now says so, and this is what keeps that from
-     becoming noise. Same shape as suppressClickUntilRef above — a
-     performance.now() deadline rather than React state — because the thing
-     being guarded is a burst of taps inside a few hundred milliseconds, which
-     is far too short for a re-render to be the right place to judge it.
-
-     showToast REPLACES whatever is up and restarts its timer, so without this
-     a player drumming on the empty tube would hold the message on screen
-     indefinitely and it would stop reading as feedback and start reading as
-     something stuck. 1200ms is long enough that one deliberate second tap
-     re-reads it, and short enough that it cannot outlive the player's own
-     hand movement. */
-  const EMPTY_TAP_GUARD_MS = 1200;
+  /* Tapping an empty source tube now says so, and EMPTY_TAP_GUARD_MS is what
+     keeps that from becoming noise — its reasoning, and why it lives at module
+     scope rather than here, are with the constant at the top of this file. */
   const emptyTapUntilRef = useRef(0);
 
   const onTubeClick = useCallback((idx, e) => {
@@ -2643,7 +2937,27 @@ export default function Cascade() {
     if (!move) return;
     setHint({ from: move.from, to: move.to, key: Date.now() });
     setHintLeft((h) => h - 1);
-    if (moves > 0) saveNormalLive({ tubes, moves, bonusMoves, combo: comboCount, undoLeft, hintLeft: hintLeft - 1, undoUsed: undoUsedThisRun });
+    /* Written UNCONDITIONALLY. This used to be gated on `if (moves > 0)`,
+       which looks like a guard against saving a dead board — and is not, for
+       two reasons.
+
+       `moves` is moves USED, not moves left (compare attemptPour's
+       `setMoves(newMovesUsed)`), so `moves > 0` means "at least one pour has
+       happened this round". The gate therefore skipped the save for the whole
+       of move zero — which is the FIRST hint of every round, the most common
+       hint in the game, not an edge case. Exit → Continue handed it straight
+       back, which is invariant 3 broken on the most-tapped button in the game.
+
+       And the guard it was imitating does not apply here. attemptPour gates on
+       `!isSolved(next) && newMovesLeft > 0` because saving a board that is
+       already solved, or that has no moves left to play, would resurrect a
+       round that is over. A hint cannot do either: the board is unchanged and
+       legal by construction, since findHint only returns a move that keeps it
+       winnable. There is no state here worth refusing to persist.
+
+       `saveNormalLive` already declines on its own terms (canAssist), so this
+       line needs no mode guard — the same one-line argument as above applies. */
+    saveNormalLive({ tubes, moves, bonusMoves, combo: comboCount, undoLeft, hintLeft: hintLeft - 1, undoUsed: undoUsedThisRun });
     Snd.select();
     Haptic.light();
     armHintTimer();
@@ -3012,10 +3326,19 @@ export default function Cascade() {
           null,
           /* A daily saved before this field existed was built with Perfect
              Clear's rule (5+ moves left); honouring that here means the run
-             can only resume with MORE moves than it had, never fewer. */
-          saved.genUnderPar === undefined
-            ? saved.upgrades.includes("clear") && saved.genPrevLeft >= 5
-            : saved.genUnderPar === true,
+             can only resume with MORE moves than it had, never fewer.
+
+             The `=== undefined` branch that used to sit here was unreachable
+             and could not start firing: `loadDailyRun` coerces the field with
+             `r.genUnderPar = r.genUnderPar === true` (gameLogic.js:1145)
+             before this line ever sees it, so the value is always a boolean
+             and never undefined. The old-save case is already handled at the
+             coercion, which is why it defaults to false instead of rejecting
+             the save — a run written before Marksman existed stays resumable
+             and simply pays nothing for one round. Re-deriving the old rule
+             here as well was a second, unreachable answer to a question that
+             had already been answered. */
+          saved.genUnderPar === true,
         );
         if (tubesMatchLevel(saved.tubes, lvl.tubes)) {
           dailyRunDateRef.current = runDate;
@@ -3480,16 +3803,20 @@ export default function Cascade() {
          terms, rather than reusing the normal run's "nothing to save" line and
          letting a player walk away from a good run believing nothing was lost.
 
-         A normal run is saved too, but only at ROUND BOUNDARIES (see
-         saveNormalRun), so "saved" would overstate it in the other
-         direction — a player who pours a few moves and then leaves has
-         lost those moves even though the run itself is intact. The copy
-         names the actual boundary rather than rounding either way, and the
-         dialog is no longer `danger` for a normal run that has a save,
-         because what is being confirmed is no longer a loss. It stays the
-         same amber either way: the daily's version is about a resource (one
-         attempt a day) and this one is about a small, definite loss, and
-         neither is a destructive "are you sure" the red treatment is for. */
+         A normal run is saved too, and "saved" is what happens: saveNormalLive
+         writes the live position on every pour, undo and hint (attemptPour's
+         own save), and writes the solved board WITH the drawn offer at the
+         clear, so leaving costs the player only the upgrade pick they are one
+         tap away from. Nothing is written at the boundary that hasn't already
+         been written live — the boundary save in chooseUpgrade is a re-write
+         of the same thing with the pick resolved, which is why it is what the
+         resume path trusts. So the copy names the real boundary rather than
+         rounding it either way, and the dialog is no longer `danger` for a
+         normal run that has a save, because what is being confirmed is no
+         longer a loss. It stays the same amber either way: the daily's version
+         is about a resource (one attempt a day) and this one is about a small,
+         definite loss, and neither is a destructive "are you sure" the red
+         treatment is for. */
       message: isDaily
         ? "Your daily run is saved. Pick it up from Home any time today."
         : isScore && scoreCleared > 0
@@ -3500,17 +3827,23 @@ export default function Cascade() {
         /* Nothing on disk at all: a run still on its opening round, which has
            not been cleared yet, so no boundary has been written. */
         ? "This run hasn't cleared a round yet, so there's nothing to save. It starts over from round 1."
-        : /* The upgrade screen is a different loss, and the save cannot cover
-             it. A normal run's NEXT board depends on the card the player is
-             about to pick (an Extra Tube changes the board, a moves card
-             changes the limit), so there is nothing to save until the pick
-             happens — which is exactly why this save is written in
-             chooseUpgrade. A daily escapes this because its next board is
-             seedable from (date, round) alone.
+        : /* The upgrade screen, where the offer the player is reading was drawn at the
+             solve and saved with the solved board (see attemptPour's
+             solvedOffer save). So leaving here does NOT lose the cards — the
+             same three come back — and "saved exactly where you are" is
+             literally true: the save holds the cleared board, the offer, and
+             the moves left at the clear.
 
-             So leaving here rewinds to the START of the round they just
-             cleared, and "moves made in this round are lost" would be
-             badly understating it. */
+             What is NOT saved is the pick itself, and that is deliberate
+             rather than a gap: chooseUpgrade regenerates the next board from
+             the card chosen, so there is nothing coherent to write until the
+             choice exists. A daily never reaches this branch at all, because
+             its next board is seedable from (date, round) alone.
+
+             (This comment used to claim the save "cannot cover" this screen,
+             which was true before the offer was written at the solve, and
+             false after. Left corrected rather than deleted because the
+             distinction it draws is the reason the offer is saved there.) */
           "Your run is saved exactly where you are, and resumes from Home.",
       confirmLabel: "Exit",
       /* Danger for both kinds of real loss: a normal run with nothing on disk,
@@ -3525,6 +3858,15 @@ export default function Cascade() {
           const result = recordScoreRun(scoreToRecord, scoreCleared);
           setScoreBest(result.best);
           setScoreRuns(loadScoreRuns());
+          /* Whatever the board was saying goes first, so this result cannot
+             land on top of a leftover card — and because restartRun() below
+             regenerates the level, which the [level] effect now treats as a
+             new board, the clear has to happen here rather than being left to
+             that. The exemption ref then tells both screen-change and
+             level-change clears to leave THIS one alone: it is raised in the
+             same tick that navigates home, and it is the mode's payoff. */
+          dismissToast();
+          toastKeepOnExitRef.current = true;
           showToast({
             icon: result.isNew ? "🏆" : "🎯",
             color: "var(--gold)",
@@ -3556,8 +3898,10 @@ export default function Cascade() {
         navStateRef.current = { ...navStateRef.current, confirmDialog: false };
         exitConfirmedRef.current = true;
         /* Belt and braces: if the pop never produces a popstate, don't leave
-           the flag armed to swallow the next real back press. */
-        setTimeout(() => { exitConfirmedRef.current = false; }, 800);
+           the flag armed to swallow the next real back press. The toast
+           exemption rides along here for the same reason — left set, it would
+           let the NEXT screen change skip its clear. */
+        setTimeout(() => { exitConfirmedRef.current = false; toastKeepOnExitRef.current = false; }, 800);
         setConfirmDialog(null);
         popNav();
       },
@@ -3602,6 +3946,28 @@ export default function Cascade() {
     try { window.history.pushState({ page: "game" }, ""); } catch {}
     openExitDialog();
   };
+  /* The audit flagged this for a missing dep array and pointed at screenRef
+     (above) as the pattern to copy. I have NOT added one, deliberately — this
+     is a deviation from the finding's verdict, and the reason is that the
+     suggested fix is the more dangerous code here.
+
+     screenRef holds a primitive with one enumerable dep, so
+     `[screen]` can be exhaustive by inspection. This ref holds a FUNCTION, and
+     onBackFromGame closes over phase, moves and round and then calls
+     saveBestRound, restartRun, setScreen and openExitDialog — which between
+     them reach round, best, canAssist and more. A dep array on any honest
+     subset of that list converts this line from "always current" into
+     "current until I forget something", and a missed entry is a stale closure
+     on the hardware-back path: Back silently reading a pre-gameover phase,
+     or calling a stale openExitDialog. That failure is invisible until a
+     device is in someone's hand, and exhaustive-deps is exactly the check I
+     cannot run right now (the shell is dead — see AUDIT_v1.md BATCH 3
+     PRE-CHECK), so a wrong list here would ship unflagged.
+
+     One assignment per render of one ref field is not a performance problem;
+     it is the standard latest-ref idiom. The cost of getting it "right" here
+     is higher than the cost of leaving it, so it stays and the reason is
+     recorded instead. Revisit only alongside a real lint run. */
   useEffect(() => { backFromGameRef.current = onBackFromGame; });
   useEffect(() => {
     if (!confirmDialog) return undefined;
@@ -3612,10 +3978,14 @@ export default function Cascade() {
 
   const shareDaily = useCallback(async () => {
     try {
+      /* Read fresh rather than reusing the memoized `streak`: this fires after
+         the daily has just been recorded, and the share sheet has to carry the
+         streak INCLUDING today's result, which the memo above was computed
+         before. Deliberately not the same value. */
       const dr = JSON.parse(localStorage.getItem("cascade:dailyResults") || "{}");
-      const streak = computeStreak(dr, shieldedDates);
+      const freshStreak = computeStreak(dr, shieldedDates);
       const text = buildEmojiGrid(
-        dailyRun.rounds, dailyRun.totalMoves, streak, bestStreak,
+        dailyRun.rounds, dailyRun.totalMoves, freshStreak, bestStreak,
         dailyKey(dailyRunDateRef.current || new Date()),
         { twist: dailyTwist, score: dailyScore(dailyRun.rounds) },
       );
@@ -5232,7 +5602,7 @@ export default function Cascade() {
           achievements={achievements}
           stats={stats}
           best={best}
-          streak={computeStreak(dailyResults, shieldedDates)}
+          streak={streak}
           bestStreak={bestStreak}
           onClose={() => popNav()}
           /* Codex's permanent entry point. It used to be BottomNav's 4th tab;

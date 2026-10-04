@@ -16,7 +16,7 @@
    per-session number that would restart behind the player's back. */
 
 import { ARCHETYPES, CATEGORY, CATEGORY_ORDER, DAILY_TWISTS, UPGRADES, RULE_KIND_COLOR, RULE_KIND_LABEL } from "./constants";
-import { pickDailyTwist, MOVE_ECONOMY } from "./gameLogic";
+import { pickDailyTwist, MOVE_ECONOMY, LUCK_CAP } from "./gameLogic";
 import { loadCodex } from "./codex";
 import { useMemo, useState } from "react";
 import { useEnterShield } from "./useEnterShield";
@@ -31,7 +31,27 @@ import { useEnterShield } from "./useEnterShield";
    sentences: NEED is one thing only (the fewest moves the board requires), the
    four things that move it are Cards / Extra / Lost / Left, a round with no
    extras left is "No Extra", and the every-5th round is "Hard". The solver's own
-   name for the floor never reaches the screen, and neither does "goal". */
+   name for the floor never reaches the screen, and neither does "goal".
+
+   LUCKY is the eighth row and is deliberately not one of those terms: it is a
+   per-pour refund, not one of the things that decide a round's budget, so
+   folding it into the ladder above would have been a lie about what the ladder
+   is. It exists because the two luck cards state their own rates (20% and 25%)
+   and those two numbers do not simply add up — see the row itself. The cap is
+   interpolated from LUCK_CAP so this line cannot go stale when the economy is
+   retuned; the two card rates are deliberately NOT restated here, because
+   they live in the cards' own desc strings and a second copy in prose is a
+   second thing to forget to update.
+
+   This row used to end by claiming the cap was the one rule a player could not
+   read off their own cards, which was true while the cards said only "20%" and
+   "25%" and the pair therefore looked like 45%. Super Lucky's description now
+   carries the ceiling itself, so that claim is no longer true and the sentence
+   was replaced rather than kept: leaving it would have told a player holding
+   both cards that the number in their hand is a lie, which is a worse way to be
+   wrong than the original gap. What the row is still for is the REASON — the
+   cards now say the cap exists, the Codex says why an engineer's clamp beats
+   their arithmetic, which is the part a card line has no room for. */
 const MOVE_RULES = [
   { icon: "⛳", name: "NEED", desc: "The fewest moves this board can be done in. Your moves never drop below it, so every round can be won." },
   { icon: "🪄", name: "CARDS", desc: "Extra Tube and Auto-Sort make a board easier than the round was budgeted for, so the round arrives with that much more room than your need. This is the row that pays for them." },
@@ -40,6 +60,7 @@ const MOVE_RULES = [
   { icon: "⚡", name: "NO EXTRA", desc: "Once everything extra is gone, a round gives exactly your need and lucky / combo moves switch off. Move cards keep you out of it longer." },
   { icon: "↪️", name: "LEFT", desc: `Half the moves you finish a round with roll into the next one, up to ${MOVE_ECONOMY.carryCap}. Finish tight, start the next board richer.` },
   { icon: "👹", name: "HARD", desc: `Every ${MOVE_ECONOMY.bossEvery}th round has half the extra moves — unless everything extra is already gone, in which case it is a No Extra round like any other. Clear it and you get one extra upgrade to choose from.` },
+  { icon: "🍀", name: "LUCKY", desc: `Lucky Drop and Super Lucky each give their own chance of a refunded move on every pour you make, and the two together are capped at ${Math.round(LUCK_CAP * 100)}%. So holding both does not stack to the sum of their cards — the second one is worth less than its own number suggests, and that is a deliberate limit: uncapped, the pair would refund more than one move per pour and a round could not be lost.` },
 ];
 
 /* The same three-way split the daily twist disclosure already uses, so the
