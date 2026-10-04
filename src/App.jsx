@@ -510,6 +510,29 @@ export default function Cascade() {
      on Home as "You · N" on a daily the player never played. */
   const todayRounds = dailyState?.rounds ?? (isDaily ? dailyRun.rounds.length : 0);
   const toastTimerRef = useRef(null);
+  /* The 240ms "mark it exiting, then unmount it" timer, held separately from
+     the timer that STARTS that exit. showToast used to write the second
+     timeout back into toastTimerRef, so once a toast was already exiting the
+     ref pointed at the exit timer rather than the one that would have triggered
+     it — and clearTimeout there could not stop a removal already in flight.
+     Two refs means each timer is cancellable for what it actually is, which is
+     what makes an early dismissal safe (see dismissToast). */
+  const toastExitTimerRef = useRef(null);
+  /* Stamped onto every toast as `__id` by showToast, so a timer callback can
+     tell "the toast I was started for" from "the toast that has since replaced
+     it". Every toast timer re-checks its id before touching state, so a stale
+     timer can never clear a newer toast. Monotonic and never reset, which keeps
+     0 from being a valid id. */
+  const toastSeqRef = useRef(0);
+  /* The toast card itself, so an arrival toast can be MEASURED before it is
+     placed — see the placement effect below. */
+  const toastCardRef = useRef(null);
+  /* Where an ARRIVAL toast goes, read off the board's existing refs:
+     { id, top, fits }. `fits: false` means the free band between the top of the
+     board box and the top of the tubes is shorter than this particular card, so
+     the toast stays on the bottom anchor it has always used rather than
+     covering the tubes it is describing. */
+  const [toastPos, setToastPos] = useState(null);
 
   /* ═══ DAILY MODE — INITIALIZATION ═══ */
 
@@ -1174,14 +1197,105 @@ export default function Cascade() {
   }, [stats]);
   const recordGameStart = useCallback(() => recordStats((p) => ({ ...p, gamesPlayed: p.gamesPlayed + 1 })), [recordStats]);
 
+  /* Shows a toast, replacing whatever is up, and arms its timer.
+
+     `arrival: true` marks a toast that arrives WITH a board — a new round's
+     announcement, the drain tip, a run's opening briefing, the cost of the
+     first move — as opposed to answering something the player just did. Only
+     two behaviours key off it, and both are listed with the code that reads it:
+     placement (the effect below) and dismissal (yieldArrivalToast). The budget
+     breakdown, the empty-tube reply and every other response to a player action
+     leave it off and keep precisely the behaviour they had.
+
+     `__id` is what makes the timers safe to cancel. Each callback re-checks that
+     the toast it was started for is still the one on screen, so a timer left
+     over from a toast that has since been replaced — or dismissed early — does
+     nothing at all instead of clearing whatever came next. */
   const showToast = useCallback((config) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(config);
+    if (toastTimerRef.current) { clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
+    if (toastExitTimerRef.current) { clearTimeout(toastExitTimerRef.current); toastExitTimerRef.current = null; }
+    const mine = { ...config, __id: ++toastSeqRef.current };
+    setToast(mine);
     toastTimerRef.current = setTimeout(() => {
-      setToast((t) => t ? { ...t, exiting: true } : null);
-      toastTimerRef.current = setTimeout(() => setToast(null), 240);
-    }, config.duration ?? 2600);
+      /* Leave `exiting` unset if this toast is gone or has already been
+         replaced: there is nothing of ours left to animate out. */
+      setToast((t) => (t && t.__id === mine.__id ? { ...t, exiting: true } : t));
+      toastExitTimerRef.current = setTimeout(() => {
+        setToast((t) => (t && t.__id === mine.__id ? null : t));
+        toastExitTimerRef.current = null;
+      }, 240);
+    }, mine.duration ?? 2600);
   }, []);
+
+  /* Takes a toast down NOW, cancelling both of its timers so neither can act
+     afterwards. Immediate rather than animated on purpose: this is called from
+     inside a pointer gesture, and a 240ms fade would keep a card sitting over
+     the board for exactly as long as the player was trying to look at it. */
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) { clearTimeout(toastTimerRef.current); toastTimerRef.current = null; }
+    if (toastExitTimerRef.current) { clearTimeout(toastExitTimerRef.current); toastExitTimerRef.current = null; }
+    setToast(null);
+    setToastPos(null);
+  }, []);
+
+  /* Called from the tube handlers. An ARRIVAL toast has said what it came to
+     say by the time the player touches the board, and leaving it up means the
+     tube they just aimed at is behind it — so the first real interaction clears
+     it. Reads `toast` off the render rather than off the functional updater
+     because the timers may only be cancelled when there is actually an arrival
+     toast to cancel, and an updater cannot run side effects.
+
+     Deliberately a no-op for everything else. The "Nothing to move" reply has to
+     survive the second tap that re-reads it (see EMPTY_TAP_GUARD_MS), and the
+     budget breakdown is opened BY a tap and must not close itself. */
+  const yieldArrivalToast = useCallback(() => {
+    if (!toast || !toast.arrival) return;
+    dismissToast();
+  }, [toast, dismissToast]);
+
+  /* The free band an arrival toast may occupy: 24px is exactly the distance the
+     toastIn animation starts from (translateY(-24px) at 0%), so a card placed
+     here slides in flush with the top of the board box instead of sweeping up
+     through the progress bar and upgrade strip on its way in. */
+  const ARRIVAL_BAND_GAP = 24;
+  /* Where an arrival toast sits, measured rather than assumed. The band between
+     the top of the board box — which is the bottom of the HUD, progress bar,
+     combo slot and upgrade strip — and the top of the tube row is whatever is
+     left after the tubes are centred in it, and that swings with the tube count,
+     the fit scale, the upgrade strip wrapping and the viewport. A hardcoded top
+     offset is precisely what put the previous toast through the HUD.
+
+     The card is measured too, not guessed from its line count, because the wrap
+     depends on the real font metrics. `fits` is true only when the whole card
+     plus the gap clears the top of the tubes; when it is false the toast keeps
+     the bottom anchor below. Nothing is truncated either way, and no board space
+     is permanently reserved — see the render for what the short-screen case
+     actually does. */
+  useLayoutEffect(() => {
+    if (!toast || !toast.arrival || screen !== "game") {
+      setToastPos(null);
+      return;
+    }
+    const boardEl = boardRef.current;
+    const tubesEl = tubesRowRef.current;
+    const cardEl = toastCardRef.current;
+    if (!boardEl || !tubesEl || !cardEl) return;
+    const boardTop = boardEl.getBoundingClientRect().top;
+    const band = tubesEl.getBoundingClientRect().top - boardTop;
+    const top = Math.round(boardTop + ARRIVAL_BAND_GAP);
+    const fits = cardEl.offsetHeight + ARRIVAL_BAND_GAP <= band;
+    setToastPos((p) => (p && p.id === toast.__id && p.top === top && p.fits === fits ? p : { id: toast.__id, top, fits }));
+  }, [toast, screen, tubeScale, vpTick, runUpgrades.length, ARRIVAL_BAND_GAP]);
+
+  /* Read at the point of use rather than stored: nothing else needs them, and
+     keeping them derived means they cannot disagree with the effect that set
+     toastPos. `toastMeasured` is what tells the render "this exact toast has
+     been measured on this exact board" — the id check is what makes a stale
+     measurement from a previous toast, or from before the tubes resized,
+     unusable. */
+  const toastIsArrival = !!toast && !!toast.arrival && screen === "game";
+  const toastMeasured = toastIsArrival && !!toastPos && toastPos.id === toast.__id;
+  const toastInBand = toastMeasured && toastPos.fits;
 
   /* A boss round is announced when its board arrives, not discovered when the
      moves run short: the squeeze only creates tension if the player knows it
@@ -1200,6 +1314,7 @@ export default function Cascade() {
         title: `No extra · round ${round}`,
         message: `Everything above your need is gone. Clear it in ${needOf(level)} — no lucky or combo moves this round.`,
         duration: 3600,
+        arrival: true,
       });
       return;
     }
@@ -1222,6 +1337,7 @@ export default function Cascade() {
                screen on a 320x568, and at 5200ms it was still up when the
                player had already read it and started looking for the board. */
             duration: 4000,
+            arrival: true,
           });
           /* Marked AFTER the toast is raised, never before. The flag means
              "this one-time explanation has been delivered", so writing it
@@ -1243,6 +1359,7 @@ export default function Cascade() {
       title: `Hard round ${round}`,
       message: "Half the extra moves. Clear it for one extra upgrade to choose from.",
       duration: 3200,
+      arrival: true,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level]);
@@ -1250,6 +1367,7 @@ export default function Cascade() {
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (toastExitTimerRef.current) clearTimeout(toastExitTimerRef.current);
     };
   }, []);
   const recordRound = useCallback(() => recordStats((p) => ({ ...p, totalRounds: p.totalRounds + 1 })), [recordStats]);
@@ -1856,6 +1974,7 @@ export default function Cascade() {
              is the honest fallback. */
           message: level.par ? `NEED ${needOf(level)} is the fewest moves that clear it.` : null,
           duration: 3600,
+          arrival: true,
         }), Math.max(0, impactMs));
       }
       Haptic.light();
@@ -2356,6 +2475,13 @@ export default function Cascade() {
     if (phase !== "playing" || roundDecidedRef.current) return;
     Snd.unlock();
     if (performance.now() < suppressClickUntilRef.current) return;
+    /* Before anything else on the board is answered. An arrival toast has done
+       its job by the time the player touches a tube, and this is the one place
+       a tap can replace it — so the tap's own reply ("Nothing to move", the
+       select chime, a pour) is what lands, not an announcement sitting on top
+       of the board. No-op for every non-arrival toast, which is what keeps that
+       empty-tube reply alive for its own second tap. */
+    yieldArrivalToast();
     if (selected === null) {
       if (tubes[idx].length === 0) {
         /* Was a bare `return`: tapping an empty tube did nothing at all, on a
@@ -2384,7 +2510,7 @@ export default function Cascade() {
     }
     if (selected === idx) { setSelected(null); return; }
     attemptPour(selected, idx, e);
-  }, [phase, selected, tubes, attemptPour, showToast]);
+  }, [phase, selected, tubes, attemptPour, showToast, yieldArrivalToast]);
 
   const DRAG_THRESHOLD = 10;
   const WIGGLE_MAX = 40;
@@ -2401,11 +2527,18 @@ export default function Cascade() {
        Arming a drag here meant a finger that drifted 10px+ during the tap
        re-picked THIS tube instead of pouring into it. */
     if (selected !== null && selected !== idx) return;
+    /* Same yield as onTubeClick, but on the press rather than the release, and
+       only for a tube that actually has balls: this is the earliest moment the
+       player can be looking for the tube they just touched — a lifted ball, a
+       drag starting — so it is the earliest moment an arrival toast should be
+       out of the way. The empty-tube and non-primary-button guards above run
+       first, so neither of those can clear a toast. */
+    yieldArrivalToast();
     dragSourceRef.current = idx;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     draggingRef.current = false;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-  }, [phase, tubes, selected]);
+  }, [phase, tubes, selected, yieldArrivalToast]);
 
   const onTubePointerMove = useCallback((e) => {
     if (dragSourceRef.current === null || draggingRef.current) return;
@@ -3045,6 +3178,7 @@ export default function Cascade() {
         title: `Today's twist: ${twist.name}`,
         message: `${twist.desc}\n\nToday's path: ${path.icon} ${path.name} — ${path.desc}`,
         duration: 5200,
+        arrival: true,
       });
       setRound(1);
       setRunUpgrades([]);
@@ -3089,6 +3223,7 @@ export default function Cascade() {
           title: "Score Attack",
           message: "No undo, no hints. A run counts once you clear a round — how far can you get?",
           duration: 4200,
+          arrival: true,
         });
       }
       /* Not on the player's first run: the picker asks them to choose
@@ -4792,31 +4927,43 @@ export default function Cascade() {
           aria-hidden="true"
           style={{
             position: "fixed",
-            /* Anchored to the BOTTOM now, and this is the whole of P1-3.
+            /* Placement, in two parts.
 
-               It used to be `top: safe-area-inset-top + 20px`, which put it
-               straight through the top of every screen it appears on:
-                 - in game, over the HUD — the round label, the NEED/best
-                   line and the 3px progress track below it all live in
-                   safe+14..safe+78 (S.hud padding + S.progressTrack), so a
-                   toast at safe+20 covered the move counter's row;
-                 - on Home, over the CASCADE title (documented at
-                   HomeScreen homeContent's padding, which was inflated to
-                   14vh purely to duck under this).
+               An ARRIVAL toast — the round/run announcements, flagged `arrival`
+               by showToast and nothing else — goes in the free band between the
+               top of the board box and the top of the tubes. That band is the
+               only strip of a game screen that is none of the three things a
+               toast must not cover: it is below the HUD, chips and upgrade
+               strip, and above the board. Its size is measured per board by the
+               layout effect above rather than assumed, because it moves with the
+               tube count, the fit scale, the upgrade strip wrapping and the
+               viewport. The card is anchored by its TOP edge and grows downward
+               into the band, so it can only ever be as tall as the band is.
 
-               Nothing useful is at the bottom. The game footer (S.footer) is
-               the bottom 80px and is already documented as the Undo/Hint
-               band, and the Home nav bar (BottomNav navWrap + navGlass +
-               tabBtn) measures ~110px, so `safe + 120` clears BOTH with a
-               gap instead of landing on top of either.
+               Everything else keeps the fixed bottom anchor it has always used,
+               and so does an arrival toast whose card turns out TALLER than the
+               band — which is the real case on a 320x568 with a full board.
+               Falling back instead of reserving board space, or trimming the
+               message, is the point: no board ever shrinks for a transient card
+               and no copy is ever cut, and the arrival toast's own first-tap
+               yield (yieldArrivalToast) is what bounds how long that fallback is
+               on screen. Budget stays here too — it is opened BY a tap on the
+               footer line and belongs with that control, not with the board.
 
-               It also resolves P1-1 outright: the achievement toast is a
-               separate card anchored to the top at safe+60, so a bottom
-               anchor cannot overlap it no matter how tall either one grows
-               with a long title or a large text scale. Neither z-index nor
-               ordering had to change, and the toast still sits above the nav
-               (50) and both full-page screens (80) at its existing 300. */
-            bottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)",
+               Exactly one anchor is ever set. `top` and `bottom` together on a
+               fixed box of auto height would stretch it across the gap and
+               centre the card in it, which is not what either placement wants. */
+            ...(toastInBand
+              ? { top: toastPos.top }
+              : { bottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)" }),
+            /* Laid out but not painted, on the one frame an arrival toast is
+               waiting to be measured — the card has to be in the tree for
+               offsetHeight to be readable. The measurement is a layout effect, so
+               that frame is never painted: React flushes the position it sets
+               before the browser gets a chance to draw. Anything not being
+               measured right now (every other toast, and an arrival toast raised
+               off the game screen) is simply left alone. */
+            visibility: toastIsArrival && !toastMeasured ? "hidden" : undefined,
             left: 20, right: 20,
             display: "flex", justifyContent: "center",
             pointerEvents: "none",
@@ -4826,7 +4973,7 @@ export default function Cascade() {
               : "toastIn 380ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
-          <div style={{
+          <div ref={toastCardRef} style={{
             display: "flex", alignItems: "center", gap: 13,
             background: "var(--glass-modal)",
             backdropFilter: "blur(24px) saturate(160%)",
