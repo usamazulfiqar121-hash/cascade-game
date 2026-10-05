@@ -1105,6 +1105,30 @@ export function boardPar(tubes, colorCount = 0) {
       }
     }
   }
+  /* GIVE-UP FALLBACK. The loop above exits either because the heap emptied or
+     because `expanded` hit CAP (60000 expansions), and this line cannot tell the
+     two apart — both land here.
+
+     Correcting the record on what this does and does not do, because an earlier
+     audit reported it as able to produce an UNWINNABLE round. It cannot. par is
+     a floor for the move budget, not a ceiling on it: every consumer scales UP
+     from par — the move limit is par plus buffer, drain, carry and card bonuses
+     — so an OVER-estimate here hands the player MORE moves, a larger buffer and
+     a bigger carry into the following round. The failure direction is a round
+     that is too EASY, not one that cannot be finished. There is no unwinnable
+     case to chase, and no `Math.max` clamping that would fix one.
+
+     So the real (minor) cost is a difficulty DROP on whichever boards actually
+     exhaust CAP, and a run whose par spikes for one round picking up an
+     inflated carry next round. It reads as an oddly easy round, which is
+     confusing rather than unfair — hence LOW, not HIGH.
+
+     Deliberately NOT changed. The formula is `colorCount * 3 + 2`, which for a
+     7-colour board gives 23 against a typical measured par of roughly 5-9, so
+     it is generous by design — a guess that errs toward playable. Tightening it
+     would need a measurement of how often CAP is genuinely reached, and no such
+     measurement exists; tuning the number on theory is how the give-up path ends
+     up handing out LESS than the board needs. Left exactly as written. */
   return Math.max(1, colorCount * 3 + 2);
 }
 

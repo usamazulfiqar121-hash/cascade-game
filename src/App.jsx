@@ -2451,7 +2451,25 @@ export default function Cascade() {
       // to register first (a brief "hold frame" makes a win land as a
       // win). A combo/mega-tier pour gets a bigger burst, so it reads as a
       // bigger moment, not just a bigger score.
-      if (impact) {
+      /* A-07: `isSolved(next)` in this guard. This landing burst and the round-clear
+         celebration burst (celebrateClearBurst, ~120 lines below) BOTH fired on
+         the pour that won the round, and because the landing one is deferred by
+         `burstAt` — impactMs, plus 120 on a tube solve — while the celebration one
+         fires immediately, they were not simultaneous but they OVERLAPPED: the
+         small burst arrived on top of the big one and both ran their full
+         lifetimes, so the busiest possible moment of the round was the noisiest
+         one visually.
+
+         The landing burst is the one dropped, not the celebration. It is the
+         smaller of the two (6-16 pieces at the impact point, versus 16-28 thrown
+         across the whole board), and the winning pour keeps its flight animation,
+         its landing thump and its combo callout regardless — so what is lost is
+         the duplicate, not the feedback. Keeping the celebration is the point:
+         it is the one that marks the round as won.
+
+         `next` is the same board the clear handler tests a few lines below, so
+         this cannot disagree with it about whether the round was won. */
+      if (impact && !isSolved(next)) {
         const color = COLORS[colorIdx] || T.accent;
         const fullBurst = tier >= 3 ? 16 : tier >= 2 ? 10 : 6;
         /* Calm mode: same burst, fewer pieces flying outward. */
@@ -5205,7 +5223,29 @@ export default function Cascade() {
                       <div style={S.ovStatNum}>
                         {scoreResult && scoreResult.rank <= scoreRuns.length ? `${scoreResult.rank}/${scoreRuns.length}` : "—"}
                       </div>
-                      <div style={S.ovStatLabel}>On Board</div>
+                      {/* The number is NOT clamped and does NOT claim a place it
+                          did not take: a 9th-place run has rank 9 against a board
+                          of 8, so `9 <= 8` is false and it renders "—". Correct
+                          already. What was wrong is that an em-dash says nothing
+                          about WHY — it reads as "no data" or "loading", not "you
+                          finished below the cut and there are only 8 slots".
+
+                          The LABEL carries the words rather than the number, and
+                          that is a fit constraint, not a preference: ovStatNum is
+                          22px/weight-900 inside a three-column grid, so its usable
+                          width is roughly 97px, and "off the board" at that size
+                          needs ~156px and would overflow the card. ovStatLabel is
+                          9px uppercase, where "OFF BOARD" is ~55px and fits
+                          comfortably. Same reason the other two cells keep their
+                          words in the label.
+
+                          Condition is the exact inverse of the number's, so the
+                          only behaviour that changes is the label on a run that
+                          is provably off-board. A missing scoreResult keeps
+                          "On Board", exactly as before. */}
+                      <div style={S.ovStatLabel}>
+                        {scoreResult && scoreResult.rank > scoreRuns.length ? "Off Board" : "On Board"}
+                      </div>
                     </div>
                     <div style={S.ovStat}>
                       <div style={S.ovStatNum}>{round}</div>

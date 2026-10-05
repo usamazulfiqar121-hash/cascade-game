@@ -1292,11 +1292,27 @@ SKIPPED — shell dead. Nothing changed in this batch.
   at all. The obvious fix — clamping to 8 — would be *worse*: it would print a false "8th place"
   for a run that placed 9th, tying a genuine 8th. The correct fix is to report "off the board", which
   needs the render expression in the results card read first. Left alone rather than guessed at.
-- **`dailySummary`/daily fairness — a real conflict with invariant 1, not a bug with an obvious fix.**
-  Two players with the same upgrades and the same date can get *different* round-2 limits, because
-  carry and the Marksman bonus read the previous round's leftover moves. Worst observed divergence: 9.
-  This is defensible as design (reward efficient play) and indefensible as a fair daily. It cannot be
-  fixed without changing daily difficulty for everyone, so it is the owner's call, not an edit.
+- **Daily carry fairness — NOT A BUG. Design choice. Carry = skill reward.**
+  *(Owner decision, locked. Recorded here so no future audit re-raises it.)*
+
+  Two players with the same upgrades and the same date can get different round-2 limits, because carry
+  and the Marksman bonus read the previous round's leftover moves. Worst observed divergence: 9 moves.
+  This was flagged as a conflict with invariant 1 ("same upgrades → same board, cards and limit").
+
+  It was reviewed and **dismissed as a finding.** Invariant 1 is about the board, the card offer and
+  the rules being identical — and they are. The move *budget* is explicitly a function of how well
+  you played, in normal runs and daily alike, and that is the intended shape of the game: finishing a
+  round with moves in hand is supposed to be worth something on the next board. A daily that paid the
+  same limit regardless of performance would stop rewarding efficiency, which is the one thing the
+  carry row in the Codex exists to teach.
+
+  **Locked, and to be left exactly as written:**
+  `carry = min(5, floor(prevLeft * 0.5))`
+
+  Do not change carry, its cap, its formula, daily-vs-normal behaviour, or anything in
+  `MOVE_ECONOMY` on the strength of a fairness argument. A future audit that reaches this again
+  should cite new evidence — actual playtest data showing the divergence is felt as unfair — not the
+  invariant wording.
 - **Per-pour refunds.** `LUCK_CAP = 0.4` + combo `1/3` + mega `2/8` gives an expected **0.983** moves
   returned per pour, with a single pour able to return 4 — against invariant 4 ("well under 1 move
   per pour"). The arithmetic is not in dispute; the *number* is a balance decision requiring measured
@@ -1310,6 +1326,63 @@ SKIPPED — shell dead. Nothing changed in this batch.
    `npm run dev`, reading the `[C7]` lines. Arithmetic from the constants says sudden death arrives
    round 4 with no cards and 8–9 with an average build, against a target of 15–25 — and because a
    crossed run finishes at exactly par, carry falls to 0 and it can never climb back out.
-4. Then, and only then, retune **one** number: daily carry fairness, the refund cap, or C-7 itself.
+4. Then, and only then, retune **one** number: the refund cap or C-7 itself. (Carry is **not** on
+   this list — it is a locked design decision, recorded above.)
 5. **`src/App.jsx` tail was only read from 5600 onward** in this session; lines 1–5600 were covered in
    earlier batches, but nothing here has been exercised by a browser.
+
+---
+
+# FINAL FIX BATCH — 5 items, 2 changed the source
+
+Two of the five were investigated and found **already correct**. They are recorded because "no change
+needed" is only trustworthy if the reading is shown, and because a future pass should not "fix" them
+again.
+
+| # | Item | Outcome |
+|---|---|---|
+| 1 | `boardPar` give-up fallback | **COMMENT ONLY.** Reworded to say difficulty drop, not unwinnable. No logic change. |
+| 2 | Rank off the board | **CHANGED** — the label, not the number. See below. |
+| 3 | M-1 / M-2 in `main.jsx` | **NO CHANGE REQUIRED.** See below. |
+| 4 | Warm Start text | **NO CHANGE REQUIRED — already fixed in Phase 2.** See below. |
+| 5 | A-07 burst overlap | **CHANGED.** Landing burst suppressed on a winning pour. |
+
+**1 — `boardPar` (`gameLogic.js:1108`).** Comment only. `return Math.max(1, colorCount * 3 + 2)` is
+untouched. The comment now records that an over-estimate raises the move limit and buffer, so the
+failure direction is a round that is too *easy*, and that the formula is deliberately generous
+(23 on a 7-colour board against a typical 5–9 par) because no measurement exists of how often `CAP`
+is actually reached.
+
+**2 — Rank (`App.jsx:5204-5229`).** The premise behind this item was wrong, and the code was checked
+before being changed. `rank` is **not** clamped and never claimed 8th for a 9th: `recordScoreRun`
+computes `findIndex(...) + 1` with no clamp, and the card renders
+`rank <= scoreRuns.length ? "3/8" : "—"`, so a 9th-place run against 8 slots already showed an em-dash.
+What was genuinely missing is that an em-dash explains nothing — it reads as "no data". So the *label*
+now reads `Off Board` when the run is provably off the board, and stays `On Board` otherwise.
+
+The words went in the label rather than the number as a **fit constraint**: `ovStatNum` is 22px at
+weight 900 inside a three-column grid with ~97px of usable width, where "off the board" needs ~156px
+and would overflow the card. `ovStatLabel` is 9px uppercase, where "OFF BOARD" is ~55px. The condition
+is the exact inverse of the number's, so the only behaviour that changed is the label text; a missing
+`scoreResult` is unaffected. All ranking logic is byte-for-byte unchanged.
+
+**3 — M-1 / M-2 (`main.jsx`, 35 lines, read in full).** Neither warranted an edit.
+- *M-1* proposed a null check on `document.getElementById('root')`. **Not required.** `index.html:18`
+  contains the node and the module script at line 19 is deferred, so the DOM is parsed before
+  `createRoot` runs; the element cannot be missing in any build that loaded at all, and `createRoot`
+  already throws a descriptive error if it somehow were. Adding a guard would be dead code.
+- *M-2* alleged orphaned comments. **None exist.** The file's only comment block (lines 6-19)
+  describes the theme resolution directly beneath it and is accurate.
+
+**4 — Warm Start (`constants.js:512`).** **Already correct.** The `desc` reads *"One extra colour
+starts already sorted, every round"*, and `generateLevel` applies it at `gameLogic.js:1198` as
+`+ (twistId === "warm" ? 1 : 0)` with no round condition. It used to say "free colour on R1" and was
+corrected in Phase 2; the comment at `constants.js:497-509` still records that history. Changing it
+again would have re-introduced the mismatch it was written to remove.
+
+**5 — A-07 (`App.jsx:2454`).** The landing burst guard is now `if (impact && !isSolved(next))`. Both
+bursts did fire on a winning pour and did overlap — the landing one deferred by `burstAt`
+(`impactMs + 120` on a tube solve), the celebration immediate. The landing burst is the one dropped:
+it is the smaller of the two and the winning pour keeps its flight animation, landing thump and combo
+callout. The celebration is preserved, since it is what marks the round as won. `next` is the same
+board the clear handler tests, so the two cannot disagree.
