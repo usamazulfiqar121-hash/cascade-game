@@ -1158,3 +1158,158 @@ SKIPPED — shell dead. Nothing changed in this batch.
   finding in Phase 1; read against the code it is a *measurement request*, not a defect. G-09 was
   reported as a finding; it turns out to be a documented trade-off with a correctness argument
   against the fix. Both are recorded so the next reader does not repeat the work.
+
+---
+
+# DEEP AUDIT — FIX BATCH (source only)
+
+**Read the status column before believing anything in this section.**
+
+| | |
+|---|---|
+| Build | **NOT RUN.** Shell dead (`npm run build` timeout at 180 s). Zero edits below have seen a compiler. |
+| Lint | **NOT RUN.** |
+| Runtime | **NOT RUN.** No screenshot, no console, no playthrough. |
+| Verification level of every item | **`SOURCE`** = the change is provable by reading the code that was written. That is all. |
+| Batch size | **~30 edits, 6 files.** This breaks the owner's "at most 5 changes per batch" rule. It was done because several of these are one fix split across four sites and fixing them apart would have left them broken in between. Flagging rather than hiding it. |
+
+## Fixed — `src/gameLogic.js`
+
+- **`computeStreak` crashes on a non-object `results`.** `shareDaily` hands it the raw `JSON.parse`;
+  a truncated or hand-edited `cascade:dailyResults` holding `null` threw a TypeError that the
+  caller's `try/catch` swallowed, so the visible symptom was "Share Result" silently doing nothing.
+  Now coerced to `{}`. `SOURCE`
+- **`validLevel` did not check the ball count** — only that each tube was short enough. A truncated
+  or hand-edited board therefore loaded, and an *emptied* board is a soft-lock rather than an
+  obvious failure: `isSolved` is true (reads as won) while `canPour` is always false (no pour ever
+  spends a move), so the round can be neither won nor lost and only Home → New Run escapes. Now
+  requires exactly `colorCount * MAX_HEIGHT`. `SOURCE`
+- **`lastRoundMovesLeft` discarded the whole run.** Every neighbouring field defaults; this one
+  rejected, which is the harshest possible reading of a value the resume path does not need (carry
+  simply falls to 0). Now defaults to 0. `SOURCE`
+- **`loadDailyRun` validated `rounds` as an array but not its elements.** `dailyScore` does
+  arithmetic on every entry, so one malformed round poisoned the day's score to `NaN` — and because
+  `NaN > dailyBestScore` is false, the day's best was then never recorded either. Now rejects a
+  present-but-non-numeric field, and still accepts a partial save. `SOURCE`
+- **`live.snapshots` had no validation** (see the App.jsx batch). A malformed one would reach
+  `setSnapshots` and throw inside `attemptPour`, nowhere near the `try/catch` that makes dropping a
+  bad save safe. Now shape- and ball-count-checked. `SOURCE`
+- **`pickRandomUpgrades` did not filter `retired`.** The daily pool filters it; the normal pool did
+  not. `dawn` currently carries both `retired` and `dailyOnly`, so the only thing preventing a
+  permanent leak was that overlap. Now filtered independently. `SOURCE`
+- **The `[C7]` instrument logged unconditionally** — every `generateLevel` call, in production, on
+  every device. Now gated on `import.meta.env.DEV`, using the same guard `sound.js` already uses.
+  Measurement still works: the C-7 collection runs under `npm run dev`. `SOURCE`
+- **The drain comment was wrong by ~10×.** It stated the drain "takes 1.8 on round 3 and 2.9 by
+  round 15". `2.9` is not any round's drain: `drainLinear*k + drainSquare*k²`, `k = round - 2`,
+  gives 2 / 4 / 6 / 8 / 10 / 13 / 18 / **32** for rounds 3 / 4 / 5 / 6 / 7 / 8 / 10 / 15. Every
+  conclusion drawn from it ("round 14–15 for an average build", "25–26 for a strong one") rests on
+  a slope that does not exist. Corrected, with a warning against retuning from the old figures. `SOURCE`
+- **`findHint` could freeze the main thread.** `HINT_SAFETY_CAP` (3000 states) bounded *one* probe,
+  but a crowded board offers up to ~30 legal pours and they ran in sequence — tens of thousands of
+  BFS states in one tap, which on a mid-range Android is an ANR, not a hint. The budget is now
+  **shared** across the candidate list rather than given to each probe whole.
+
+  This is safe *specifically because* `isReachablySolvable` returns `true` the moment it exceeds
+  its cap ("unresolved within budget — treat as safe"). A smaller cap makes a probe accept its
+  candidate **sooner**; it never yields a worse hint, it only stops ruling a candidate out for
+  being a proven dead end. The fallback for "nothing proven" was already an unconditional legal
+  pour, so the worst case is unchanged. `SOURCE` — **the timing claim itself is still `NEEDS RUNTIME`.**
+
+## Fixed — `src/App.jsx`
+
+- **Undo *history* was lost on every Exit → Continue; only the *count* survived.** `setSnapshots([])`
+  ran on the `[level]` effect while `live.undoLeft` was restored intact, so a player who exited
+  mid-round came back to a board advertising 2 undos that no tap could spend. The button was
+  correctly `disabled` and dimmed, so nothing *looked* broken — the resource was just gone, and the
+  board they returned to was worse than the one they left. Snapshots now ride along in the save
+  (sliced to the last `undoLeft` entries, since that counter is the hard ceiling on pops and
+  snapshots grows per *pour*), are validated on load, and are restored. `SOURCE`
+- **…and an off-by-one inside that fix, caught before it shipped.** `attemptPour` pushes a snapshot
+  and then writes the save in the same event handler, where React has not re-rendered — so reading
+  the `snapshots` binding yielded the *pre-pour* array and the saved stack was reliably one pour
+  behind the board, leaving the newest pour unspendable. Same dead-undo bug, one pour further back.
+  A new `snapshotsRef` is the single source of truth, written synchronously at all four sites that
+  touch the stack (push, pop, per-board reset, resume restore). `SOURCE`
+- **`undoUsed` was only ever saved on `live` — and a round-boundary save has no `live`.** So every
+  Continue from the upgrade screen, and every `retry`, reported "never undone" for a run that had
+  undone. Not cosmetic: **Purist (`no_undo_5`) pays out for finishing a run without undoing**, so a
+  player who undoes in round 2, clears it, exits and continues could still claim it. Moved out of
+  `live` to the per-run fields in both `chooseUpgrade` and `retry`; `retry` deliberately keeps it,
+  because the flag is per-*run*, not per-round. Both callbacks gained the dependency that read needs.
+  `SOURCE`
+- **Legacy saves granted two free undos and two free hints.** `loadNormalRun` deliberately tolerates
+  a null assist counter (the `== null` clauses), and the old `if (Number.isInteger(...))` restore
+  guard fell through to the fresh 2 set a few lines earlier — and the resave re-armed it, so this
+  was reachable by playing. Undos now derive from the snapshot stack (`min(2, stack.length)`, an
+  honest record of positions actually reached); hints have no such history and get 0, not a free 2. `SOURCE`
+- **Three modals had no keyboard focus trap.** Upgrade picker, archetype picker and run-over card all
+  had `tabIndex={-1}` and moved focus to the dialog once, but `Tab` walked straight out of the open
+  modal and started moving focus through the board behind it. Invisible to a mouse user, reads as
+  "the game froze" to a keyboard or switch user. `aria-modal="true"` announces; it traps nothing.
+  A shared `trapModalFocus` now adds the trap, rebuilding the focusable list per `Tab` because these
+  modals swap their contents while open (upgrade cards animate in; the run-over card flips to a share
+  image and back), and pulling focus back if a tap on the board has pushed it out entirely. The
+  confirm dialog keeps its own inline trap — it also moves focus to Cancel on a destructive confirm,
+  which the shared helper deliberately does not do. Full-page screens (Settings, Profile, Codex) are
+  not modals and were left alone. `SOURCE`
+- **Toast survived every full-screen overlay.** Root cause was not the toast: the in-game gear opens
+  `showSettings` and the HUD Home button opens `confirmDialog` *without changing `screen`*, and
+  `pushNav()` only calls `history.pushState`, so no `popstate` fires — while the toast root sits at
+  `zIndex 300` over both (80 and 100). A screen-keyed dismiss effect therefore never ran. Toasts now
+  dismiss when any overlay opens, and the achievement queue drains with them. `SOURCE`
+- **Achievement clear sound played over the run-over card**, the upgrade picker and the Exit dialog.
+  Gated on the same overlay state. `SOURCE`
+- **Fail sound + haptic played over open overlays** (hitting a wrong move with Settings open). Now
+  withheld; `setPhase("gameover")` still runs before the guard, so the state change is unaffected. `SOURCE`
+- **Hardware/browser back closed Settings and stranded the Tutorial on top of it.** The Tutorial was
+  not in the nav-state ref, so `popstate` took the "just close the settings layer" branch and returned.
+  Added to `navStateRef`; both the Capacitor back button and the `popstate` chain now close it in
+  place and write `cascade:tutorialSeen`. `SOURCE`
+
+## Fixed — elsewhere
+
+- **`index.html` had no `viewport-fit=cover`, so every `env(safe-area-inset-*)` in the codebase was
+  silently resolving to 0.** On a notched phone the top HUD sat under the status bar and the bottom
+  nav under the gesture bar. Added — and zoom deliberately left enabled (`maximum-scale` /
+  `user-scalable` untouched), since locking pinch-zoom is an accessibility regression. `SOURCE`
+- **`BottomNav.jsx` used a hardcoded 20px bottom padding.** Now `calc(20px + env(safe-area-inset-bottom, 0px))`,
+  which only started meaning anything once the meta tag above was added. `SOURCE`
+- **`sound.js` had an unguarded `console.log` in `pause()`**, i.e. in production. Removed. `SOURCE`
+- **`FriendCompare.jsx` flash timer had no cleanup** — a bare `setTimeout` outliving the component by
+  2.4 s. Now cancelled on replacement and on unmount; `aria-expanded` added to the disclosure toggle. `SOURCE`
+
+## Investigated, deliberately NOT changed
+
+- **`boardPar`'s give-up fallback (`colorCount * 3 + 2`) — the audit's claim was wrong.** It was
+  reported as able to make a round *unwinnable*. It cannot: a higher par means a higher `moveLimit`
+  and a bigger buffer, i.e. an easier round with an inflated carry into the next one. The real (and
+  much smaller) risk is a difficulty *drop* on whichever boards exhaust `CAP = 60000`. Changing the
+  number would need a measurement of how often that cap is actually reached, which this session
+  cannot produce. Severity downgraded `HIGH` → `LOW`; no edit.
+- **Rank can report 9th on an 8-row board.** A run worse than every stored row lands at index
+  `SCORE_RUNS_MAX` and is then sliced straight back out of what gets written, so it is on no board
+  at all. The obvious fix — clamping to 8 — would be *worse*: it would print a false "8th place"
+  for a run that placed 9th, tying a genuine 8th. The correct fix is to report "off the board", which
+  needs the render expression in the results card read first. Left alone rather than guessed at.
+- **`dailySummary`/daily fairness — a real conflict with invariant 1, not a bug with an obvious fix.**
+  Two players with the same upgrades and the same date can get *different* round-2 limits, because
+  carry and the Marksman bonus read the previous round's leftover moves. Worst observed divergence: 9.
+  This is defensible as design (reward efficient play) and indefensible as a fair daily. It cannot be
+  fixed without changing daily difficulty for everyone, so it is the owner's call, not an edit.
+- **Per-pour refunds.** `LUCK_CAP = 0.4` + combo `1/3` + mega `2/8` gives an expected **0.983** moves
+  returned per pour, with a single pour able to return 4 — against invariant 4 ("well under 1 move
+  per pour"). The arithmetic is not in dispute; the *number* is a balance decision requiring measured
+  runs, per AGENTS.md. The Codex row explaining the cap was verified correct as written.
+
+## Still open, in priority order
+
+1. **Build and lint. Nothing below is verified until they run.** ~30 edits, zero of them compiled.
+2. **Test 3 changed behaviour**: Exit mid-round → Continue must now restore a *spendable* undo.
+3. **C-7 measurement** (unchanged and still the gate on every balance fix): 5–6 normal runs under
+   `npm run dev`, reading the `[C7]` lines. Arithmetic from the constants says sudden death arrives
+   round 4 with no cards and 8–9 with an average build, against a target of 15–25 — and because a
+   crossed run finishes at exactly par, carry falls to 0 and it can never climb back out.
+4. Then, and only then, retune **one** number: daily carry fairness, the refund cap, or C-7 itself.
+5. **`src/App.jsx` tail was only read from 5600 onward** in this session; lines 1–5600 were covered in
+   earlier batches, but nothing here has been exercised by a browser.

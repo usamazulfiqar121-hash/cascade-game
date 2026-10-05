@@ -63,6 +63,55 @@ import TodayGoal from "./components/TodayGoal";
 import FriendCompare from "./components/FriendCompare";
 import { HomeIcon, SettingsIcon, HintIcon, UndoIcon } from "./icons";
 
+/* ─── MODAL FOCUS TRAP ──────────────────────────────────────────────────────
+   Moves focus to the dialog itself and keeps Tab inside it while it is mounted.
+
+   Every modal in this file already did the first half (tabIndex={-1} plus a ref
+   callback that focuses once, guarded by dataset.focused because an inline ref
+   is a new function every render and React detaches/reattaches it each time).
+   None of them did the second half, so Tab walked straight out of an open modal
+   and started moving focus through the board and HUD behind it — which is
+   invisible to a mouse user, reads as "the game stopped responding" to a
+   keyboard or switch user, and leaves focus somewhere meaningless when the modal
+   closes. `aria-modal="true"` only tells assistive tech; it traps nothing.
+
+   Installed from a ref callback rather than an effect because all four modals
+   mount on a state flip and the listener belongs to that mount: when the element
+   unmounts the listener goes with it, which an effect would need to clean up by
+   hand.
+
+   The node list is rebuilt on every Tab rather than cached, because it has to
+   be: these modals swap their contents while open (upgrade cards animate in,
+   the game-over card flips to a share image and back), so the first and last
+   focusable elements are not fixed at mount. Rebuilding is cheap — a handful of
+   nodes — and caching it is how a trap ends up wrapping a button that no longer
+   exists and silently refusing to cycle at all. */
+function trapModalFocus(el) {
+  if (!el || el.dataset.focused) return;
+  el.dataset.focused = "1";
+  el.focus({ preventScroll: true });
+  const focusables = () => Array.from(
+    el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+  ).filter((n) => !n.disabled && n.getClientRects().length > 0);
+  el.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Tab") return;
+    const list = focusables();
+    /* Nothing focusable inside (or everything mid-animation and unlaid out):
+       hold focus on the dialog itself rather than dropping it onto the page
+       behind, which is the failure this exists to prevent. */
+    if (list.length < 2) { ev.preventDefault(); el.focus({ preventScroll: true }); return; }
+    const first = list[0];
+    const last = list[list.length - 1];
+    const active = document.activeElement;
+    /* Focus has left the dialog altogether — a click on the board behind it, or
+       a programmatic focus. Pull it back to the start rather than let Tab
+       resume from wherever it ended up. */
+    if (!el.contains(active)) { ev.preventDefault(); first.focus({ preventScroll: true }); return; }
+    if (ev.shiftKey && active === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && active === last) { ev.preventDefault(); first.focus(); }
+  });
+}
+
 
 
 
@@ -886,6 +935,17 @@ export default function Cascade() {
      Only the tubes need saving — moves / bonus / combo all revert together
      with the snapshot so the counter stays honest. */
   const [snapshots, setSnapshots] = useState([]);
+  /* The undo stack's source of truth, mirroring `snapshots` but updated
+     SYNCHRONOUSLY. attemptPour pushes a snapshot and then writes the save inside
+     the same event handler, and React batches that setState — so reading the
+     `snapshots` binding afterwards yields the PRE-pour array, not the one just
+     pushed. saveNormalLive reads this ref instead, which is the only way the
+     saved stack can include the pour being saved. Getting that wrong is not a
+     cosmetic slip: it leaves the newest pour unspendable, i.e. the same dead
+     undo the persisted stack was supposed to fix, one pour further back. Kept in
+     step with the state at all four sites that touch it (push, pop, per-board
+     reset, resume restore). */
+  const snapshotsRef = useRef([]);
   const [hintLeft, setHintLeft] = useState(2);
   /* The parts of a normal run's save that describe the ROUND (not the live
      position), kept current on every commit so a handler can write the save
@@ -1410,7 +1470,16 @@ export default function Cascade() {
 
      dismissToast rather than a bare setToast(null), because it cancels BOTH
      timers. Leaving either one armed means a callback fires into whatever
-     toast has taken this one's place by then. */
+     toast has taken this one's place by then.
+
+     But `screen` is not the only way off a board, and keying only on it left the
+     same card floating over the Settings screen. The in-game gear opens Settings
+     (setShowSettings + pushNav) and the HUD Home button opens the Exit dialog
+     (setConfirmDialog); NEITHER touches `screen`, because pushNav only calls
+     history.pushState, which fires no popstate for the effect below to hear. The
+     toast renders at the root at a higher z-index than either overlay, so the
+     card sat on top of the thing that had just replaced it for the rest of its
+     timer. The second effect below is what covers those. */
 
   /* One exemption, and it earns its place: a score-attack run exited straight
      from the Exit dialog raises its result toast ("New High Score!" / "Score
@@ -1430,6 +1499,27 @@ export default function Cascade() {
     if (toastKeepOnExitRef.current) { toastKeepOnExitRef.current = false; return; }
     dismissToast();
   }, [screen, dismissToast]);
+
+  /* The other way a board stops being what the player is looking at, without
+     `screen` moving: Settings (the in-game gear) and the Exit dialog (the HUD
+     Home button, or the hardware back button) are overlays drawn on top of the
+     game screen, and the toast renders at the root above both of them.
+
+     Fires on an overlay OPENING only — a closing overlay means whatever was
+     underneath is coming back, and its card expired long ago. That is also what
+     leaves the score-exit exemption intact: openExitDialog's confirm raises the
+     result toast and clears `confirmDialog` in the same tick, so the only
+     overlay transition that follows it is that dialog CLOSING, which the guard
+     below skips. The [screen] effect stays the exemption's one reader and spends
+     it when `screen` finally flips to "home".
+
+     Deliberately does NOT consult toastKeepOnExitRef: while that flag is armed
+     no overlay can be open, so the guard above has already returned by then and
+     a check here could only ever swallow a dismissal that was owed. */
+  useEffect(() => {
+    if (!showSettings && !showCodex && !showAchievements && !confirmDialog) return;
+    dismissToast();
+  }, [showSettings, showCodex, showAchievements, confirmDialog, dismissToast]);
 
   /* The free band an arrival toast may occupy: 24px is exactly the distance the
      toastIn animation starts from (translateY(-24px) at 0%), so a card placed
@@ -1589,6 +1679,9 @@ export default function Cascade() {
        has to say otherwise, rather than inheriting a bare `!isDaily` check
        that quietly grants them. */
     setUndoLeft(canAssist ? 2 : 0);
+    /* The ref as well as the state — see its declaration. Leaving it stale here
+       would let the next pour's save carry the PREVIOUS board's undo stack. */
+    snapshotsRef.current = [];
     setSnapshots([]);
     setHintLeft(canAssist ? 2 : 0);
     setHint(null);
@@ -1605,10 +1698,39 @@ export default function Cascade() {
       setMoves(resume.moves);
       setBonusMoves(resume.bonusMoves);
       setComboCount(resume.combo);
-      /* A normal run's saved assists (the daily has none to restore): without
-         this, Exit -> Continue handed back two fresh undos and hints. */
-      if (Number.isInteger(resume.undoLeft)) setUndoLeft(resume.undoLeft);
-      if (Number.isInteger(resume.hintLeft)) setHintLeft(resume.hintLeft);
+      /* A normal run's saved assists (the daily has none to restore).
+
+         Both counters are DERIVED when the save does not carry them, because
+         loadNormalRun deliberately tolerates a null there (the `== null` clauses)
+         and the old `if (Number.isInteger(...))` guard simply fell through — to
+         the FRESH 2 set a few lines above. That is two free undos and two free
+         hints handed to any run resuming from a pre-counter save, and the
+         resave keeps re-arming it, so it is reachable by playing rather than
+         theoretical.
+
+         Undos have a truthful fallback: the snapshot stack is a record of
+         positions the player actually reached, so min(2, stack.length) is what
+         can honestly be given back. A save old enough to predate the stack gets
+         0 — not a punishment, an accurate statement that we cannot show they
+         earned one. Hints have no such history, so they get 0 rather than 2. */
+      const liveSnaps = Array.isArray(resume.snapshots) ? resume.snapshots : [];
+      setUndoLeft(Number.isInteger(resume.undoLeft) ? resume.undoLeft : Math.min(2, liveSnaps.length));
+      setHintLeft(Number.isInteger(resume.hintLeft) ? resume.hintLeft : 0);
+      /* And the history those counters spend — see saveNormalLive. Deep-copied
+         on the way in for the same reason tubes are: a restored snapshot is
+         about to be handed to setTubes, and sharing array identity between
+         React state and the object parsed out of storage is how a later
+         in-place mutation quietly rewrites the undo stack. */
+      if (liveSnaps.length > 0) {
+        const restored = liveSnaps.map((s) => ({
+          tubes: s.tubes.map((t) => [...t]),
+          moves: s.moves,
+          bonusMoves: s.bonusMoves,
+          comboCount: s.comboCount,
+        }));
+        snapshotsRef.current = restored;
+        setSnapshots(restored);
+      }
       if (resume.phase === "upgrade") {
         roundDecidedRef.current = true;
         setPendingUpgrades(resume.pendingUpgrades);
@@ -1944,9 +2066,21 @@ export default function Cascade() {
     setAchToast(null);
   }, []);
 
+  /* An overlay is not a change of `screen`: the in-game gear and the HUD Home
+     button each open one while the game is still the current screen. This card
+     renders at z-index 200, above Settings/Codex/Profile (80) and the Exit
+     dialog (100), so without this it floated on top of a full-page layer for
+     the rest of its 2.6s — and the queue behind it kept draining, so a second
+     unlock announced itself to nobody. Same shape as the toast clear, and for
+     the same reason: pointerEvents is none, so the card blocked no tap and
+     nothing about the interaction made it look wrong.
+
+     Only an overlay OPENING clears. A closing one means the board underneath is
+     coming back. `phase === "upgrade"` is deliberately not in here — the card
+     over the upgrade picker is where unlocks are meant to land. */
   useEffect(() => {
-    if (screen !== "game") clearAchQueue();
-  }, [screen, clearAchQueue]);
+    if (screen !== "game" || showSettings || showCodex || showAchievements || confirmDialog) clearAchQueue();
+  }, [screen, showSettings, showCodex, showAchievements, confirmDialog, clearAchQueue]);
 
   const unlockAch = useCallback((id) => {
     /* Read from localStorage first — early return prevents repeat toasts */
@@ -2072,14 +2206,36 @@ export default function Cascade() {
      (canAssist) — the daily keeps its own save and score attack keeps none. */
   const saveNormalLive = (live) => {
     if (!canAssist || !normalSaveBaseRef.current) return;
-    saveNormalRun({ ...normalSaveBaseRef.current, live });
+    /* Snapshots ride along so Exit -> Continue can restore the undo HISTORY,
+       not just the undo COUNT. It used to write neither: the counters came back
+       intact from `live.undoLeft` while this effect had already run
+       setSnapshots([]), so a player who exited mid-round came back to a board
+       advertising 2 undos that no tap could ever spend. The button was
+       correctly disabled and dimmed, so nothing *looked* broken — the resource
+       was just quietly gone, and the board they returned to was worse than the
+       one they left. These are positions they legitimately reached, so
+       restoring them grants no reach they had not already earned.
+
+       Only the last `undoLeft` entries can ever be popped — the counter is the
+       hard ceiling on how many times undo runs, and pops come off the end —
+       so slicing keeps the write small. snapshots grows by one entry per POUR,
+       not per undo, so without this a long round would carry its whole history
+       into localStorage on every single pour. */
+    const keep = Number.isInteger(live.undoLeft) ? Math.max(0, live.undoLeft) : 0;
+    saveNormalRun({
+      ...normalSaveBaseRef.current,
+      live: { ...live, snapshots: keep > 0 ? snapshotsRef.current.slice(-keep) : [] },
+    });
   };
 
   const attemptPour = useCallback((fromIdx, toIdx, e) => {
     if (roundDecidedRef.current) return;
     if (canPour(tubes, fromIdx, toIdx)) {
-      /* Snapshot BEFORE the pour lands, so undo has something to restore. */
-      setSnapshots((s) => [...s, { tubes: tubes.map((t) => [...t]), moves, bonusMoves, comboCount }]);
+      /* Snapshot BEFORE the pour lands, so undo has something to restore. The ref is
+         written first because the save further down this handler reads it before
+         React has re-rendered with the new state. */
+      snapshotsRef.current = [...snapshotsRef.current, { tubes: tubes.map((t) => [...t]), moves, bonusMoves, comboCount }];
+      setSnapshots(snapshotsRef.current);
       const beforeLen = tubes[toIdx].length;
       const next = pour(tubes, fromIdx, toIdx);
       const movedCount = next[toIdx].length - beforeLen;
@@ -2544,7 +2700,13 @@ export default function Cascade() {
              the state always lands (the cards wait behind the dialog) and only
              the sound/haptic/music are held back. */
           if (screenRef.current !== "game") return;
-          const quietClear = navStateRef.current.confirmDialog;
+          /* Every overlay, not just the dialog. The bail above is right that
+             screenRef still reads "game" when an overlay is up, but it stopped
+             at confirmDialog, so the gear or Codex opened in the same window
+             and the reward played over whichever one was showing. One layer
+             wider, same trap. */
+          const navNow = navStateRef.current;
+          const quietClear = !!(navNow.confirmDialog || navNow.showSettings || navNow.showAchievements || navNow.showCodex);
           setLastRoundMovesLeft(remainingAtClear);
           setLastRoundUnderPar(clearedUnderPar);
           /* Daily upgrade choices must be identical for every player too —
@@ -2703,8 +2865,15 @@ export default function Cascade() {
 
           if (!stillOnGame) return;
           setPhase("gameover");
-          Snd.fail();
-          Haptic.error();
+          /* setPhase deliberately stays ABOVE the overlay check, for the reason
+             the round-clear path spells out: the run really did end, so the
+             card has to be waiting behind the dialog when the player closes it.
+             Only the audio is withheld — the same split, one screen later. */
+          const navLost = navStateRef.current;
+          if (!(navLost.confirmDialog || navLost.showSettings || navLost.showAchievements || navLost.showCodex)) {
+            Snd.fail();
+            Haptic.error();
+          }
           /* same reasoning as the round-clear timer: let the final ball land
              and settle before the results card covers the board */
         }, Math.max(250, impactMs + 300));
@@ -2974,7 +3143,8 @@ export default function Cascade() {
        this refuses on the mode itself rather than trusting undoLeft. */
     if (!canAssist) return;
     const last = snapshots[snapshots.length - 1];
-    setSnapshots((s) => s.slice(0, -1));
+    snapshotsRef.current = snapshotsRef.current.slice(0, -1);
+    setSnapshots(snapshotsRef.current);
     setTubes(last.tubes);
     /* Drop anything still in the air — those balls are being put back —
        and forget the last landing schedule so restored balls get a normal
@@ -3106,11 +3276,20 @@ export default function Cascade() {
         path: runPath,
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
         retriesLeft,
+        /* OUTSIDE `live`, deliberately. `live` is the per-pour position and a
+           round-boundary save has none, so undoUsed rode on `live` and came back
+           as `undefined` here on every single round boundary — meaning every
+           exit-and-continue quietly cleared the run's "has this player ever
+           undone" flag. That is not a cosmetic slip: Purist (no_undo_5) pays out
+           for finishing a run without undoing, so a player who undoes in round
+           2, clears it, exits and continues could still claim Purist. Per-RUN
+           state belongs beside the other per-run fields. */
+        undoUsed: undoUsedThisRun,
       });
     }
     Snd.upgrade();
     Music.pulse("upgrade");
-  }, [round, runUpgrades, lastRoundMovesLeft, lastRoundUnderPar, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator, retriesLeft]);
+  }, [round, runUpgrades, lastRoundMovesLeft, lastRoundUnderPar, pendingUpgrades, upgradeReady, isDaily, canAssist, retriedThisRound, dailyRun, persistDailyRun, dailyTwist, runPath, weeklyMutator, retriesLeft, undoUsedThisRun]);
 
   /* A retry re-rolls the same round from the same seed, so a daily retry
      reproduces the board exactly as it was — and must NOT pick up the weekly
@@ -3168,9 +3347,11 @@ export default function Cascade() {
         path: runPath,
         mutatorId: weeklyMutator ? weeklyMutator.id : null,
         retriesLeft: left,
+        /* Per-RUN, so a retry does not wipe it — see the note in chooseUpgrade. */
+        undoUsed: undoUsedThisRun,
       });
     }
-  }, [round, runUpgrades, lastRoundMovesLeft, lastRoundUnderPar, isDaily, canAssist, dailyTwist, weeklyMutator, runPath, retriesLeft]);
+  }, [round, runUpgrades, lastRoundMovesLeft, lastRoundUnderPar, isDaily, canAssist, dailyTwist, weeklyMutator, runPath, retriesLeft, undoUsedThisRun]);
 
   /* Takes the opening archetype. Deliberately does NOT touch the board: the
      round-1 level was already generated from (round, upgrades) and the
@@ -3430,6 +3611,8 @@ export default function Cascade() {
               phase: lv.offer ? "upgrade" : "playing",
               tubes: lv.tubes, moves: lv.moves, bonusMoves: lv.bonusMoves, combo: lv.combo,
               undoLeft: lv.undoLeft, hintLeft: lv.hintLeft,
+              /* The undo stack, so the restored undoLeft is actually spendable. */
+              snapshots: lv.snapshots,
               pendingUpgrades: lv.offer ? lv.offer.map((id) => UPGRADES.find((u) => u.id === id)) : [],
               jackpotNearMiss: !!lv.jackpotNearMiss,
             }
@@ -3444,7 +3627,12 @@ export default function Cascade() {
         /* From the save, not reset: resetting AFTER restoring (as this did)
            threw the restore away, so Exit -> Continue still cleared "undo used"
            and let a run that had undone earn Purist. */
-        setUndoUsedThisRun(!!(lv && lv.undoUsed));
+        /* Read from the run, not just the live position. It used to come off `live`
+           alone, which is exactly what a round-boundary save does not have — so
+           every Continue from the upgrade screen (or from a retry) reported
+           "never undone" for a run that had undone. `lv` still wins when
+           present: it is the more recent of the two at a mid-round resume. */
+        setUndoUsedThisRun(lv ? !!lv.undoUsed : !!resume.undoUsed);
         setNewBestThisRun(false);
         setShareImage(null);
         setShared(false);
@@ -3623,10 +3811,16 @@ export default function Cascade() {
      Phase 1: only infrastructure. Nothing wired yet.
      Refs hold latest state so popstate handler never goes stale. */
 
-  const navStateRef = useRef({ showSettings: false, showAchievements: false, showCodex: false, screen: "home", confirmDialog: false });
+  /* showTutorial is in this mirror for the same reason confirmDialog is: it is a
+     layer that owns NO history entry — Settings' "How to Play" and the Reset
+     confirm both open it without a pushNav — so back has to close it by hand
+     rather than pop an entry for it. Left out of here, a back press with the
+     Tutorial up saw showSettings:true, closed Settings, and stranded the
+     Tutorial on top of Home. */
+  const navStateRef = useRef({ showSettings: false, showAchievements: false, showCodex: false, showTutorial: false, screen: "home", confirmDialog: false });
   useEffect(() => {
-    navStateRef.current = { showSettings, showAchievements, showCodex, screen, confirmDialog: !!confirmDialog };
-  }, [showSettings, showAchievements, showCodex, screen, confirmDialog]);
+    navStateRef.current = { showSettings, showAchievements, showCodex, showTutorial, screen, confirmDialog: !!confirmDialog };
+  }, [showSettings, showAchievements, showCodex, showTutorial, screen, confirmDialog]);
   /* backFromGameRef: what "back" means while a run is on screen (defined
      further down, next to the HUD Home button's handler, and kept current
      by an effect). exitConfirmedRef: set by the Exit dialog's confirm just
@@ -3653,6 +3847,19 @@ export default function Cascade() {
         if (!CapApp || !CapApp.addListener) return;
         listener = await CapApp.addListener("backButton", () => {
           const st = navStateRef.current;
+          /* The other entry-less layer, closed the same way and for the same
+             reason as the dialog below: Settings' "How to Play" and the Reset
+             confirm open the Tutorial without a pushNav, so there is no entry
+             to pop. Closing it in place leaves the Settings entry underneath
+             intact — routing it through history.back() would consume THAT entry
+             and leave Settings on screen with nothing behind it. The
+             tutorialSeen write matches Tutorial's own onClose, so backing out
+             counts as having seen it and it cannot flash again next launch. */
+          if (st.showTutorial) {
+            setShowTutorial(false);
+            try { localStorage.setItem("cascade:tutorialSeen", "1"); } catch {}
+            return;
+          }
           /* A confirm dialog is the one layer that never owns a history
              entry — it deliberately doesn't push one (see the popstate
              handler), and the popstate handler has to re-push a
@@ -3732,6 +3939,10 @@ export default function Cascade() {
            game, and forcing screen back to home here would yank the
            player out of a run just for closing an overlay. */
         const st = navStateRef.current;
+        /* Tutorial first: it sits above Settings, and it owns no entry of its
+           own. Unreachable today (nothing can pop history while it is up), but
+           it costs one line to stop the chain from ever skipping a layer. */
+        if (st.showTutorial) { setShowTutorial(false); try { localStorage.setItem("cascade:tutorialSeen", "1"); } catch {} return; }
         if (st.showSettings) { setShowSettings(false); return; }
         if (st.showAchievements) { setShowAchievements(false); return; }
         if (st.showCodex) { setShowCodex(false); return; }
@@ -4644,12 +4855,10 @@ export default function Cascade() {
             aria-modal="true"
             aria-label={`Round ${round} cleared. Choose an upgrade`}
             tabIndex={-1}
-            ref={(el) => {
-              if (el && !el.dataset.focused) {
-                el.dataset.focused = "1";
-                el.focus({ preventScroll: true });
-              }
-            }}
+            /* Focus the dialog, not a card — see the note on the archetype
+               picker. What this adds on top of that is the Tab trap: without it
+               Tab walked out of the offer and into the board behind. */
+            ref={(el) => trapModalFocus(el)}
           >
             <div style={{ ...S.ovTitle, color: T.go, fontSize: 22 }}>Round {round} Cleared!</div>
             <div style={{ ...S.ovSub, marginBottom: 6 }}>Choose an upgrade</div>
@@ -4801,13 +5010,9 @@ export default function Cascade() {
                see the Escape note below), so focus goes to the dialog itself
                and the player chooses. Focus also moves ONCE, guarded by the
                dataset flag, because this ref callback re-runs on every render
-               of an open picker. */
-            ref={(el) => {
-              if (el && !el.dataset.focused) {
-                el.dataset.focused = "1";
-                el.focus({ preventScroll: true });
-              }
-            }}
+               of an open picker. trapModalFocus additionally keeps Tab inside —
+               without it Tab left the picker and walked the board behind. */
+            ref={(el) => trapModalFocus(el)}
           >
             <div style={{ ...S.ovTitle, color: T.accent, fontSize: 22 }}>Choose Your Path</div>
             <div style={{ ...S.ovSub, marginBottom: 18 }}>
@@ -4904,12 +5109,12 @@ export default function Cascade() {
             aria-modal="true"
             aria-label="Run over"
             tabIndex={-1}
-            ref={(el) => {
-              if (el && !el.dataset.focused) {
-                el.dataset.focused = "1";
-                el.focus({ preventScroll: true });
-              }
-            }}
+            /* This card swaps its whole body when the player shares — score
+               summary out, share image in — so the focusable set changes while
+               it is open. trapModalFocus re-reads it per Tab rather than
+               caching it at mount, and pulls focus back if a tap on the board
+               behind has pushed it out of the dialog. */
+            ref={(el) => trapModalFocus(el)}
           >
             {!shareImage ? (
               <>

@@ -91,7 +91,13 @@ const S = {
   navWrap: {
     position: "fixed",
     bottom: 0, left: 0, right: 0,
-    padding: "0 16px 20px",
+    /* The bottom inset was a bare 20px, so on any phone with a gesture bar the
+       nav's icons sat under it and the lowest row of the Home screen was
+       untappable. index.html now carries viewport-fit=cover, which is what
+       makes env() resolve to anything other than 0 — before that, every
+       safe-area value in this codebase was silently inert. calc() keeps the
+       original 20px of breathing room on devices with no inset at all. */
+    padding: "0 16px calc(20px + env(safe-area-inset-bottom, 0px))",
     /* 50, not 100. Settings (screens/SettingsScreen.jsx) and Profile
        (AchievementsScreen.jsx) are both zIndex 80, so at 100 this bar
        painted OVER them — the glass bar sat on top of the open page and

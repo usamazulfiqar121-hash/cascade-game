@@ -115,7 +115,12 @@ function rarityWeight(rarity) {
    tracked, so it costs no state and survives a reload. Pass null outside a
    run that has one. */
 export function pickRandomUpgrades(count, owned = [], rng = Math.random, focus = null) {
-  const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.dailyOnly);
+  /* `!u.retired` as well as `!u.dailyOnly`. The daily pool filters retired and
+   this one did not, so the day a card is retired WITHOUT also carrying
+   dailyOnly it would quietly keep being offered in normal runs forever. `dawn`
+   happens to hold both flags today, which is the only reason nothing leaks
+   right now — i.e. nothing was stopping it, the overlap was the accident. */
+  const pool = UPGRADES.filter((u) => u.id !== JACKPOT_ID && !u.dailyOnly && !u.retired);
   const roll = rng();
   let jackpot = null;
   let jackpotNearMiss = false;
@@ -416,8 +421,22 @@ export function findHint(tubes) {
       if (canPour(tubes, from, to)) candidates.push({ from, to });
     }
   }
+  /* HINT_SAFETY_CAP bounds ONE probe, not this whole call. A crowded board can
+     offer thirty legal pours, and findHint ran them in sequence, each sweeping up
+     to 3000 states — which on a mid-range Android is not a hint, it is a freeze
+     the player cannot tap through. So the budget is SHARED across the candidate
+     list instead of being handed to each probe whole.
+
+     What that does to the RESULT is the reason sharing is safe rather than a
+     quality cut: isReachablySolvable returns TRUE the moment it exceeds its cap
+     ("unresolved within budget — treat as safe"). A smaller cap therefore makes
+     a probe accept its candidate SOONER. It never makes the hint worse — it only
+     makes the hint stop ruling a candidate OUT for being a proven dead end, and
+     the fallback below was already an unconditional legal pour. Worst case is
+     unchanged, and no round of asking ever gets slower than before. */
+  const perProbe = Math.max(300, Math.floor(HINT_SAFETY_CAP / Math.max(1, candidates.length)));
   for (const c of candidates) {
-    if (isReachablySolvable(pour(tubes, c.from, c.to), HINT_SAFETY_CAP)) return c;
+    if (isReachablySolvable(pour(tubes, c.from, c.to), perProbe)) return c;
   }
   return candidates[0] || null;
 }
@@ -502,9 +521,16 @@ export function dailyLuckRoll(round, moveIdx, date = new Date()) {
 }
 
 export function computeStreak(results, shieldedDates = []) {
+  /* Every App caller narrows to a plain object EXCEPT shareDaily, which hands
+     over the raw JSON.parse — and a truncated or hand-edited
+     cascade:dailyResults holding `null` threw a TypeError on the two reads
+     below. shareDaily's try/catch swallowed it, so the symptom was never a
+     crash: it was "Share Result" quietly doing nothing. An empty object is the
+     honest reading of "no results recorded". */
+  const done = results && typeof results === "object" ? results : {};
   let streak = 0;
   const today = new Date();
-  const todayDone = !!results[dailyKey(today)];
+  const todayDone = !!done[dailyKey(today)];
   const start = todayDone ? 0 : 1;
   /* Stops at the first missed day, so this only ever walks as far as the
      player's real streak. The cap is a safety net against a corrupt save,
@@ -525,7 +551,7 @@ export function computeStreak(results, shieldedDates = []) {
   for (let i = start; i < 36500; i++) {
     d.setUTCDate(d.getUTCDate() - i);
     const key = dailyKey(d);
-    if (results[key] || shieldedDates.includes(key)) streak++;
+    if (done[key] || shieldedDates.includes(key)) streak++;
     else break;
   }
   return streak;
@@ -936,13 +962,25 @@ export function msUntilNextWeek() {
    The buffer is the ONLY slack worth cutting, and the reason is where the
    balance actually sits. The cards a run picks are worth ~1.6 moves a round
    on average (tempo cards are ~42% of what gets offered) while the drain
-   takes 1.8 on round 3 and 2.9 by round 15 — so from round 5 on an average
-   build runs at roughly zero surplus, and the buffer is what pays for the
-   rounds in between. Turning the drain up by as little as 0.2, or the carry
-   rate down by 0.1, ends an average run on round 5. The first three rounds
-   were the one part of the buffer doing no work at all: +80/+71/+63% of a
-   5–9 move board is tutorial slack nobody can feel the edge of. That is what
-   the numbers below cut.
+   takes 2 on round 3 and 32 by round 15 (drainLinear*k + drainSquare*k*k,
+   k = round - 2) — so an average build's surplus is gone well before round 5.
+   Turning the drain up by as little as 0.2, or the carry rate down by 0.1,
+   ends an average run on round 5. The first three rounds were the one part of
+   the buffer doing no work at all: +80/+71/+63% of a 5-9 move board is tutorial
+   slack nobody can feel the edge of. That is what the numbers below cut.
+
+   ⚠️ THE PREVIOUS VERSION OF THIS PARAGRAPH WAS WRONG, AND SO WAS EVERY
+   NUMBER DERIVED FROM IT. It said the drain "takes 1.8 on round 3 and 2.9 by
+   round 15". 2.9 is not any round's drain at all — the real curve is 3-11x
+   steeper than that, because the quadratic term was not in the figure being
+   quoted. Every conclusion drawn here ("round 14-15 for an average build",
+   "25-26 for a strong one") therefore rests on a slope that does not exist.
+   Arithmetic from these same constants puts sudden death on round 4 with no
+   cards and round 8-9 with an average one — and because a run that crosses
+   into sudden death finishes at exactly par, carry falls to 0 for the next
+   board and it can never climb back out. Do NOT retune from the old figures.
+   Use the [C7] log above, which exists for precisely this, and retune ONE
+   number at a time against measured runs.
 
    Tuned against hand-computed estimates for: an average build ending on
    round 14–15 and a strong one on 25–26, with a few spare moves in mid-game.
@@ -1196,7 +1234,7 @@ built from `par`, so the cards pay off; the HUD, "Need met!" and the floor
      Fires on every generateLevel call — new round, retry, and resume. That is
      wanted: it is the retry and resume boards too, and the only noise is
      repeat lines for the same round. */
-  console.log(
+  if (import.meta.env && import.meta.env.DEV) console.log(
     `[C7] r=${round} mode=${isDailyLevel ? "daily" : "normal"} ` +
     `unclamped=${unclamped} playPar=${playPar} limit=${moveLimit} suddenDeath=${suddenDeath} ` +
     `| buffer=${budget.buffer} carry=${budget.carry} drain=${budget.drain} boss=${budget.boss} ` +
@@ -1283,6 +1321,17 @@ export function loadDailyRun() {
     if (!Number.isInteger(r.round) || r.round < 1) return null;
     if (!Array.isArray(r.upgrades) || !r.upgrades.every((x) => typeof x === "string")) return null;
     if (!Array.isArray(r.rounds) || !Number.isFinite(r.totalMoves)) return null;
+    /* The elements too, not just the array. dailyScore does arithmetic on
+       every entry, so a single malformed round poisons the whole day's score
+       to NaN — and NaN is nasty rather than merely ugly: the results card
+       renders "NaN points", and because `NaN > dailyBestScore` is false the
+       day's best is silently never recorded either. Only a value that is
+       present AND non-numeric is rejected, so a partial or pre-fields save
+       still resumes. */
+    if (!r.rounds.every((x) => x && typeof x === "object"
+      && (x.round === undefined || Number.isFinite(x.round))
+      && (x.moves === undefined || Number.isFinite(x.moves))
+      && (x.moveLimit === undefined || Number.isFinite(x.moveLimit)))) return null;
     for (const k of ["genPrevLeft", "nextPrevLeft", "moves", "bonusMoves", "combo"]) {
       if (!Number.isFinite(r[k]) || r[k] < 0) return null;
     }
@@ -1354,7 +1403,15 @@ function validLevel(l) {
     && l.tubes.every((t) => Array.isArray(t) && t.length <= MAX_HEIGHT
       && t.every((b) => Number.isInteger(b) && b >= 0))
     && Number.isFinite(l.moveLimit) && l.moveLimit >= 1
-    && Number.isFinite(l.colorCount) && l.colorCount >= 1;
+    && Number.isFinite(l.colorCount) && l.colorCount >= 1
+    /* The ball COUNT, which nothing above checks — only that each tube is short
+       enough. generateLevel always deals exactly colorCount * MAX_HEIGHT balls,
+       so a board that does not add up is a truncated or hand-edited save, and
+       it soft-locks rather than merely looking wrong: an emptied board reads
+       as SOLVED (isSolved is true) while canPour is always false, so no pour
+       ever spends a move and the round can be neither won nor lost. The only
+       way out was Home → New Run. */
+    && l.tubes.reduce((n, t) => n + t.length, 0) === l.colorCount * MAX_HEIGHT;
 }
 
 /* The run to continue, or null. The tubes themselves are trusted rather than
@@ -1390,7 +1447,13 @@ export function loadNormalRun() {
        is legal. A non-null one has to be a whole archetype, because runFocus
        reads .cats off it on every draw. */
     if (r.path && (typeof r.path.id !== "string" || !Array.isArray(r.path.cats))) return null;
-    if (!Number.isFinite(r.lastRoundMovesLeft) || r.lastRoundMovesLeft < 0) return null;
+    /* A default, NOT a reject, unlike the checks above it. Every other field on
+       this level defaults, and this one used to throw the entire run away over
+       a single number — the harshest possible reading of a value the resume
+       path can perfectly well do without. A missing or nonsensical
+       lastRoundMovesLeft just means carry falls to 0 for the next board, which
+       is exactly what a player who finished with nothing left deserves. */
+    if (!Number.isFinite(r.lastRoundMovesLeft) || r.lastRoundMovesLeft < 0) r.lastRoundMovesLeft = 0;
     /* The week's rule has to still exist, or resuming under a different one
        is the one outcome worse than not resuming at all. An id that no longer
        resolves is a save from a build that shipped a different mutator set.
@@ -1419,6 +1482,22 @@ export function loadNormalRun() {
       && (L.offer ? L.moves <= r.level.moveLimit + L.bonusMoves : L.moves < r.level.moveLimit + L.bonusMoves)
       && (L.undoLeft == null || (Number.isInteger(L.undoLeft) && L.undoLeft >= 0 && L.undoLeft <= 2))
       && (L.hintLeft == null || (Number.isInteger(L.hintLeft) && L.hintLeft >= 0 && L.hintLeft <= 2))
+      /* The undo stack, when there is one. Absent is legal — a save written
+         before it existed resumes with no spendable undo, which is the honest
+         reading — but a MALFORMED one has to be caught here, because this is the
+         only place a save passes through validation on its way back in. Reach
+         setSnapshots with a snapshot whose .tubes is not an array and the throw
+         lands in attemptPour, nowhere near the try/catch that would have made
+         dropping it safe. Same ball count as the live board, since undo puts a
+         position BACK and a wrong-sized one would break the parity canPour and
+         isSolved both read. */
+      && (L.snapshots == null || (Array.isArray(L.snapshots) && L.snapshots.every((s) => s
+        && Array.isArray(s.tubes) && s.tubes.length === r.level.tubes.length
+        && s.tubes.every((t) => Array.isArray(t) && t.length <= MAX_HEIGHT && t.every((b) => Number.isInteger(b) && b >= 0))
+        && ballCount(s.tubes) === ballCount(r.level.tubes)
+        && Number.isInteger(s.moves) && s.moves >= 0
+        && Number.isInteger(s.bonusMoves) && s.bonusMoves >= 0
+        && Number.isInteger(s.comboCount) && s.comboCount >= 0)))
       && (!L.offer || (Array.isArray(L.offer) && L.offer.length > 0 && L.offer.every((id) => UPGRADES.some((u) => u.id === id))
         && Number.isInteger(L.clearedLeft) && L.clearedLeft >= 0)))) r.live = null;
     return r;

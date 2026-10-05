@@ -11,7 +11,14 @@
          second <link rel="icon"> is ever added for browsers to choose
          between by declared type. -->
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) mean anything.
+         Without it every inset resolves to 0 on notched/gesture-bar phones, so
+         the safe-area paddings elsewhere in this codebase were all silently
+         doing nothing and the top HUD / bottom nav sat under the status bar and
+         the gesture bar. Zoom is deliberately left enabled (no maximum-scale,
+         no user-scalable=no) — locking pinch-zoom is an accessibility
+         regression and buys nothing here. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>cascade-main</title>
   </head>
   <body>

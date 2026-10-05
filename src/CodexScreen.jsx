@@ -57,7 +57,17 @@ const MOVE_RULES = [
   { icon: "🪄", name: "CARDS", desc: "Extra Tube and Auto-Sort make a board easier than the round was budgeted for, so the round arrives with that much more room than your need. This is the row that pays for them." },
   { icon: "🫧", name: "EXTRA", desc: `Extra moves on top of your need: +${Math.round(MOVE_ECONOMY.bufferStart * 100)}% of it on round 1, shrinking to +${Math.round(MOVE_ECONOMY.bufferEnd * 100)}% by round ${MOVE_ECONOMY.bufferRound}. Cards that grant moves, and any daily rule, land on this same row.` },
   { icon: "🩸", name: "LOST", desc: `From round ${MOVE_ECONOMY.drainFrom + 1}, every round takes a few more moves away — and it speeds up. Your upgrades are what keep you ahead of it.` },
-  { icon: "⚡", name: "NO EXTRA", desc: "Once everything extra is gone, a round gives exactly your need and lucky / combo moves switch off. Move cards keep you out of it longer." },
+  /* "lucky / combo moves switch off" used to be stated as if it were simply part
+     of "no extra is left". It is not, and the difference is a rule a player can
+     feel. The economy CLAMPS the budget up to playPar, so "the limit equals your
+     need" is reachable two different ways: the budget can land exactly on need
+     (suddenDeath false — the lucky/combo refunds are still live and can still
+     hand a move back), or it can fall below need and get clamped up to it
+     (suddenDeath true — refunds are off). A round can therefore sit at exactly
+     your need with lucky drops still firing, which is precisely what this row
+     used to promise could never happen. Both cases are spelled out now, because
+     "you are on your own here" is only true in one of them. */
+  { icon: "⚡", name: "NO EXTRA", desc: "Once everything extra is gone, a round gives exactly your need. Land exactly on it and lucky / combo refunds still apply; fall below it and they switch off. Move cards keep you out of it longer." },
   { icon: "↪️", name: "LEFT", desc: `Half the moves you finish a round with roll into the next one, up to ${MOVE_ECONOMY.carryCap}. Finish tight, start the next board richer.` },
   { icon: "👹", name: "HARD", desc: `Every ${MOVE_ECONOMY.bossEvery}th round has half the extra moves — unless everything extra is already gone, in which case it is a No Extra round like any other. Clear it and you get one extra upgrade to choose from.` },
   { icon: "🍀", name: "LUCKY", desc: `Lucky Drop and Super Lucky each give their own chance of a refunded move on every pour you make, and the two together are capped at ${Math.round(LUCK_CAP * 100)}%. So holding both does not stack to the sum of their cards — the second one is worth less than its own number suggests, and that is a deliberate limit: uncapped, the pair would refund more than one move per pour and a round could not be lost.` },

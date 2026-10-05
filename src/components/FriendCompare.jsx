@@ -9,7 +9,7 @@
    the message they sent back — see src/friendCompare.js for the
    code format and why it's plain text rather than an opaque blob. */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { T, roundsText } from "../constants";
 import { nativeShareText } from "../shareCard";
 import {
@@ -55,14 +55,27 @@ export default function FriendCompare({ rounds, dateKey }) {
      token is unique per call regardless of what the message says, so each
      flash's timer only ever clears ITS OWN, still-current toast. */
   const feedbackToken = useRef(0);
+  /* The live flash timer, so it can be cancelled — both when a newer flash
+     replaces it and when the panel unmounts. It used to be a bare setTimeout,
+     so closing the run-over card left a closure (and the 2.4s wait) alive with
+     nothing to show the result in, and calling setFeedback on a component that
+     is gone is a setState-after-unmount no matter how harmless React makes it
+     look. */
+  const flashTimer = useRef(null);
 
   const flash = (type, message) => {
     const token = ++feedbackToken.current;
     setFeedback({ type, message });
-    setTimeout(() => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => {
+      flashTimer.current = null;
       setFeedback((f) => (feedbackToken.current === token ? null : f));
     }, 2400);
   };
+
+  useEffect(() => () => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+  }, []);
 
   /* Goes through nativeShareText like the daily share does: Android's WebView has no
      navigator.share (see shareCard.js), so calling it directly meant the APK only ever
@@ -113,7 +126,11 @@ export default function FriendCompare({ rounds, dateKey }) {
 
   return (
     <div style={s.wrap}>
-      <button style={s.toggle} onClick={() => setOpen((o) => !o)}>
+      <button
+        style={s.toggle}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
         <span style={s.toggleIcon}>👥</span>
         <span style={s.toggleText}>
           Compare Friends

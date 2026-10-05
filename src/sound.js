@@ -709,7 +709,6 @@ export const Music = (() => {
      otherwise the next appStateChange would resurrect a bed nobody
      asked for, which is the bug in reverse. */
   function pause() {
-    console.log("[Music] pause() called, wantPlaying=", wantPlaying, "playing=", playing);
     if (!wantPlaying || paused) return;
     paused = true;
     teardown();
